@@ -1,0 +1,62 @@
+openapi: 3.1.0
+info:
+  title: plsremind API
+  version: "1"
+  description: |
+    The plsremind hub exposes one API for everything: the dashboard, connections and
+    your own adapters all use the endpoints described here.
+
+    Errors always have the same shape, see the `Error` schema. Timestamps are UTC in
+    RFC 3339 format. IDs are UUIDs.
+  license:
+    name: MIT
+    identifier: MIT
+servers:
+  - url: /api/v1
+tags:
+  - name: Instance
+    description: Public information about this hub.
+paths:
+  /info:
+    get:
+      tags: [Instance]
+      operationId: getInfo
+      summary: Get instance information
+      security: []
+      responses:
+        "200":
+          description: Instance information.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Info"
+components:
+  schemas:
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+              description: Stable machine-readable code.
+              examples: [not_found]
+            message:
+              type: string
+              description: Human-readable explanation in English.
+            fields:
+              type: object
+              description: Per-field messages, only present for `validation_failed`.
+              additionalProperties:
+                type: string
+    Info:
+      type: object
+      required: [name, version]
+      properties:
+        name:
+          type: string
+        version:
+          type: string
