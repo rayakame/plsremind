@@ -67,7 +67,7 @@ func register(d *deps.Deps) fiber.Handler {
 				return err
 			}
 			if !provider.LoginEnabled {
-				return apierr.New(http.StatusForbidden, "login_disabled", "Password login is turned off on this instance.")
+				return errLoginDisabled()
 			}
 			now := d.Now()
 			redeem, err := AdmitNewUser(c.Context(), q, now, in.InviteCode)

@@ -109,6 +109,16 @@ type ManualReminder struct {
 	CreatedAt time.Time
 }
 
+type OauthState struct {
+	StateHash  []byte
+	Provider   string
+	Intent     string
+	UserID     *uuid.UUID
+	InviteCode string
+	Verifier   string
+	ExpiresAt  time.Time
+}
+
 type PersonalToken struct {
 	ID         uuid.UUID
 	UserID     uuid.UUID

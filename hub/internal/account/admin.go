@@ -52,9 +52,16 @@ func getUser(ctx context.Context, q *sqlc.Queries, id uuid.UUID) (sqlc.User, err
 	return user, err
 }
 
-// DeleteUser removes a user and everything that belongs to them.
-func DeleteUser(ctx context.Context, d *deps.Deps, id uuid.UUID) error {
-	return db.Tx(ctx, d.Pool, func(q *sqlc.Queries) error {
+// Revoker withdraws the hub's grants at login providers.
+type Revoker interface {
+	RevokeAll(ctx context.Context, identities []sqlc.Identity)
+}
+
+// DeleteUser removes a user and everything that belongs to them, then revokes
+// the tokens the hub held for their linked accounts.
+func DeleteUser(ctx context.Context, d *deps.Deps, revoker Revoker, id uuid.UUID) error {
+	var identities []sqlc.Identity
+	err := db.Tx(ctx, d.Pool, func(q *sqlc.Queries) error {
 		user, err := getUser(ctx, q, id)
 		if err != nil {
 			return err
@@ -62,9 +69,18 @@ func DeleteUser(ctx context.Context, d *deps.Deps, id uuid.UUID) error {
 		if err := guardLastAdmin(ctx, q, user); err != nil {
 			return err
 		}
+		identities, err = q.ListIdentities(ctx, id)
+		if err != nil {
+			return err
+		}
 		_, err = q.DeleteUser(ctx, id)
 		return err
 	})
+	if err != nil {
+		return err
+	}
+	revoker.RevokeAll(ctx, identities)
+	return nil
 }
 
 type AdminUser struct {
@@ -245,13 +261,13 @@ func resetPassword(d *deps.Deps) fiber.Handler {
 	}
 }
 
-func adminDeleteUser(d *deps.Deps) fiber.Handler {
+func adminDeleteUser(d *deps.Deps, revoker Revoker) fiber.Handler {
 	return func(c fiber.Ctx) error {
 		id, err := httpx.ParamUUID(c, "id")
 		if err != nil {
 			return err
 		}
-		if err := DeleteUser(c.Context(), d, id); err != nil {
+		if err := DeleteUser(c.Context(), d, revoker, id); err != nil {
 			return err
 		}
 		return c.SendStatus(http.StatusNoContent)

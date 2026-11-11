@@ -12,6 +12,7 @@ import (
 	"github.com/rayakame/plsremind/hub/internal/deps"
 	"github.com/rayakame/plsremind/hub/internal/item"
 	"github.com/rayakame/plsremind/hub/internal/list"
+	"github.com/rayakame/plsremind/hub/internal/oauth"
 	"github.com/rayakame/plsremind/hub/internal/plan"
 	"github.com/rayakame/plsremind/hub/internal/ratelimit"
 	"github.com/rayakame/plsremind/hub/internal/reminder"
@@ -55,7 +56,9 @@ func New(d *deps.Deps) *fiber.App {
 
 	admin := api.Group("/admin", auth.RequireAdmin())
 
-	account.Register(api, user, admin, d)
+	revoker := oauth.NewRevoker(d)
+	account.Register(api, user, admin, d, revoker)
+	oauth.Register(api, user, admin, d, revoker)
 	token.Register(user, d)
 	list.Register(user, d)
 	plan.Register(user, d)

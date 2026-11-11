@@ -3,7 +3,10 @@ module github.com/rayakame/plsremind/hub
 go 1.27.3
 
 require (
+	github.com/coreos/go-oidc/v3 v3.21.0
+	github.com/go-jose/go-jose/v4 v4.1.9
 	github.com/gofiber/fiber/v3 v3.7.0
+	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v5 v5.12.0
 	github.com/pb33f/libopenapi v0.42.4
 	github.com/pb33f/libopenapi-validator v0.16.2
@@ -13,6 +16,8 @@ require (
 	github.com/testcontainers/testcontainers-go/modules/postgres v0.45.0
 	github.com/tidwall/gjson v1.20.2
 	go.yaml.in/yaml/v3 v3.0.6
+	golang.org/x/crypto v0.58.0
+	golang.org/x/oauth2 v0.38.0
 )
 
 require (
@@ -40,7 +45,6 @@ require (
 	github.com/go-openapi/jsonpointer v1.0.2 // indirect
 	github.com/gofiber/schema v1.9.3 // indirect
 	github.com/gofiber/utils/v2 v2.6.4 // indirect
-	github.com/google/uuid v1.6.0 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
 	github.com/jackc/puddle/v2 v2.2.3 // indirect
@@ -86,7 +90,6 @@ require (
 	go.opentelemetry.io/otel/metric v1.47.0 // indirect
 	go.opentelemetry.io/otel/trace v1.47.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
-	golang.org/x/crypto v0.58.0 // indirect
 	golang.org/x/net v0.62.0 // indirect
 	golang.org/x/sync v0.25.0 // indirect
 	golang.org/x/sys v0.50.0 // indirect

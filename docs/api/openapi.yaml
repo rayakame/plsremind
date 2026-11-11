@@ -1177,6 +1177,170 @@ paths:
                 $ref: "#/components/schemas/Connection"
         default:
           $ref: "#/components/responses/Error"
+  /auth/oauth/{provider}/start:
+    parameters:
+      - $ref: "#/components/parameters/Provider"
+    get:
+      tags: [Authentication]
+      operationId: startOAuth
+      summary: Start logging in or linking through a provider
+      description: |
+        Open this address in the browser. It redirects to the provider and, after the user
+        agrees, back to the hub.
+
+        With `intent=login` the user is logged in, and a new account is created if the
+        provider account is not known yet. With `intent=link` the provider account is added
+        to the logged-in user.
+
+        Every outcome ends with a redirect to the dashboard. On failure the address carries
+        `?auth_error=` with one of `invalid_state`, `provider_error`, `login_disabled`,
+        `link_disabled`, `registration_closed`, `invalid_invite`, `identity_taken` or
+        `account_disabled`.
+      security: []
+      parameters:
+        - name: intent
+          in: query
+          schema:
+            type: string
+            enum: [login, link]
+            default: login
+        - name: invite_code
+          in: query
+          description: Needed to create an account while registration is invite-only.
+          schema:
+            type: string
+      responses:
+        "302":
+          description: Redirect to the provider, or to the dashboard with `auth_error`.
+        default:
+          $ref: "#/components/responses/Error"
+  /auth/oauth/{provider}/callback:
+    parameters:
+      - $ref: "#/components/parameters/Provider"
+    get:
+      tags: [Authentication]
+      operationId: finishOAuth
+      summary: Return address for the provider
+      description: Register this address as the redirect URI at the provider. It is not called directly.
+      security: []
+      parameters:
+        - name: state
+          in: query
+          schema:
+            type: string
+        - name: code
+          in: query
+          schema:
+            type: string
+        - name: error
+          in: query
+          schema:
+            type: string
+      responses:
+        "302":
+          description: Redirect to the dashboard, with `auth_error` on failure.
+        default:
+          $ref: "#/components/responses/Error"
+  /users/{user}/identities/{id}:
+    parameters:
+      - $ref: "#/components/parameters/User"
+      - $ref: "#/components/parameters/Id"
+    delete:
+      tags: [Account]
+      operationId: unlinkIdentity
+      summary: Unlink an account
+      description: |
+        Session only. The hub also withdraws its access at the provider where the provider
+        supports that. The last remaining identity cannot be removed.
+      security:
+        - session: []
+      responses:
+        "204":
+          description: The account is unlinked.
+        default:
+          $ref: "#/components/responses/Error"
+  /admin/providers:
+    get:
+      tags: [Admin]
+      operationId: listProviders
+      summary: List login providers
+      security:
+        - session: []
+      responses:
+        "200":
+          description: All providers, enabled or not.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/LoginProvider"
+        default:
+          $ref: "#/components/responses/Error"
+  /admin/providers/{key}:
+    parameters:
+      - name: key
+        in: path
+        required: true
+        schema:
+          type: string
+    put:
+      tags: [Admin]
+      operationId: setProvider
+      summary: Configure a login provider
+      description: |
+        Only the fields you send change. `password`, `github` and `discord` are built in. Any
+        other key creates an OIDC provider and needs `type: "oidc"`.
+
+        `login_enabled` and `link_enabled` are separate: a provider can be off for logging in
+        and still let users link their account, which is what a connection needs to find them.
+        At least one provider must keep `login_enabled`.
+      security:
+        - session: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                type:
+                  type: string
+                name:
+                  type: string
+                login_enabled:
+                  type: boolean
+                link_enabled:
+                  type: boolean
+                client_id:
+                  type: string
+                client_secret:
+                  type: string
+                  description: Stored encrypted and never returned.
+                issuer_url:
+                  type: string
+                  description: OIDC only. The hub reads the provider's configuration from here.
+      responses:
+        "200":
+          description: The provider.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoginProvider"
+        default:
+          $ref: "#/components/responses/Error"
+    delete:
+      tags: [Admin]
+      operationId: deleteProvider
+      summary: Delete an OIDC provider
+      description: Not possible for built-in providers or while users have accounts linked through it.
+      security:
+        - session: []
+      responses:
+        "204":
+          description: The provider is gone.
+        default:
+          $ref: "#/components/responses/Error"
 components:
   securitySchemes:
     session:
@@ -1194,6 +1358,13 @@ components:
       in: path
       required: true
       description: "`@me` for the caller. Connections pass the hub ID of the user they act for."
+      schema:
+        type: string
+    Provider:
+      name: provider
+      in: path
+      required: true
+      description: The key of a login provider, for example `github`.
       schema:
         type: string
     Id:
@@ -1625,3 +1796,25 @@ components:
         enabled:
           type: boolean
           description: Whether the connection may act for the user right now.
+    LoginProvider:
+      type: object
+      required: [key, type, name, login_enabled, link_enabled, client_id, has_client_secret, issuer_url]
+      properties:
+        key:
+          type: string
+          description: Also the `provider` of identities created through it.
+        type:
+          type: string
+          enum: [password, github, discord, oidc]
+        name:
+          type: string
+        login_enabled:
+          type: boolean
+        link_enabled:
+          type: boolean
+        client_id:
+          type: string
+        has_client_secret:
+          type: boolean
+        issuer_url:
+          type: string

@@ -18,7 +18,7 @@ import (
 )
 
 // Register mounts the public account routes on api and the profile routes on user.
-func Register(api, user, admin fiber.Router, d *deps.Deps) {
+func Register(api, user, admin fiber.Router, d *deps.Deps, revoker Revoker) {
 	api.Post("/setup", setup(d))
 	api.Post("/auth/register", register(d))
 	api.Post("/auth/login", login(d))
@@ -26,7 +26,7 @@ func Register(api, user, admin fiber.Router, d *deps.Deps) {
 
 	user.Get("", getProfile(d))
 	user.Patch("", patchProfile(d))
-	user.Delete("", auth.RequireSession(), deleteProfile(d))
+	user.Delete("", auth.RequireSession(), deleteProfile(d, revoker))
 	user.Get("/identities", listIdentities(d))
 	user.Put("/password", auth.RequireSession(), setPassword(d))
 
@@ -37,8 +37,12 @@ func Register(api, user, admin fiber.Router, d *deps.Deps) {
 	admin.Delete("/invites/:id", deleteInvite(d))
 	admin.Get("/users", listUsers(d))
 	admin.Patch("/users/:id", patchUserAccess(d))
-	admin.Delete("/users/:id", adminDeleteUser(d))
+	admin.Delete("/users/:id", adminDeleteUser(d, revoker))
 	admin.Put("/users/:id/password", resetPassword(d))
+}
+
+func errLoginDisabled() error {
+	return apierr.New(http.StatusForbidden, "login_disabled", "Password login is turned off on this instance.")
 }
 
 type credentials struct {
@@ -114,6 +118,13 @@ func login(d *deps.Deps) fiber.Handler {
 			return err
 		}
 		q := d.Q()
+		provider, err := q.GetLoginProvider(c.Context(), PasswordProvider)
+		if err != nil {
+			return err
+		}
+		if !provider.LoginEnabled {
+			return errLoginDisabled()
+		}
 		user, err := Authenticate(c.Context(), q, in.Username, in.Password)
 		if err != nil {
 			return err
@@ -199,9 +210,9 @@ func patchProfile(d *deps.Deps) fiber.Handler {
 	}
 }
 
-func deleteProfile(d *deps.Deps) fiber.Handler {
+func deleteProfile(d *deps.Deps, revoker Revoker) fiber.Handler {
 	return func(c fiber.Ctx) error {
-		if err := DeleteUser(c.Context(), d, auth.Target(c)); err != nil {
+		if err := DeleteUser(c.Context(), d, revoker, auth.Target(c)); err != nil {
 			return err
 		}
 		if err := auth.EndSession(c, d); err != nil {
@@ -266,6 +277,13 @@ func setPassword(d *deps.Deps) fiber.Handler {
 				return apierr.Validation(fields)
 			}
 			if !hasPassword {
+				provider, err := q.GetLoginProvider(c.Context(), PasswordProvider)
+				if err != nil {
+					return err
+				}
+				if !provider.LinkEnabled {
+					return apierr.New(http.StatusForbidden, "link_disabled", "Adding a password is turned off on this instance.")
+				}
 				return AddPassword(c.Context(), q, d.Now(), userID, username, in.NewPassword)
 			}
 			if !secret.VerifyPassword(*identity.PasswordHash, in.CurrentPassword) {
