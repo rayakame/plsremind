@@ -18,6 +18,8 @@ import (
 )
 
 const (
+	MaxSubitems = 50
+
 	maxTitleLen = 500
 	maxNoteLen  = 10000
 )
@@ -31,6 +33,8 @@ type input struct {
 	DueDate          httpx.Opt[string]   `json:"due_date"`
 	Status           httpx.Opt[string]   `json:"status"`
 	ReminderOverride httpx.Opt[Override] `json:"reminder_override"`
+	// Subitems is only read when creating an item.
+	Subitems []string `json:"subitems"`
 }
 
 // apply validates the sent fields and writes them onto row, which holds the
@@ -97,6 +101,17 @@ func (in input) apply(ctx context.Context, q *sqlc.Queries, now time.Time, row *
 			fields["reminder_override"] = msg
 		}
 		row.ReminderOverride = raw
+	}
+
+	if len(in.Subitems) > MaxSubitems {
+		fields["subitems"] = "An item can have at most 50 subitems."
+	}
+	for i, title := range in.Subitems {
+		clean, ok := CleanSubitemTitle(title)
+		if !ok {
+			fields["subitems"] = "Every subitem title must be 1 to 200 characters."
+		}
+		in.Subitems[i] = clean
 	}
 
 	if len(fields) > 0 {

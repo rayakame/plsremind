@@ -92,3 +92,6 @@ ORDER BY
   CASE WHEN NOT @descending::boolean THEN i.id END ASC,
   CASE WHEN @descending::boolean THEN i.id END DESC
 LIMIT @page_size;
+
+-- name: LockItem :one
+SELECT * FROM items WHERE id = @id AND user_id = @user_id FOR UPDATE;

@@ -4,7 +4,9 @@ package item
 import (
 	"encoding/json"
 	"slices"
+	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -45,6 +47,27 @@ type Subitem struct {
 	Position  int32     `json:"position"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
+}
+
+const maxSubitemTitleLen = 200
+
+func ViewSubitem(row sqlc.Subitem) Subitem {
+	return Subitem{
+		ID:        row.ID,
+		ItemID:    row.ItemID,
+		Title:     row.Title,
+		Done:      row.Done,
+		Position:  row.Position,
+		CreatedAt: row.CreatedAt.UTC(),
+		UpdatedAt: row.UpdatedAt.UTC(),
+	}
+}
+
+// CleanSubitemTitle trims a subitem title and reports whether it is acceptable.
+func CleanSubitemTitle(title string) (string, bool) {
+	title = strings.TrimSpace(title)
+	n := utf8.RuneCountInString(title)
+	return title, n >= 1 && n <= maxSubitemTitleLen
 }
 
 // EffectiveDue is the instant an item is due. An all-day item is due at the

@@ -66,6 +66,18 @@ func create(d *deps.Deps) fiber.Handler {
 			if err != nil {
 				return err
 			}
+			for position, title := range in.Subitems {
+				_, err := q.CreateSubitem(c.Context(), sqlc.CreateSubitemParams{
+					ID:       uuid.Must(uuid.NewV7()),
+					ItemID:   row.ID,
+					Title:    title,
+					Position: int32(position),
+					Now:      now,
+				})
+				if err != nil {
+					return err
+				}
+			}
 			created, err = Load(c.Context(), q, userID, row.ID)
 			if err != nil {
 				return err

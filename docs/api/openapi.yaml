@@ -53,6 +53,14 @@ tags:
       always carries the resulting moment.
 
       Completing an item is a `PATCH` with `status: "done"`.
+  - name: Subitems
+    description: |
+      A one-level checklist inside an item, for example the steps of a deadline. Subitems have
+      no due time and no reminders, and checking them off never completes the item itself.
+  - name: Manual reminders
+    description: |
+      Reminders a user asks for explicitly, in the style of "remind me again in 2 hours". They
+      work for todos and deadlines alike and are independent of the reminder plans.
 paths:
   /info:
     get:
@@ -811,6 +819,166 @@ paths:
           description: The item is gone.
         default:
           $ref: "#/components/responses/Error"
+  /users/{user}/items/{id}/subitems:
+    parameters:
+      - $ref: "#/components/parameters/User"
+      - $ref: "#/components/parameters/Id"
+    post:
+      tags: [Subitems]
+      operationId: createSubitem
+      summary: Add a subitem
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                title:
+                  type: string
+                  description: 1 to 200 characters.
+      responses:
+        "201":
+          description: The new subitem, placed last.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Subitem"
+        default:
+          $ref: "#/components/responses/Error"
+  /users/{user}/items/{id}/subitems/order:
+    parameters:
+      - $ref: "#/components/parameters/User"
+      - $ref: "#/components/parameters/Id"
+    put:
+      tags: [Subitems]
+      operationId: reorderSubitems
+      summary: Set the order of an item's subitems
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Order"
+      responses:
+        "200":
+          description: The subitems in their new order.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Subitem"
+        default:
+          $ref: "#/components/responses/Error"
+  /users/{user}/items/{id}/subitems/{sid}:
+    parameters:
+      - $ref: "#/components/parameters/User"
+      - $ref: "#/components/parameters/Id"
+      - name: sid
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    patch:
+      tags: [Subitems]
+      operationId: updateSubitem
+      summary: Rename a subitem or check it off
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                title:
+                  type: string
+                done:
+                  type: boolean
+      responses:
+        "200":
+          description: The updated subitem.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Subitem"
+        default:
+          $ref: "#/components/responses/Error"
+    delete:
+      tags: [Subitems]
+      operationId: deleteSubitem
+      summary: Delete a subitem
+      responses:
+        "204":
+          description: The subitem is gone.
+        default:
+          $ref: "#/components/responses/Error"
+  /users/{user}/items/{id}/reminders:
+    parameters:
+      - $ref: "#/components/parameters/User"
+      - $ref: "#/components/parameters/Id"
+    get:
+      tags: [Manual reminders]
+      operationId: listReminders
+      summary: List an item's manual reminders
+      responses:
+        "200":
+          description: The reminders, earliest first.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ManualReminder"
+        default:
+          $ref: "#/components/responses/Error"
+    post:
+      tags: [Manual reminders]
+      operationId: createReminder
+      summary: Remind about an item at a chosen time
+      description: Send exactly one of `at` and `in`. Not possible for items that are done.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                at:
+                  type: string
+                  description: A moment in the future, as an RFC 3339 timestamp.
+                in:
+                  type: string
+                  description: A duration from now, such as `2h`.
+      responses:
+        "201":
+          description: The new reminder.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ManualReminder"
+        default:
+          $ref: "#/components/responses/Error"
+  /users/{user}/items/{id}/reminders/{rid}:
+    parameters:
+      - $ref: "#/components/parameters/User"
+      - $ref: "#/components/parameters/Id"
+      - name: rid
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    delete:
+      tags: [Manual reminders]
+      operationId: deleteReminder
+      summary: Cancel a manual reminder
+      responses:
+        "204":
+          description: The reminder is gone.
+        default:
+          $ref: "#/components/responses/Error"
 components:
   securitySchemes:
     session:
@@ -1123,6 +1291,11 @@ components:
         due_date:
           type: [string, "null"]
           description: An all-day deadline, as `YYYY-MM-DD`.
+        subitems:
+          type: array
+          description: Titles of subitems to create with the item. Ignored when updating.
+          items:
+            type: string
         reminder_override:
           oneOf:
             - type: "null"
@@ -1193,5 +1366,21 @@ components:
           type: string
           format: date-time
         updated_at:
+          type: string
+          format: date-time
+    ManualReminder:
+      type: object
+      required: [id, item_id, remind_at, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        item_id:
+          type: string
+          format: uuid
+        remind_at:
+          type: string
+          format: date-time
+        created_at:
           type: string
           format: date-time

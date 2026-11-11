@@ -85,6 +85,13 @@ type LoginProvider struct {
 	IssuerUrl    string
 }
 
+type ManualReminder struct {
+	ID        uuid.UUID
+	ItemID    uuid.UUID
+	RemindAt  time.Time
+	CreatedAt time.Time
+}
+
 type PersonalToken struct {
 	ID         uuid.UUID
 	UserID     uuid.UUID
@@ -108,6 +115,16 @@ type Session struct {
 	CreatedAt  time.Time
 	LastUsedAt time.Time
 	ExpiresAt  time.Time
+}
+
+type Subitem struct {
+	ID        uuid.UUID
+	ItemID    uuid.UUID
+	Title     string
+	Done      bool
+	Position  int32
+	CreatedAt time.Time
+	UpdatedAt time.Time
 }
 
 type User struct {

@@ -32,15 +32,41 @@ func get(ctx context.Context, q *sqlc.Queries, userID, id uuid.UUID) (sqlc.Item,
 	return row, err
 }
 
+// Lock returns one of the user's items and holds its row until the transaction
+// ends, so that changes to its subitems and reminders happen one at a time.
+func Lock(ctx context.Context, q *sqlc.Queries, userID, id uuid.UUID) (sqlc.Item, error) {
+	row, err := q.LockItem(ctx, sqlc.LockItemParams{ID: id, UserID: userID})
+	if db.IsNotFound(err) {
+		return sqlc.Item{}, apierr.NotFound()
+	}
+	return row, err
+}
+
 // Views turns rows of one user into API items.
 func Views(ctx context.Context, q *sqlc.Queries, userID uuid.UUID, rows []sqlc.Item) ([]Item, error) {
 	loc, err := location(ctx, q, userID)
 	if err != nil {
 		return nil, err
 	}
+	ids := make([]uuid.UUID, 0, len(rows))
+	for _, row := range rows {
+		ids = append(ids, row.ID)
+	}
+	subitems, err := q.ListSubitems(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+	byItem := make(map[uuid.UUID][]Subitem, len(rows))
+	for _, sub := range subitems {
+		byItem[sub.ItemID] = append(byItem[sub.ItemID], ViewSubitem(sub))
+	}
 	items := make([]Item, 0, len(rows))
 	for _, row := range rows {
-		items = append(items, view(row, loc))
+		item := view(row, loc)
+		if subs := byItem[row.ID]; subs != nil {
+			item.Subitems = subs
+		}
+		items = append(items, item)
 	}
 	return items, nil
 }

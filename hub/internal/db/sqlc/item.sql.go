@@ -352,6 +352,36 @@ func (q *Queries) ListItemsByPriority(ctx context.Context, arg ListItemsByPriori
 	return items, nil
 }
 
+const lockItem = `-- name: LockItem :one
+SELECT id, user_id, list_id, title, note, priority, due_at, due_date, status, completed_at, reminder_override, created_at, updated_at FROM items WHERE id = $1 AND user_id = $2 FOR UPDATE
+`
+
+type LockItemParams struct {
+	ID     uuid.UUID
+	UserID uuid.UUID
+}
+
+func (q *Queries) LockItem(ctx context.Context, arg LockItemParams) (Item, error) {
+	row := q.db.QueryRow(ctx, lockItem, arg.ID, arg.UserID)
+	var i Item
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.ListID,
+		&i.Title,
+		&i.Note,
+		&i.Priority,
+		&i.DueAt,
+		&i.DueDate,
+		&i.Status,
+		&i.CompletedAt,
+		&i.ReminderOverride,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const moveItemsToList = `-- name: MoveItemsToList :many
 UPDATE items SET list_id = $1, updated_at = $2 WHERE list_id = $3
 RETURNING id, user_id, list_id, title, note, priority, due_at, due_date, status, completed_at, reminder_override, created_at, updated_at
