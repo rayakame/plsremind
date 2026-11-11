@@ -40,7 +40,11 @@ func New(d *deps.Deps) *fiber.App {
 		BodyLimit: bodyLimit,
 		// Access checks compare paths as written, so routing must not be more lenient than they are.
 		CaseSensitive: true,
-		ErrorHandler:  apierr.Handler,
+		// A client that stops sending must not hold a connection open forever.
+		ReadTimeout:  30 * time.Second,
+		WriteTimeout: 30 * time.Second,
+		IdleTimeout:  2 * time.Minute,
+		ErrorHandler: apierr.Handler,
 	}
 	if d.Cfg.ProxyHeader != "" {
 		// Behind a reverse proxy every request comes from the proxy's address. The
@@ -69,22 +73,22 @@ func New(d *deps.Deps) *fiber.App {
 		if path := c.Path(); path == "/api/v1/setup" || strings.HasPrefix(path, "/api/v1/auth/") {
 			return d.RateAnon, c.IP()
 		}
-		if p, ok := auth.From(c); ok {
+		if p, ok := auth.From(c); ok && !auth.Failed(c) {
 			if p.Kind == auth.KindConnection {
 				return d.RateConn, p.CredentialID.String()
 			}
 			return d.RateAuth, p.CredentialID.String()
 		}
 		return d.RateAnon, c.IP()
-	}))
+	}), auth.Reject())
 	api.Get("/info", info(d))
 	user := api.Group("/users/:user", auth.ResolveUser(d))
 
 	admin := api.Group("/admin", auth.RequireAdmin())
 
-	revoker := oauth.NewRevoker(d)
-	account.Register(api, user, admin, d, revoker)
-	oauth.Register(api, user, admin, d, revoker)
+	providers := oauth.NewService(d)
+	account.Register(api, user, admin, d, providers)
+	oauth.Register(api, user, admin, d, providers)
 	token.Register(user, d)
 	list.Register(user, d)
 	plan.Register(user, d)

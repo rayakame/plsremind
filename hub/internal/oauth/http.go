@@ -13,18 +13,18 @@ import (
 	"github.com/rayakame/plsremind/hub/internal/httpx"
 )
 
-func Register(api, user, admin fiber.Router, d *deps.Deps, revoker *Revoker) {
-	api.Get("/auth/oauth/:provider/start", start(d))
-	api.Get("/auth/oauth/:provider/callback", callback(d))
+func Register(api, user, admin fiber.Router, d *deps.Deps, svc *Service) {
+	api.Get("/auth/oauth/:provider/start", start(d, svc))
+	api.Get("/auth/oauth/:provider/callback", callback(d, svc))
 
-	user.Delete("/identities/:id", auth.RequireSession(), unlink(d, revoker))
+	user.Delete("/identities/:id", auth.RequireSession(), unlink(d, svc))
 
 	admin.Get("/providers", listProviders(d))
 	admin.Put("/providers/:key", putProvider(d))
 	admin.Delete("/providers/:key", deleteProvider(d))
 }
 
-func unlink(d *deps.Deps, revoker *Revoker) fiber.Handler {
+func unlink(d *deps.Deps, svc *Service) fiber.Handler {
 	return func(c fiber.Ctx) error {
 		id, err := httpx.ParamUUID(c, "id")
 		if err != nil {
@@ -44,19 +44,21 @@ func unlink(d *deps.Deps, revoker *Revoker) fiber.Handler {
 			if err != nil {
 				return err
 			}
-			all, err := q.ListIdentities(c.Context(), userID)
+			// What counts is whether a login is left, not whether an entry is: an
+			// account linked at a provider with login turned off cannot get back in.
+			usable, err := q.CountUsableLogins(c.Context(), sqlc.CountUsableLoginsParams{UserID: userID, ExceptID: id})
 			if err != nil {
 				return err
 			}
-			if len(all) <= 1 {
-				return apierr.Conflict("last_identity", "This is your only way to log in.")
+			if usable == 0 {
+				return apierr.Conflict("last_identity", "Without this you could no longer log in. Link another account that allows login first.")
 			}
 			return q.DeleteIdentity(c.Context(), id)
 		})
 		if err != nil {
 			return err
 		}
-		revoker.RevokeAll(c.Context(), []sqlc.Identity{removed})
+		svc.RevokeAll(c.Context(), []sqlc.Identity{removed})
 		return c.SendStatus(http.StatusNoContent)
 	}
 }

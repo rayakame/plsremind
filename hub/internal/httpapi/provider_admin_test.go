@@ -79,6 +79,7 @@ func TestPasswordLoginCanBeTurnedOff(t *testing.T) {
 	e := testkit.New(t)
 	enableProvider(t, e, "discord")
 	admin := e.Admin(t)
+	require.Empty(t, admin.OAuthLink(t, "discord").AuthError())
 	require.Equal(t, 200, admin.Do(t, "PUT", "/admin/providers/password", J{"login_enabled": false}).Status)
 	login := e.Do(t, "POST", "/auth/login", J{"username": "root", "password": testkit.Password})
 	require.Equal(t, 403, login.Status)

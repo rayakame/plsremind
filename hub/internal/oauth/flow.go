@@ -48,7 +48,7 @@ func fail(c fiber.Ctx, d *deps.Deps, code string) error {
 	return c.Redirect().Status(http.StatusFound).To(d.Cfg.PublicURL + "/?auth_error=" + url.QueryEscape(code))
 }
 
-func start(d *deps.Deps) fiber.Handler {
+func start(d *deps.Deps, svc *Service) fiber.Handler {
 	return func(c fiber.Ctx) error {
 		intent := c.Query("intent", "login")
 		if intent != "login" && intent != "link" {
@@ -77,7 +77,7 @@ func start(d *deps.Deps) fiber.Handler {
 			return fail(c, d, "login_disabled")
 		}
 
-		provider, err := Build(c.Context(), d, row)
+		provider, err := svc.Build(c.Context(), row)
 		if err != nil {
 			slog.Error("oauth provider unavailable", "provider", row.Key, "err", err)
 			return fail(c, d, "provider_error")
@@ -109,7 +109,7 @@ func start(d *deps.Deps) fiber.Handler {
 	}
 }
 
-func callback(d *deps.Deps) fiber.Handler {
+func callback(d *deps.Deps, svc *Service) fiber.Handler {
 	return func(c fiber.Ctx) error {
 		key := c.Params("provider")
 		state, cookie := c.Query("state"), c.Cookies(stateCookie)
@@ -137,7 +137,7 @@ func callback(d *deps.Deps) fiber.Handler {
 		if err != nil {
 			return fail(c, d, "provider_error")
 		}
-		provider, err := Build(c.Context(), d, row)
+		provider, err := svc.Build(c.Context(), row)
 		if err == nil {
 			var profile Profile
 			profile, err = provider.Exchange(c.Context(), code, stored.Verifier, redirectURL(d, key))

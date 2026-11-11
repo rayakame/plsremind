@@ -68,7 +68,10 @@ func AddPassword(ctx context.Context, q *sqlc.Queries, now time.Time, userID uui
 		PasswordHash: &hash,
 		CreatedAt:    now,
 	})
-	if db.IsUniqueViolation(err) {
+	switch {
+	case db.ViolatedConstraint(err) == "identities_one_password_idx":
+		return apierr.Conflict("password_exists", "This account already has a password.")
+	case db.IsUniqueViolation(err):
 		return apierr.Conflict("username_taken", "This username is already in use.")
 	}
 	return err

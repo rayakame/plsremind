@@ -34,3 +34,9 @@ SELECT * FROM identities WHERE id = @id AND user_id = @user_id;
 
 -- name: DeleteIdentity :exec
 DELETE FROM identities WHERE id = @id;
+
+-- name: CountUsableLogins :one
+SELECT count(*)
+FROM identities i
+JOIN login_providers p ON p.key = i.provider
+WHERE i.user_id = @user_id AND p.login_enabled AND i.id <> @except_id;

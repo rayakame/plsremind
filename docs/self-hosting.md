@@ -27,7 +27,7 @@ The hub now listens on port 8080 and applies its database migrations on every st
 | `PLSREMIND_PUBLIC_URL` | yes | The address users reach the hub at, without a trailing slash. Login redirects and the browser security check depend on it being exact. |
 | `PLSREMIND_SECRET_KEY` | yes | 32 random bytes, base64 encoded. |
 | `PLSREMIND_LISTEN_ADDR` | no | Defaults to `:8080`. |
-| `PLSREMIND_PROXY_HEADER` | no | Set to `X-Forwarded-For` when the hub runs behind a reverse proxy, so rate limits count per visitor instead of per proxy. The header is only trusted from loopback and private addresses. |
+| `PLSREMIND_PROXY_HEADER` | behind a proxy | Set to `X-Forwarded-For` whenever the hub runs behind a reverse proxy. Without it every visitor appears to come from the proxy and they all share one rate limit, so logging in fails for everyone once a few people try at the same time. The header is only trusted from loopback and private addresses. |
 
 Compose also reads `POSTGRES_PASSWORD` and `PLSREMIND_PORT` from `.env`.
 

@@ -27,7 +27,9 @@ func isWrite(method string) bool {
 	return method != fiber.MethodGet && method != fiber.MethodHead && method != fiber.MethodOptions
 }
 
-// Middleware identifies the caller. Requests without valid credentials continue anonymously.
+// Middleware identifies the caller. Requests without credentials continue anonymously.
+// A request with bad credentials is not answered here: the failure is kept for Reject,
+// so that the rate limiter in between still gets to count the attempt.
 func Middleware(d *deps.Deps) fiber.Handler {
 	return func(c fiber.Ctx) error {
 		var p Principal
@@ -40,15 +42,31 @@ func Middleware(d *deps.Deps) fiber.Handler {
 			// Browsers name the page a request comes from. A write from another site is
 			// refused even without a session, so a foreign page cannot log a visitor in.
 			if origin := c.Get(fiber.HeaderOrigin); isWrite(c.Method()) && origin != "" && origin != d.Cfg.PublicURL {
-				return errCSRF()
+				err = errCSRF()
+			} else {
+				p, ok, err = fromSession(c, d)
 			}
-			p, ok, err = fromSession(c, d)
 		}
-		if err != nil {
-			return err
-		}
-		if ok {
+		switch {
+		case err != nil:
+			c.Locals(failureKey, err)
+		case ok:
 			c.Locals(principalKey, p)
+		}
+		return c.Next()
+	}
+}
+
+// Failed reports whether the request carried credentials that were refused.
+func Failed(c fiber.Ctx) bool {
+	return c.Locals(failureKey) != nil
+}
+
+// Reject answers a request whose credentials Middleware refused.
+func Reject() fiber.Handler {
+	return func(c fiber.Ctx) error {
+		if err, ok := c.Locals(failureKey).(error); ok {
+			return err
 		}
 		return c.Next()
 	}

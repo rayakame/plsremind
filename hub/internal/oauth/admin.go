@@ -10,6 +10,7 @@ import (
 	"github.com/gofiber/fiber/v3"
 
 	"github.com/rayakame/plsremind/hub/internal/apierr"
+	"github.com/rayakame/plsremind/hub/internal/auth"
 	"github.com/rayakame/plsremind/hub/internal/db"
 	"github.com/rayakame/plsremind/hub/internal/db/sqlc"
 	"github.com/rayakame/plsremind/hub/internal/deps"
@@ -124,7 +125,19 @@ func putProvider(d *deps.Deps) fiber.Handler {
 					}
 				}
 				if in.IssuerURL != nil && row.Type == "oidc" {
-					row.IssuerUrl = strings.TrimRight(strings.TrimSpace(*in.IssuerURL), "/")
+					issuer := strings.TrimRight(strings.TrimSpace(*in.IssuerURL), "/")
+					if issuer != row.IssuerUrl && row.IssuerUrl != "" {
+						// User IDs are only unique per issuer. Pointing the provider elsewhere
+						// would hand existing accounts to whoever has the same ID there.
+						linked, err := q.CountProviderIdentities(c.Context(), key)
+						if err != nil {
+							return err
+						}
+						if linked > 0 {
+							return apierr.Conflict("provider_in_use", "Users have accounts linked through this provider, so its issuer cannot change. Add a new provider instead.")
+						}
+					}
+					row.IssuerUrl = issuer
 				}
 				if row.IssuerUrl != "" && !validIssuer(row.IssuerUrl) {
 					fields["issuer_url"] = "Must be an http or https URL."
@@ -159,6 +172,14 @@ func putProvider(d *deps.Deps) fiber.Handler {
 			}
 			if methods == 0 {
 				return apierr.Conflict("last_login_method", "At least one way to log in must stay enabled.")
+			}
+			admin, _ := auth.From(c)
+			usable, err := q.CountUsableLogins(c.Context(), sqlc.CountUsableLoginsParams{UserID: admin.UserID})
+			if err != nil {
+				return err
+			}
+			if usable == 0 {
+				return apierr.Conflict("last_login_method", "You could no longer log in yourself. Link your account at a provider that stays enabled first.")
 			}
 			return nil
 		})

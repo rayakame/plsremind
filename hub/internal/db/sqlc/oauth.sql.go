@@ -54,6 +54,25 @@ func (q *Queries) CountProviderIdentities(ctx context.Context, provider string) 
 	return count, err
 }
 
+const countUsableLogins = `-- name: CountUsableLogins :one
+SELECT count(*)
+FROM identities i
+JOIN login_providers p ON p.key = i.provider
+WHERE i.user_id = $1 AND p.login_enabled AND i.id <> $2
+`
+
+type CountUsableLoginsParams struct {
+	UserID   uuid.UUID
+	ExceptID uuid.UUID
+}
+
+func (q *Queries) CountUsableLogins(ctx context.Context, arg CountUsableLoginsParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countUsableLogins, arg.UserID, arg.ExceptID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createOAuthState = `-- name: CreateOAuthState :exec
 INSERT INTO oauth_states (state_hash, provider, intent, user_id, invite_code, verifier, expires_at)
 VALUES ($1, $2, $3, $4, $5, $6, $7)

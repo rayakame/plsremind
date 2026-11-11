@@ -23,6 +23,7 @@ CREATE TABLE identities (
     UNIQUE (provider, external_id)
 );
 CREATE INDEX identities_user_id_idx ON identities (user_id);
+CREATE UNIQUE INDEX identities_one_password_idx ON identities (user_id) WHERE provider = 'password';
 
 CREATE TABLE sessions (
     id uuid PRIMARY KEY,

@@ -41,10 +41,18 @@ type FakeOAuth struct {
 	server *httptest.Server
 	key    *rsa.PrivateKey
 
-	mu         sync.Mutex
-	challenges map[string]string
-	tokens     int
-	revoked    []string
+	mu          sync.Mutex
+	challenges  map[string]string
+	tokens      int
+	revoked     []string
+	discoveries int
+}
+
+// Discoveries counts how often the OIDC configuration was fetched.
+func (f *FakeOAuth) Discoveries() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.discoveries
 }
 
 // Revoked lists the tokens the hub asked the provider to revoke.
@@ -193,6 +201,9 @@ func (f *FakeOAuth) revokeGitHub(w http.ResponseWriter, r *http.Request) {
 }
 
 func (f *FakeOAuth) discovery(w http.ResponseWriter, _ *http.Request) {
+	f.mu.Lock()
+	f.discoveries++
+	f.mu.Unlock()
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]any{
 		"issuer":                                f.IssuerURL,

@@ -25,14 +25,20 @@ func isActiveAdmin(u sqlc.User) bool {
 	return u.Role == "admin" && !u.Disabled
 }
 
-// guardLastAdmin fails when user is the only active admin. It serializes
-// concurrent admin changes so two of them cannot both pass the check.
+// lockedUser takes the lock that serializes every change to who is an admin and
+// only then reads the user. Reading first would let a change that is still in
+// flight slip past the last-admin check.
+func lockedUser(ctx context.Context, q *sqlc.Queries, id uuid.UUID) (sqlc.User, error) {
+	if err := q.AdminLock(ctx); err != nil {
+		return sqlc.User{}, err
+	}
+	return getUser(ctx, q, id)
+}
+
+// guardLastAdmin fails when user is the only active admin. The caller holds the admin lock.
 func guardLastAdmin(ctx context.Context, q *sqlc.Queries, user sqlc.User) error {
 	if !isActiveAdmin(user) {
 		return nil
-	}
-	if err := q.AdminLock(ctx); err != nil {
-		return err
 	}
 	admins, err := q.CountActiveAdmins(ctx)
 	if err != nil {
@@ -62,7 +68,7 @@ type Revoker interface {
 func DeleteUser(ctx context.Context, d *deps.Deps, revoker Revoker, id uuid.UUID) error {
 	var identities []sqlc.Identity
 	err := db.Tx(ctx, d.Pool, func(q *sqlc.Queries) error {
-		user, err := getUser(ctx, q, id)
+		user, err := lockedUser(ctx, q, id)
 		if err != nil {
 			return err
 		}
@@ -186,7 +192,7 @@ func patchUserAccess(d *deps.Deps) fiber.Handler {
 		}
 		var updated sqlc.User
 		err = db.Tx(c.Context(), d.Pool, func(q *sqlc.Queries) error {
-			user, err := getUser(c.Context(), q, id)
+			user, err := lockedUser(c.Context(), q, id)
 			if err != nil {
 				return err
 			}

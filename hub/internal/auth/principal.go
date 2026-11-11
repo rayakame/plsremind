@@ -27,6 +27,7 @@ type localKey int
 const (
 	principalKey localKey = iota
 	targetKey
+	failureKey
 )
 
 func From(c fiber.Ctx) (Principal, bool) {

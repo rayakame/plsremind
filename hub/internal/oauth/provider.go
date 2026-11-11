@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"unicode/utf8"
 
 	"golang.org/x/oauth2"
@@ -44,22 +45,38 @@ func Configured(row sqlc.LoginProvider) bool {
 	}
 }
 
+// Service builds provider clients and remembers what it learned about OIDC providers.
+type Service struct {
+	d *deps.Deps
+
+	mu        sync.Mutex
+	discovery map[string]discovered
+}
+
+func NewService(d *deps.Deps) *Service {
+	return &Service{d: d, discovery: map[string]discovered{}}
+}
+
 // Build creates the client for a configured provider.
-func Build(ctx context.Context, d *deps.Deps, row sqlc.LoginProvider) (Provider, error) {
+func (s *Service) Build(ctx context.Context, row sqlc.LoginProvider) (Provider, error) {
 	if !Configured(row) || row.Type == "password" {
 		return nil, errors.New("provider is not configured for oauth")
 	}
-	clientSecret, err := d.Box().Open(row.ClientSecret)
+	clientSecret, err := s.d.Box().Open(row.ClientSecret)
 	if err != nil {
 		return nil, fmt.Errorf("decrypt client secret: %w", err)
 	}
 	switch row.Type {
 	case "github":
-		return newGitHub(d, row.ClientID, string(clientSecret)), nil
+		return newGitHub(s.d, row.ClientID, string(clientSecret)), nil
 	case "discord":
-		return newDiscord(d, row.ClientID, string(clientSecret)), nil
+		return newDiscord(s.d, row.ClientID, string(clientSecret)), nil
 	case "oidc":
-		return newOIDC(ctx, d, row.IssuerUrl, row.ClientID, string(clientSecret))
+		provider, err := s.discover(row)
+		if err != nil {
+			return nil, err
+		}
+		return newOIDC(s.d, provider, row.ClientID, string(clientSecret)), nil
 	}
 	return nil, fmt.Errorf("unknown provider type %q", row.Type)
 }
