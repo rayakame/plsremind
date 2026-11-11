@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v3"
+	"github.com/google/uuid"
 
 	"github.com/rayakame/plsremind/hub/internal/apierr"
 	"github.com/rayakame/plsremind/hub/internal/db"
@@ -55,6 +56,8 @@ func fromBearer(c fiber.Ctx, d *deps.Deps, header string) (Principal, error) {
 	switch {
 	case strings.HasPrefix(token, secret.PrefixPersonal):
 		return fromPersonalToken(c, d, token)
+	case strings.HasPrefix(token, secret.PrefixConnection):
+		return fromConnectionToken(c, d, token)
 	default:
 		return Principal{}, apierr.Unauthorized()
 	}
@@ -79,6 +82,24 @@ func fromPersonalToken(c fiber.Ctx, d *deps.Deps, token string) (Principal, erro
 		}
 	}
 	return Principal{Kind: KindPersonalToken, UserID: row.UserID, Role: row.Role, CredentialID: row.TokenID}, nil
+}
+
+func fromConnectionToken(c fiber.Ctx, d *deps.Deps, token string) (Principal, error) {
+	q := d.Q()
+	conn, err := q.GetConnectionByToken(c.Context(), secret.Hash(token))
+	if db.IsNotFound(err) {
+		return Principal{}, apierr.Unauthorized()
+	}
+	if err != nil {
+		return Principal{}, err
+	}
+	now := d.Now()
+	if conn.LastUsedAt == nil || now.Sub(*conn.LastUsedAt) >= tokenTouchInterval {
+		if err := q.TouchConnection(c.Context(), sqlc.TouchConnectionParams{ID: conn.ID, Now: &now}); err != nil {
+			return Principal{}, err
+		}
+	}
+	return Principal{Kind: KindConnection, CredentialID: conn.ID, ConnectionProvider: conn.Provider}, nil
 }
 
 func fromSession(c fiber.Ctx, d *deps.Deps) (Principal, bool, error) {
@@ -147,17 +168,52 @@ func RequireAdmin() fiber.Handler {
 	}
 }
 
+// connectionMayUse is the complete list of what a connection can do for a user:
+// their lists and items, plus reading the profile and the reminder plans.
+// Everything about the account itself stays out of reach.
+func connectionMayUse(method, rest string) bool {
+	for _, prefix := range []string{"/lists", "/items"} {
+		if rest == prefix || strings.HasPrefix(rest, prefix+"/") {
+			return true
+		}
+	}
+	return method == fiber.MethodGet && (rest == "" || rest == "/reminder-plans")
+}
+
 // ResolveUser maps the :user path parameter to the user the request acts on.
+// Sessions and personal tokens always act on "@me". A connection names the hub
+// ID of a user who has granted it access.
 func ResolveUser(d *deps.Deps) fiber.Handler {
 	return func(c fiber.Ctx) error {
 		p, ok := From(c)
 		if !ok {
 			return apierr.Unauthorized()
 		}
-		if c.Params("user") != "@me" {
+		param := c.Params("user")
+		if p.Kind != KindConnection {
+			if param != "@me" {
+				return apierr.NotFound()
+			}
+			c.Locals(targetKey, p.UserID)
+			return c.Next()
+		}
+
+		userID, err := uuid.Parse(param)
+		if err != nil {
 			return apierr.NotFound()
 		}
-		c.Locals(targetKey, p.UserID)
+		_, rest, _ := strings.Cut(c.Path(), "/users/"+param)
+		if !connectionMayUse(c.Method(), strings.TrimSuffix(rest, "/")) {
+			return apierr.Forbidden()
+		}
+		_, err = d.Q().GetGrantedUser(c.Context(), sqlc.GetGrantedUserParams{ConnectionID: p.CredentialID, UserID: userID})
+		if db.IsNotFound(err) {
+			return apierr.NotFound()
+		}
+		if err != nil {
+			return err
+		}
+		c.Locals(targetKey, userID)
 		return c.Next()
 	}
 }

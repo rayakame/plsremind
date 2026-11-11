@@ -17,8 +17,10 @@ type Deps struct {
 	Now  func() time.Time
 	HTTP *http.Client
 
-	// RateAuth limits authenticated callers per credential, RateAnon everyone else per IP.
+	// RateAuth limits sessions and personal tokens per credential, RateConn
+	// connections per token, RateAnon everyone else per IP.
 	RateAuth *ratelimit.Limiter
+	RateConn *ratelimit.Limiter
 	RateAnon *ratelimit.Limiter
 }
 

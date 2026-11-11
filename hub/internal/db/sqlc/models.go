@@ -11,6 +11,23 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type Connection struct {
+	ID          uuid.UUID
+	Name        string
+	Description string
+	Provider    string
+	Enabled     bool
+	TokenHash   []byte
+	CreatedAt   time.Time
+	LastUsedAt  *time.Time
+}
+
+type ConnectionGrant struct {
+	UserID       uuid.UUID
+	ConnectionID uuid.UUID
+	Enabled      bool
+}
+
 type Event struct {
 	UserID    uuid.UUID
 	Seq       int64

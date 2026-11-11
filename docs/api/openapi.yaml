@@ -61,6 +61,16 @@ tags:
     description: |
       Reminders a user asks for explicitly, in the style of "remind me again in 2 hours". They
       work for todos and deadlines alike and are independent of the reminder plans.
+  - name: Connections
+    description: |
+      A connection is an integration the admin installs for everyone, for example the Discord
+      bot. It authenticates with its own token and names the user it acts for in the path:
+      `/users/{hub user id}/...`.
+
+      A connection can act for a user as soon as the user has linked an account at the
+      connection's provider, and the user can switch that off. It reaches the user's lists,
+      items, subitems and manual reminders and can read the profile and the reminder plans.
+      It cannot touch anything else. Users it may not act for look like they do not exist.
 paths:
   /info:
     get:
@@ -979,6 +989,194 @@ paths:
           description: The reminder is gone.
         default:
           $ref: "#/components/responses/Error"
+  /connection/users/lookup:
+    get:
+      tags: [Connections]
+      operationId: lookupUser
+      summary: Find the hub user behind an external account
+      description: |
+        Only for connection tokens. Searches the accounts at the connection's own provider,
+        so the Discord bot passes a Discord user ID.
+      security:
+        - bearer: []
+      parameters:
+        - name: external_id
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: The user.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [id, display_name, timezone]
+                properties:
+                  id:
+                    type: string
+                    format: uuid
+                  display_name:
+                    type: string
+                  timezone:
+                    type: string
+        default:
+          $ref: "#/components/responses/Error"
+  /users/{user}/connections:
+    parameters:
+      - $ref: "#/components/parameters/User"
+    get:
+      tags: [Connections]
+      operationId: listUserConnections
+      summary: List the connections available to a user
+      responses:
+        "200":
+          description: The connections the admin has installed and enabled.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/UserConnection"
+        default:
+          $ref: "#/components/responses/Error"
+  /users/{user}/connections/{id}:
+    parameters:
+      - $ref: "#/components/parameters/User"
+      - $ref: "#/components/parameters/Id"
+    put:
+      tags: [Connections]
+      operationId: setConnectionGrant
+      summary: Allow or forbid a connection to act for the user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                enabled:
+                  type: boolean
+      responses:
+        "200":
+          description: The connection with the new setting.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserConnection"
+        default:
+          $ref: "#/components/responses/Error"
+  /admin/connections:
+    get:
+      tags: [Admin]
+      operationId: listConnections
+      summary: List connections
+      security:
+        - session: []
+      responses:
+        "200":
+          description: All connections, without their tokens.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Connection"
+        default:
+          $ref: "#/components/responses/Error"
+    post:
+      tags: [Admin]
+      operationId: createConnection
+      summary: Install a connection
+      security:
+        - session: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  description: 1 to 64 characters.
+                description:
+                  type: string
+                  description: At most 500 characters.
+                provider:
+                  type: string
+                  description: The provider whose accounts the connection works with, for example `discord`.
+      responses:
+        "201":
+          description: The connection. `token` is only shown this once.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Connection"
+        default:
+          $ref: "#/components/responses/Error"
+  /admin/connections/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    patch:
+      tags: [Admin]
+      operationId: updateConnection
+      summary: Change or disable a connection
+      security:
+        - session: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                description:
+                  type: string
+                enabled:
+                  type: boolean
+      responses:
+        "200":
+          description: The updated connection.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Connection"
+        default:
+          $ref: "#/components/responses/Error"
+    delete:
+      tags: [Admin]
+      operationId: deleteConnection
+      summary: Remove a connection
+      security:
+        - session: []
+      responses:
+        "204":
+          description: The connection is gone and its token no longer works.
+        default:
+          $ref: "#/components/responses/Error"
+  /admin/connections/{id}/token:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    post:
+      tags: [Admin]
+      operationId: rotateConnectionToken
+      summary: Replace a connection's token
+      description: The old token stops working immediately.
+      security:
+        - session: []
+      responses:
+        "200":
+          description: The connection with its new `token`, shown only this once.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Connection"
+        default:
+          $ref: "#/components/responses/Error"
 components:
   securitySchemes:
     session:
@@ -1384,3 +1582,46 @@ components:
         created_at:
           type: string
           format: date-time
+    Connection:
+      type: object
+      required: [id, name, description, provider, enabled, created_at, last_used_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        description:
+          type: string
+        provider:
+          type: string
+        enabled:
+          type: boolean
+        token:
+          type: string
+          description: Only present right after creating the connection or replacing its token.
+        created_at:
+          type: string
+          format: date-time
+        last_used_at:
+          type: [string, "null"]
+          format: date-time
+    UserConnection:
+      type: object
+      required: [id, name, description, provider, linked, enabled]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        description:
+          type: string
+        provider:
+          type: string
+        linked:
+          type: boolean
+          description: Whether the user has an account at the connection's provider.
+        enabled:
+          type: boolean
+          description: Whether the connection may act for the user right now.

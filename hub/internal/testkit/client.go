@@ -1,8 +1,10 @@
 package testkit
 
 import (
+	"context"
 	"testing"
 
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 )
 
@@ -14,6 +16,8 @@ type Client struct {
 	opts    []ReqOpt
 	UserID  string
 	Session string
+	// ID is the connection's ID for clients made by Connection.
+	ID string
 }
 
 func (c *Client) Do(t *testing.T, method, path string, body any, opts ...ReqOpt) *Resp {
@@ -54,4 +58,22 @@ func (e *Env) User(t *testing.T, username string) *Client {
 	})
 	require.Equal(t, 201, r.Status, string(r.Body))
 	return e.sessionClient(r)
+}
+
+// Connection installs a connection for the given provider and returns a client using its token.
+func (e *Env) Connection(t *testing.T, provider string) *Client {
+	t.Helper()
+	r := e.Admin(t).Do(t, "POST", "/admin/connections", J{"name": provider + " bot", "provider": provider})
+	require.Equal(t, 201, r.Status, string(r.Body))
+	return &Client{env: e, opts: []ReqOpt{Bearer(r.Get("token").String())}, ID: r.Get("id").String()}
+}
+
+// GiveIdentity links an external account to a user without going through OAuth.
+func (e *Env) GiveIdentity(t *testing.T, userID, provider, externalID string) {
+	t.Helper()
+	_, err := e.Pool.Exec(context.Background(),
+		`INSERT INTO identities (id, user_id, provider, external_id, display_name, created_at)
+		 VALUES ($1, $2, $3, $4, $4, $5)`,
+		uuid.Must(uuid.NewV7()), userID, provider, externalID, e.Clock.Now())
+	require.NoError(t, err)
 }
