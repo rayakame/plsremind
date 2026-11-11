@@ -36,6 +36,13 @@ tags:
     description: |
       Every item lives in exactly one list. Each user has an inbox that cannot be renamed or
       deleted; items created without a list go there.
+  - name: Reminder plans
+    description: |
+      A plan says when the hub reminds about a deadline on its own. There is one plan per
+      priority. Each has a default that a user can replace, and a single item can override it.
+
+      Every deadline is also announced at the moment it is due. `follow_up` controls nagging
+      after that: `daily` every 24 hours, `twice_daily` every 12 hours, for at most one week.
 paths:
   /info:
     get:
@@ -592,6 +599,65 @@ paths:
           description: The list is gone.
         default:
           $ref: "#/components/responses/Error"
+  /users/{user}/reminder-plans:
+    parameters:
+      - $ref: "#/components/parameters/User"
+    get:
+      tags: [Reminder plans]
+      operationId: listReminderPlans
+      summary: Get the plans for all three priorities
+      responses:
+        "200":
+          description: The plans, in the order low, normal, high.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ReminderPlan"
+        default:
+          $ref: "#/components/responses/Error"
+  /users/{user}/reminder-plans/{priority}:
+    parameters:
+      - $ref: "#/components/parameters/User"
+      - name: priority
+        in: path
+        required: true
+        schema:
+          $ref: "#/components/schemas/Priority"
+    put:
+      tags: [Reminder plans]
+      operationId: setReminderPlan
+      summary: Replace the plan of one priority
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                before:
+                  $ref: "#/components/schemas/Before"
+                follow_up:
+                  type: string
+      responses:
+        "200":
+          description: The stored plan, with `before` sorted and without duplicates.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReminderPlan"
+        default:
+          $ref: "#/components/responses/Error"
+    delete:
+      tags: [Reminder plans]
+      operationId: resetReminderPlan
+      summary: Go back to the default plan
+      responses:
+        "204":
+          description: The default applies again.
+        default:
+          $ref: "#/components/responses/Error"
 components:
   securitySchemes:
     session:
@@ -850,3 +916,25 @@ components:
           items:
             type: string
             format: uuid
+    Priority:
+      type: string
+      enum: [low, normal, high]
+    Before:
+      type: array
+      description: How long before the due time to remind. At most 10 entries, each between `1m` and `365d`.
+      items:
+        $ref: "#/components/schemas/Duration"
+    ReminderPlan:
+      type: object
+      required: [priority, before, follow_up, is_default]
+      properties:
+        priority:
+          $ref: "#/components/schemas/Priority"
+        before:
+          $ref: "#/components/schemas/Before"
+        follow_up:
+          type: string
+          enum: [never, daily, twice_daily]
+        is_default:
+          type: boolean
+          description: False once the user replaced the plan.

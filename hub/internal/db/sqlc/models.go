@@ -78,6 +78,13 @@ type PersonalToken struct {
 	LastUsedAt *time.Time
 }
 
+type ReminderPlan struct {
+	UserID        uuid.UUID
+	Priority      string
+	BeforeSeconds []int32
+	FollowUp      string
+}
+
 type Session struct {
 	ID         uuid.UUID
 	UserID     uuid.UUID

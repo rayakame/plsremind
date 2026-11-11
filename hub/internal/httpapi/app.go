@@ -10,6 +10,7 @@ import (
 	"github.com/rayakame/plsremind/hub/internal/auth"
 	"github.com/rayakame/plsremind/hub/internal/deps"
 	"github.com/rayakame/plsremind/hub/internal/list"
+	"github.com/rayakame/plsremind/hub/internal/plan"
 	"github.com/rayakame/plsremind/hub/internal/ratelimit"
 	"github.com/rayakame/plsremind/hub/internal/token"
 )
@@ -46,6 +47,7 @@ func New(d *deps.Deps) *fiber.App {
 	account.Register(api, user, admin, d)
 	token.Register(user, d)
 	list.Register(user, d)
+	plan.Register(user, d)
 
 	app.Use("/api", func(fiber.Ctx) error { return fiber.ErrNotFound })
 	return app
