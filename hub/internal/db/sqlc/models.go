@@ -11,6 +11,16 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type Event struct {
+	UserID    uuid.UUID
+	Seq       int64
+	Type      string
+	Payload   []byte
+	ActorKind string
+	ActorID   uuid.UUID
+	CreatedAt time.Time
+}
+
 type Identity struct {
 	ID            uuid.UUID
 	UserID        uuid.UUID

@@ -48,3 +48,139 @@ func (q *Queries) CreateList(ctx context.Context, arg CreateListParams) (List, e
 	)
 	return i, err
 }
+
+const deleteList = `-- name: DeleteList :exec
+DELETE FROM lists WHERE id = $1
+`
+
+func (q *Queries) DeleteList(ctx context.Context, id uuid.UUID) error {
+	_, err := q.db.Exec(ctx, deleteList, id)
+	return err
+}
+
+const getInbox = `-- name: GetInbox :one
+SELECT id, user_id, name, position, is_inbox, created_at, updated_at FROM lists WHERE user_id = $1 AND is_inbox
+`
+
+func (q *Queries) GetInbox(ctx context.Context, userID uuid.UUID) (List, error) {
+	row := q.db.QueryRow(ctx, getInbox, userID)
+	var i List
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.Name,
+		&i.Position,
+		&i.IsInbox,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getList = `-- name: GetList :one
+SELECT id, user_id, name, position, is_inbox, created_at, updated_at FROM lists WHERE id = $1 AND user_id = $2
+`
+
+type GetListParams struct {
+	ID     uuid.UUID
+	UserID uuid.UUID
+}
+
+func (q *Queries) GetList(ctx context.Context, arg GetListParams) (List, error) {
+	row := q.db.QueryRow(ctx, getList, arg.ID, arg.UserID)
+	var i List
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.Name,
+		&i.Position,
+		&i.IsInbox,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const listLists = `-- name: ListLists :many
+SELECT id, user_id, name, position, is_inbox, created_at, updated_at FROM lists WHERE user_id = $1 ORDER BY position, id
+`
+
+func (q *Queries) ListLists(ctx context.Context, userID uuid.UUID) ([]List, error) {
+	rows, err := q.db.Query(ctx, listLists, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []List
+	for rows.Next() {
+		var i List
+		if err := rows.Scan(
+			&i.ID,
+			&i.UserID,
+			&i.Name,
+			&i.Position,
+			&i.IsInbox,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const renameList = `-- name: RenameList :one
+UPDATE lists SET name = $1, updated_at = $2 WHERE id = $3
+RETURNING id, user_id, name, position, is_inbox, created_at, updated_at
+`
+
+type RenameListParams struct {
+	Name string
+	Now  time.Time
+	ID   uuid.UUID
+}
+
+func (q *Queries) RenameList(ctx context.Context, arg RenameListParams) (List, error) {
+	row := q.db.QueryRow(ctx, renameList, arg.Name, arg.Now, arg.ID)
+	var i List
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.Name,
+		&i.Position,
+		&i.IsInbox,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const setListPosition = `-- name: SetListPosition :one
+UPDATE lists SET position = $1, updated_at = $2 WHERE id = $3
+RETURNING id, user_id, name, position, is_inbox, created_at, updated_at
+`
+
+type SetListPositionParams struct {
+	Position int32
+	Now      time.Time
+	ID       uuid.UUID
+}
+
+func (q *Queries) SetListPosition(ctx context.Context, arg SetListPositionParams) (List, error) {
+	row := q.db.QueryRow(ctx, setListPosition, arg.Position, arg.Now, arg.ID)
+	var i List
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.Name,
+		&i.Position,
+		&i.IsInbox,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}

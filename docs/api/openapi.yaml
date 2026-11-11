@@ -32,6 +32,10 @@ tags:
     description: The profile and settings of a user.
   - name: Admin
     description: Instance administration. Needs a dashboard session of an admin.
+  - name: Lists
+    description: |
+      Every item lives in exactly one list. Each user has an inbox that cannot be renamed or
+      deleted; items created without a list go there.
 paths:
   /info:
     get:
@@ -494,6 +498,100 @@ paths:
           description: The token no longer works.
         default:
           $ref: "#/components/responses/Error"
+  /users/{user}/lists:
+    parameters:
+      - $ref: "#/components/parameters/User"
+    get:
+      tags: [Lists]
+      operationId: listLists
+      summary: List all lists
+      responses:
+        "200":
+          description: The lists in display order.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/List"
+        default:
+          $ref: "#/components/responses/Error"
+    post:
+      tags: [Lists]
+      operationId: createList
+      summary: Create a list
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ListName"
+      responses:
+        "201":
+          description: The new list, placed last.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/List"
+        default:
+          $ref: "#/components/responses/Error"
+  /users/{user}/lists/order:
+    parameters:
+      - $ref: "#/components/parameters/User"
+    put:
+      tags: [Lists]
+      operationId: reorderLists
+      summary: Set the display order of all lists
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Order"
+      responses:
+        "200":
+          description: The lists in their new order.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/List"
+        default:
+          $ref: "#/components/responses/Error"
+  /users/{user}/lists/{id}:
+    parameters:
+      - $ref: "#/components/parameters/User"
+      - $ref: "#/components/parameters/Id"
+    patch:
+      tags: [Lists]
+      operationId: renameList
+      summary: Rename a list
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ListName"
+      responses:
+        "200":
+          description: The renamed list.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/List"
+        default:
+          $ref: "#/components/responses/Error"
+    delete:
+      tags: [Lists]
+      operationId: deleteList
+      summary: Delete a list
+      description: Items in the list are moved to the inbox, not deleted.
+      responses:
+        "204":
+          description: The list is gone.
+        default:
+          $ref: "#/components/responses/Error"
 components:
   securitySchemes:
     session:
@@ -716,3 +814,39 @@ components:
         last_used_at:
           type: [string, "null"]
           format: date-time
+    List:
+      type: object
+      required: [id, name, position, is_inbox, created_at, updated_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        position:
+          type: integer
+        is_inbox:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    ListName:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          description: 1 to 100 characters.
+    Order:
+      type: object
+      required: [ids]
+      properties:
+        ids:
+          type: array
+          description: Every ID exactly once, in the wanted order.
+          items:
+            type: string
+            format: uuid
