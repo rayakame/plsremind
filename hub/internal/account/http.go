@@ -307,8 +307,13 @@ func setPassword(d *deps.Deps) fiber.Handler {
 			if err := q.UpdatePasswordHash(c.Context(), sqlc.UpdatePasswordHashParams{ID: identity.ID, PasswordHash: &hash}); err != nil {
 				return err
 			}
-			// Whoever changes a password after a scare expects other devices to be logged out.
+			// Whoever changes a password after a scare expects everything else to be
+			// logged out. That includes personal tokens: someone with a stolen session
+			// could have made one to keep their access.
 			p, _ := auth.From(c)
+			if err := q.DeleteUserPersonalTokens(c.Context(), userID); err != nil {
+				return err
+			}
 			return q.DeleteOtherSessions(c.Context(), sqlc.DeleteOtherSessionsParams{UserID: userID, KeepID: p.CredentialID})
 		})
 		if err != nil {

@@ -3,6 +3,7 @@ package duration
 
 import (
 	"errors"
+	"math"
 	"strconv"
 	"strings"
 	"time"
@@ -44,6 +45,10 @@ func Parse(s string) (time.Duration, error) {
 			}
 		}
 		if unit < 0 {
+			return 0, ErrInvalid
+		}
+		// A count this large would wrap around and come out as a short, valid-looking duration.
+		if n > int64((math.MaxInt64-total)/units[unit].size) {
 			return 0, ErrInvalid
 		}
 		total += time.Duration(n) * units[unit].size

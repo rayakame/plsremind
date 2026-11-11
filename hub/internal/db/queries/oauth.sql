@@ -40,3 +40,9 @@ SELECT count(*)
 FROM identities i
 JOIN login_providers p ON p.key = i.provider
 WHERE i.user_id = @user_id AND p.login_enabled AND i.id <> @except_id;
+
+-- name: LockLoginProvider :one
+SELECT * FROM login_providers WHERE key = @key FOR UPDATE;
+
+-- name: HoldLoginProvider :one
+SELECT * FROM login_providers WHERE key = @key FOR SHARE;

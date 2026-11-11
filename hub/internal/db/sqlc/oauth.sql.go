@@ -144,6 +144,26 @@ func (q *Queries) GetUserIdentity(ctx context.Context, arg GetUserIdentityParams
 	return i, err
 }
 
+const holdLoginProvider = `-- name: HoldLoginProvider :one
+SELECT key, type, name, login_enabled, link_enabled, client_id, client_secret, issuer_url FROM login_providers WHERE key = $1 FOR SHARE
+`
+
+func (q *Queries) HoldLoginProvider(ctx context.Context, key string) (LoginProvider, error) {
+	row := q.db.QueryRow(ctx, holdLoginProvider, key)
+	var i LoginProvider
+	err := row.Scan(
+		&i.Key,
+		&i.Type,
+		&i.Name,
+		&i.LoginEnabled,
+		&i.LinkEnabled,
+		&i.ClientID,
+		&i.ClientSecret,
+		&i.IssuerUrl,
+	)
+	return i, err
+}
+
 const listLoginProviders = `-- name: ListLoginProviders :many
 SELECT key, type, name, login_enabled, link_enabled, client_id, client_secret, issuer_url FROM login_providers ORDER BY type = 'password' DESC, key
 `
@@ -175,6 +195,26 @@ func (q *Queries) ListLoginProviders(ctx context.Context) ([]LoginProvider, erro
 		return nil, err
 	}
 	return items, nil
+}
+
+const lockLoginProvider = `-- name: LockLoginProvider :one
+SELECT key, type, name, login_enabled, link_enabled, client_id, client_secret, issuer_url FROM login_providers WHERE key = $1 FOR UPDATE
+`
+
+func (q *Queries) LockLoginProvider(ctx context.Context, key string) (LoginProvider, error) {
+	row := q.db.QueryRow(ctx, lockLoginProvider, key)
+	var i LoginProvider
+	err := row.Scan(
+		&i.Key,
+		&i.Type,
+		&i.Name,
+		&i.LoginEnabled,
+		&i.LinkEnabled,
+		&i.ClientID,
+		&i.ClientSecret,
+		&i.IssuerUrl,
+	)
+	return i, err
 }
 
 const refreshIdentity = `-- name: RefreshIdentity :exec

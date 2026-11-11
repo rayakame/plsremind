@@ -85,7 +85,7 @@ func putProvider(d *deps.Deps) fiber.Handler {
 				return err
 			}
 			fields := map[string]string{}
-			row, err := q.GetLoginProvider(c.Context(), key)
+			row, err := q.LockLoginProvider(c.Context(), key)
 			switch {
 			case db.IsNotFound(err):
 				// Only OIDC providers can be added; the others are built in.
@@ -125,7 +125,9 @@ func putProvider(d *deps.Deps) fiber.Handler {
 					}
 				}
 				if in.IssuerURL != nil && row.Type == "oidc" {
-					issuer := strings.TrimRight(strings.TrimSpace(*in.IssuerURL), "/")
+					// Kept exactly as given: it must equal the issuer the provider publishes,
+					// and some publish one that ends with a slash.
+					issuer := strings.TrimSpace(*in.IssuerURL)
 					if issuer != row.IssuerUrl && row.IssuerUrl != "" {
 						// User IDs are only unique per issuer. Pointing the provider elsewhere
 						// would hand existing accounts to whoever has the same ID there.
@@ -197,7 +199,9 @@ func deleteProvider(d *deps.Deps) fiber.Handler {
 			if err := q.AdminLock(c.Context()); err != nil {
 				return err
 			}
-			row, err := q.GetLoginProvider(c.Context(), key)
+			// Holding the row makes a login that is finishing right now either complete
+			// first, and then count below, or find the provider gone.
+			row, err := q.LockLoginProvider(c.Context(), key)
 			if db.IsNotFound(err) {
 				return apierr.NotFound()
 			}

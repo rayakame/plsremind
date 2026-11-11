@@ -33,3 +33,12 @@ func TestFormat(t *testing.T) {
 		require.Equal(t, want, duration.Format(d))
 	}
 }
+
+func TestParseRejectsOverflow(t *testing.T) {
+	_, err := duration.Parse("213504d")
+	require.Error(t, err)
+	_, err = duration.Parse("106752d")
+	require.Error(t, err)
+	_, err = duration.Parse("106751d2147483647m")
+	require.Error(t, err)
+}

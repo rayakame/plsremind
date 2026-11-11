@@ -74,6 +74,15 @@ func (q *Queries) DeletePersonalToken(ctx context.Context, arg DeletePersonalTok
 	return result.RowsAffected(), nil
 }
 
+const deleteUserPersonalTokens = `-- name: DeleteUserPersonalTokens :exec
+DELETE FROM personal_tokens WHERE user_id = $1
+`
+
+func (q *Queries) DeleteUserPersonalTokens(ctx context.Context, userID uuid.UUID) error {
+	_, err := q.db.Exec(ctx, deleteUserPersonalTokens, userID)
+	return err
+}
+
 const getPersonalTokenUser = `-- name: GetPersonalTokenUser :one
 SELECT t.id AS token_id, t.last_used_at, u.id AS user_id, u.role, u.disabled
 FROM personal_tokens t

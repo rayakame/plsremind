@@ -4,6 +4,7 @@ package ratelimit
 import (
 	"net/http"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -51,7 +52,8 @@ func (l *Limiter) Allow(key string) (remaining int, reset time.Time, ok bool) {
 	w := l.windows[key]
 	if w == nil || !now.Before(w.reset) {
 		w = &window{reset: now.Add(l.window)}
-		l.windows[key] = w
+		// The key may point into a request buffer that is reused once the request ends.
+		l.windows[strings.Clone(key)] = w
 	}
 	if w.count >= l.limit {
 		return 0, w.reset, false

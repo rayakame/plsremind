@@ -136,7 +136,7 @@ func TestIssuerCannotChangeWhileAccountsAreLinked(t *testing.T) {
 	moved := admin.Do(t, "PUT", "/admin/providers/authentik", J{"issuer_url": other.IssuerURL})
 	require.Equal(t, 409, moved.Status)
 	require.Equal(t, "provider_in_use", moved.Get("error.code").String())
-	same := admin.Do(t, "PUT", "/admin/providers/authentik", J{"issuer_url": fake.IssuerURL + "/", "name": "Authentik"})
+	same := admin.Do(t, "PUT", "/admin/providers/authentik", J{"issuer_url": fake.IssuerURL, "name": "Authentik"})
 	require.Equal(t, 200, same.Status, "sending the unchanged issuer is fine")
 }
 
@@ -172,4 +172,81 @@ func TestAdminCannotDisableTheirOnlyLogin(t *testing.T) {
 	require.Equal(t, 200, admin.Do(t, "PUT", "/admin/providers/password", J{"login_enabled": false}).Status)
 	back := admin.Do(t, "PUT", "/admin/providers/discord", J{"login_enabled": false})
 	require.Equal(t, 409, back.Status)
+}
+
+func TestIssuerIsStoredAsGiven(t *testing.T) {
+	e := testkit.New(t)
+	admin := e.Admin(t)
+	// Some providers, Auth0 among them, publish an issuer that ends with a slash,
+	// and the issuer has to match what they publish exactly.
+	r := admin.Do(t, "PUT", "/admin/providers/auth0", J{"type": "oidc", "name": "Auth0", "issuer_url": " https://tenant.example.com/ "})
+	require.Equal(t, 200, r.Status)
+	require.Equal(t, "https://tenant.example.com/", r.Get("issuer_url").String())
+}
+
+func TestPasswordChangeRevokesPersonalTokens(t *testing.T) {
+	e := testkit.New(t)
+	admin := e.Admin(t)
+	mia := e.User(t, "mia")
+	mint := func() testkit.ReqOpt {
+		return testkit.Bearer(mia.Do(t, "POST", "/users/@me/tokens", J{"name": "cli"}).Get("token").String())
+	}
+
+	stolen := mint()
+	require.Equal(t, 204, mia.Do(t, "PUT", "/users/@me/password", J{"current_password": testkit.Password, "new_password": "a brand new password"}).Status)
+	require.Equal(t, 401, e.Do(t, "GET", "/users/@me", nil, stolen).Status, "a token made before the change must stop working")
+	require.Equal(t, int64(0), mia.Do(t, "GET", "/users/@me/tokens", nil).Get("#").Int())
+
+	again := mint()
+	require.Equal(t, 204, admin.Do(t, "PUT", "/admin/users/"+mia.UserID+"/password", J{"new_password": "reset by the admin"}).Status)
+	require.Equal(t, 401, e.Do(t, "GET", "/users/@me", nil, again).Status)
+}
+
+func TestMovingAnItemIntoAListBeingDeletedNeverFails(t *testing.T) {
+	u := testkit.New(t).User(t, "mia")
+	for round := 0; round < 25; round++ {
+		list := u.Do(t, "POST", "/users/@me/lists", J{"name": "tmp"}).Get("id").String()
+		item := u.Do(t, "POST", "/users/@me/items", J{"title": "x", "list_id": list}).Get("id").String()
+		var patch, del int
+		var wg sync.WaitGroup
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			patch = u.Do(t, "PATCH", "/users/@me/items/"+item, J{"list_id": list, "title": "y"}, testkit.NoContract()).Status
+		}()
+		go func() {
+			defer wg.Done()
+			del = u.Do(t, "DELETE", "/users/@me/lists/"+list, nil, testkit.NoContract()).Status
+		}()
+		wg.Wait()
+		require.Equal(t, 204, del, "round %d", round)
+		require.Contains(t, []int{200, 422}, patch, "round %d", round)
+	}
+}
+
+func TestIdentitiesNeverOutliveTheirProvider(t *testing.T) {
+	e := testkit.New(t)
+	admin := e.Admin(t)
+	e.Deps.RateAnon = ratelimit.New(1000, time.Minute, e.Clock.Now)
+	ctx := context.Background()
+	for round := 0; round < 12; round++ {
+		key := fmt.Sprintf("idp%d", round)
+		oidcProvider(t, e, key)
+		path, opts := e.OAuthCallback(t, e.OAuthStart(t, key, "intent=login"))
+		var wg sync.WaitGroup
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			e.Do(t, "GET", path, nil, append(opts, testkit.NoContract())...)
+		}()
+		go func() {
+			defer wg.Done()
+			admin.Do(t, "DELETE", "/admin/providers/"+key, nil, testkit.NoContract())
+		}()
+		wg.Wait()
+		var orphans int
+		require.NoError(t, e.Pool.QueryRow(ctx,
+			"SELECT count(*) FROM identities i WHERE NOT EXISTS (SELECT 1 FROM login_providers p WHERE p.key = i.provider)").Scan(&orphans))
+		require.Zero(t, orphans, "round %d left an identity for a deleted provider", round)
+	}
 }

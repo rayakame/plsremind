@@ -44,9 +44,13 @@ func create(d *deps.Deps) fiber.Handler {
 			if err != nil {
 				return err
 			}
+			list, listValid, err := in.holdList(c.Context(), q, userID)
+			if err != nil {
+				return err
+			}
 			now := d.Now()
 			row := sqlc.Item{ID: uuid.Must(uuid.NewV7()), UserID: userID, ListID: inbox.ID, Priority: "normal", Status: "open"}
-			if err := in.apply(c.Context(), q, now, &row); err != nil {
+			if err := in.apply(now, &row, list, listValid); err != nil {
 				return err
 			}
 			row, err = q.CreateItem(c.Context(), sqlc.CreateItemParams{
@@ -121,12 +125,16 @@ func update(d *deps.Deps) fiber.Handler {
 		userID := auth.Target(c)
 		var updated Item
 		err = db.Tx(c.Context(), d.Pool, func(q *sqlc.Queries) error {
+			list, listValid, err := in.holdList(c.Context(), q, userID)
+			if err != nil {
+				return err
+			}
 			row, err := Lock(c.Context(), q, userID, id)
 			if err != nil {
 				return err
 			}
 			now := d.Now()
-			if err := in.apply(c.Context(), q, now, &row); err != nil {
+			if err := in.apply(now, &row, list, listValid); err != nil {
 				return err
 			}
 			_, err = q.UpdateItem(c.Context(), sqlc.UpdateItemParams{

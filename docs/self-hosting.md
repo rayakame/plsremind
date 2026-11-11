@@ -3,6 +3,16 @@
 The hub is a single program that needs a PostgreSQL database. The quickest way to run
 both is Docker Compose.
 
+## Before you start
+
+The hub speaks plain HTTP on port 8080 and expects a reverse proxy in front of it that
+terminates HTTPS, for example Caddy, Traefik or nginx. Point the proxy at port 8080 and
+use the address people will type into their browser as `PLSREMIND_PUBLIC_URL`. The
+examples below use `https://todo.example.com`.
+
+To try the hub on your own machine first, leave `PLSREMIND_PUBLIC_URL` out. It then
+defaults to `http://localhost:8080`, and every example works with that address instead.
+
 ## Start
 
 ```sh
@@ -13,6 +23,7 @@ cd plsremind/deploy
 # secrets cannot be read again.
 echo "PLSREMIND_SECRET_KEY=$(openssl rand -base64 32)" > .env
 echo "PLSREMIND_PUBLIC_URL=https://todo.example.com" >> .env
+echo "PLSREMIND_PROXY_HEADER=X-Forwarded-For" >> .env
 
 docker compose up -d
 ```
@@ -29,7 +40,9 @@ The hub now listens on port 8080 and applies its database migrations on every st
 | `PLSREMIND_LISTEN_ADDR` | no | Defaults to `:8080`. |
 | `PLSREMIND_PROXY_HEADER` | behind a proxy | Set to `X-Forwarded-For` whenever the hub runs behind a reverse proxy. Without it every visitor appears to come from the proxy and they all share one rate limit, so logging in fails for everyone once a few people try at the same time. The header is only trusted from loopback and private addresses. |
 
-Compose also reads `POSTGRES_PASSWORD` and `PLSREMIND_PORT` from `.env`.
+Compose also reads `POSTGRES_PASSWORD` and `PLSREMIND_PORT` from `.env`. Set
+`POSTGRES_PASSWORD` before the first start: the database keeps the password it was
+created with.
 
 Everything else is configured through the API by an admin and stored in the database.
 

@@ -159,9 +159,18 @@ func callback(d *deps.Deps, svc *Service) fiber.Handler {
 }
 
 // finish applies a verified profile: it logs the user in, creates their account or links the identity.
-func finish(c fiber.Ctx, d *deps.Deps, row sqlc.LoginProvider, stored sqlc.OauthState, profile Profile) error {
+func finish(c fiber.Ctx, d *deps.Deps, used sqlc.LoginProvider, stored sqlc.OauthState, profile Profile) error {
 	token := d.Box().Seal([]byte(profile.Token))
 	return db.Tx(c.Context(), d.Pool, func(q *sqlc.Queries) error {
+		// The provider may have been deleted or pointed at another issuer while the
+		// user was away at it. The profile is only good for the provider as it was used.
+		row, err := q.HoldLoginProvider(c.Context(), used.Key)
+		if db.IsNotFound(err) || (err == nil && row.IssuerUrl != used.IssuerUrl) {
+			return apierr.Conflict("provider_error", "The provider changed during the login.")
+		}
+		if err != nil {
+			return err
+		}
 		now := d.Now()
 		identity, err := q.GetIdentity(c.Context(), sqlc.GetIdentityParams{Provider: row.Key, ExternalID: profile.ExternalID})
 		known := err == nil

@@ -258,6 +258,9 @@ func resetPassword(d *deps.Deps) fiber.Handler {
 			if err := q.UpdatePasswordHash(c.Context(), sqlc.UpdatePasswordHashParams{ID: identity.ID, PasswordHash: &hash}); err != nil {
 				return err
 			}
+			if err := q.DeleteUserPersonalTokens(c.Context(), id); err != nil {
+				return err
+			}
 			return q.DeleteUserSessions(c.Context(), id)
 		})
 		if err != nil {

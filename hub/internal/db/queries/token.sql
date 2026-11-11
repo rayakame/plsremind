@@ -20,3 +20,6 @@ WHERE t.token_hash = @token_hash;
 
 -- name: TouchPersonalToken :exec
 UPDATE personal_tokens SET last_used_at = @now WHERE id = @id;
+
+-- name: DeleteUserPersonalTokens :exec
+DELETE FROM personal_tokens WHERE user_id = @user_id;

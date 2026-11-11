@@ -37,9 +37,29 @@ type input struct {
 	Subitems []string `json:"subitems"`
 }
 
+// holdList checks the list the item should go to and keeps it from being deleted
+// until the transaction ends. It must run before the item is locked: deleting a
+// list locks the list first and its items second, and the same order here means
+// the two can never wait on each other.
+func (in input) holdList(ctx context.Context, q *sqlc.Queries, userID uuid.UUID) (id uuid.UUID, valid bool, err error) {
+	if !in.ListID.HasValue() {
+		return uuid.Nil, true, nil
+	}
+	id, err = uuid.Parse(in.ListID.Val)
+	if err != nil {
+		return uuid.Nil, false, nil
+	}
+	_, err = q.HoldList(ctx, sqlc.HoldListParams{ID: id, UserID: userID})
+	if db.IsNotFound(err) {
+		return uuid.Nil, false, nil
+	}
+	return id, err == nil, err
+}
+
 // apply validates the sent fields and writes them onto row, which holds the
-// item's current state or the defaults of a new one.
-func (in input) apply(ctx context.Context, q *sqlc.Queries, now time.Time, row *sqlc.Item) error {
+// item's current state or the defaults of a new one. list and listValid are
+// what holdList returned.
+func (in input) apply(now time.Time, row *sqlc.Item, list uuid.UUID, listValid bool) error {
 	fields := map[string]string{}
 
 	if in.Title.Set {
@@ -56,20 +76,11 @@ func (in input) apply(ctx context.Context, q *sqlc.Queries, now time.Time, row *
 		}
 	}
 
-	if in.ListID.HasValue() {
-		id, err := uuid.Parse(in.ListID.Val)
-		if err == nil {
-			// The share lock makes a concurrent deletion of the list wait, or lets us see it is gone.
-			_, err = q.HoldList(ctx, sqlc.HoldListParams{ID: id, UserID: row.UserID})
-			if err != nil && !db.IsNotFound(err) {
-				return err
-			}
-		}
-		if err != nil {
-			fields["list_id"] = "Must be one of your lists."
-		} else {
-			row.ListID = id
-		}
+	switch {
+	case !listValid:
+		fields["list_id"] = "Must be one of your lists."
+	case list != uuid.Nil:
+		row.ListID = list
 	}
 
 	if in.Priority.Set {
