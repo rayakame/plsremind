@@ -188,3 +188,41 @@ func TestConnectionCannotReachDisabledUser(t *testing.T) {
 	require.Equal(t, 404, bot.Do(t, "GET", "/connection/users/lookup?external_id=1234", nil).Status)
 	require.Equal(t, 404, bot.Do(t, "GET", "/users/"+mia.UserID+"/items", nil).Status)
 }
+
+func TestConnectionAllowlistIgnoresPathCase(t *testing.T) {
+	e := testkit.New(t)
+	mia := e.User(t, "mia")
+	bot := e.Connection(t, "discord")
+	e.GiveIdentity(t, mia.UserID, "discord", "1234")
+	for _, path := range []string{
+		"/USERS/" + mia.UserID + "/identities",
+		"/Users/" + mia.UserID + "/connections",
+		"/users/" + mia.UserID + "/IDENTITIES",
+		"/users/" + mia.UserID + "/Tokens",
+	} {
+		r := bot.Do(t, "GET", path, nil, testkit.NoContract())
+		require.Contains(t, []int{403, 404}, r.Status, path)
+		require.NotContains(t, string(r.Body), "external_id", path)
+	}
+}
+
+func TestConnectionSeesOnlyWhatItNeedsOfTheProfile(t *testing.T) {
+	e := testkit.New(t)
+	mia := e.User(t, "mia")
+	bot := e.Connection(t, "discord")
+	e.GiveIdentity(t, mia.UserID, "discord", "1234")
+	r := bot.Do(t, "GET", "/users/"+mia.UserID, nil)
+	require.Equal(t, 200, r.Status)
+	require.Equal(t, "mia", r.Get("display_name").String())
+	require.Equal(t, "UTC", r.Get("timezone").String())
+	require.Equal(t, "22:00", r.Get("quiet_hours.start").String())
+	require.False(t, r.Get("role").Exists())
+	require.False(t, r.Get("created_at").Exists())
+}
+
+func TestLookupRejectsNUL(t *testing.T) {
+	e := testkit.New(t)
+	bot := e.Connection(t, "discord")
+	r := bot.Do(t, "GET", "/connection/users/lookup?external_id=a%00b", nil, testkit.NoContract())
+	require.Equal(t, 400, r.Status)
+}

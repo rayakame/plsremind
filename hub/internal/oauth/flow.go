@@ -82,6 +82,11 @@ func start(d *deps.Deps) fiber.Handler {
 			slog.Error("oauth provider unavailable", "provider", row.Key, "err", err)
 			return fail(c, d, "provider_error")
 		}
+		// The invite stays usable until the flow ends, so it is kept encrypted like any other secret.
+		var invite []byte
+		if code := c.Query("invite_code"); code != "" {
+			invite = d.Box().Seal([]byte(code))
+		}
 		state, hash := secret.NewToken("")
 		verifier := oauth2.GenerateVerifier()
 		expires := d.Now().Add(stateLifetime)
@@ -90,7 +95,7 @@ func start(d *deps.Deps) fiber.Handler {
 			Provider:   row.Key,
 			Intent:     intent,
 			UserID:     userID,
-			InviteCode: c.Query("invite_code"),
+			InviteCode: invite,
 			Verifier:   verifier,
 			ExpiresAt:  expires,
 		})
@@ -213,7 +218,15 @@ func finish(c fiber.Ctx, d *deps.Deps, row sqlc.LoginProvider, stored sqlc.Oauth
 			return auth.StartSession(c, d, q, user.ID)
 		}
 
-		redeem, err := account.AdmitNewUser(c.Context(), q, now, stored.InviteCode)
+		var invite string
+		if stored.InviteCode != nil {
+			plain, err := d.Box().Open(stored.InviteCode)
+			if err != nil {
+				return err
+			}
+			invite = string(plain)
+		}
+		redeem, err := account.AdmitNewUser(c.Context(), q, now, invite)
 		if err != nil {
 			return err
 		}

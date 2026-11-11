@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
+	"github.com/rayakame/plsremind/hub/internal/ratelimit"
 	"github.com/rayakame/plsremind/hub/internal/testkit"
 )
 
@@ -148,4 +149,46 @@ func TestNoPlaintextSecretsInDB(t *testing.T) {
 	require.NoError(t, e.Pool.QueryRow(ctx, "SELECT token_hash FROM sessions").Scan(&tokenHash))
 	require.NotContains(t, string(tokenHash), admin.Session)
 	require.Len(t, tokenHash, 32)
+}
+
+func TestLoginRejectsCrossSiteRequests(t *testing.T) {
+	e := testkit.New(t)
+	e.Admin(t)
+	body := J{"username": "root", "password": testkit.Password}
+	r := e.Do(t, "POST", "/auth/login", body, testkit.Header("Origin", "https://evil.example"))
+	require.Equal(t, 403, r.Status)
+	require.Equal(t, "csrf_failed", r.Get("error.code").String())
+	require.Empty(t, r.Cookie("plsr_session"))
+	for _, path := range []string{"/auth/register", "/setup", "/auth/logout"} {
+		require.Equal(t, 403, e.Do(t, "POST", path, body, testkit.Header("Origin", "https://evil.example")).Status, path)
+	}
+	noOrigin := e.Do(t, "POST", "/auth/login", body, testkit.Header("Origin", ""))
+	require.Equal(t, 200, noOrigin.Status, "tools that are not browsers send no Origin")
+}
+
+func TestLoginThrottleIgnoresCredentials(t *testing.T) {
+	e := testkit.New(t)
+	e.Admin(t)
+	mia := e.User(t, "mia")
+	tok := mia.Do(t, "POST", "/users/@me/tokens", J{"name": "cli"}).Get("token").String()
+	e.Deps.RateAnon = ratelimit.New(2, time.Minute, e.Clock.Now)
+	wrong := J{"username": "root", "password": "wrong wrong wrong"}
+	require.Equal(t, 401, mia.Do(t, "POST", "/auth/login", wrong).Status)
+	require.Equal(t, 401, e.Do(t, "POST", "/auth/login", wrong, testkit.Bearer(tok)).Status)
+	require.Equal(t, 429, mia.Do(t, "POST", "/auth/login", wrong).Status)
+	require.Equal(t, 429, e.Do(t, "POST", "/auth/register", J{"username": "x1x", "password": testkit.Password}, testkit.Bearer(tok)).Status)
+	require.Equal(t, 200, mia.Do(t, "GET", "/users/@me", nil).Status, "other endpoints keep the credential's own budget")
+}
+
+func TestChangingPasswordEndsOtherSessions(t *testing.T) {
+	e := testkit.New(t)
+	mia := e.User(t, "mia")
+	other := e.Do(t, "POST", "/auth/login", J{"username": "mia", "password": testkit.Password})
+	otherSession := testkit.Cookie("plsr_session", other.Cookie("plsr_session"))
+	require.Equal(t, 200, e.Do(t, "GET", "/users/@me", nil, otherSession).Status)
+
+	changed := mia.Do(t, "PUT", "/users/@me/password", J{"current_password": testkit.Password, "new_password": "a brand new password"})
+	require.Equal(t, 204, changed.Status)
+	require.Equal(t, 401, e.Do(t, "GET", "/users/@me", nil, otherSession).Status)
+	require.Equal(t, 200, mia.Do(t, "GET", "/users/@me", nil).Status, "the session that made the change stays")
 }

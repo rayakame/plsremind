@@ -19,6 +19,10 @@ func errDisabled() error {
 	return apierr.New(http.StatusForbidden, "account_disabled", "This account is disabled.")
 }
 
+func errCSRF() error {
+	return apierr.New(http.StatusForbidden, "csrf_failed", "The request did not come from this site.")
+}
+
 func isWrite(method string) bool {
 	return method != fiber.MethodGet && method != fiber.MethodHead && method != fiber.MethodOptions
 }
@@ -33,6 +37,11 @@ func Middleware(d *deps.Deps) fiber.Handler {
 			p, err = fromBearer(c, d, header)
 			ok = err == nil
 		} else {
+			// Browsers name the page a request comes from. A write from another site is
+			// refused even without a session, so a foreign page cannot log a visitor in.
+			if origin := c.Get(fiber.HeaderOrigin); isWrite(c.Method()) && origin != "" && origin != d.Cfg.PublicURL {
+				return errCSRF()
+			}
 			p, ok, err = fromSession(c, d)
 		}
 		if err != nil {
@@ -120,7 +129,7 @@ func fromSession(c fiber.Ctx, d *deps.Deps) (Principal, bool, error) {
 		return Principal{}, false, errDisabled()
 	}
 	if isWrite(c.Method()) && c.Get(fiber.HeaderOrigin) != d.Cfg.PublicURL {
-		return Principal{}, false, apierr.New(http.StatusForbidden, "csrf_failed", "The request did not come from this site.")
+		return Principal{}, false, errCSRF()
 	}
 	if now.Sub(row.LastUsedAt) >= sessionRefresh {
 		err := q.TouchSession(c.Context(), sqlc.TouchSessionParams{ID: row.SessionID, Now: now, ExpiresAt: now.Add(sessionLifetime)})
@@ -202,8 +211,8 @@ func ResolveUser(d *deps.Deps) fiber.Handler {
 		if err != nil {
 			return apierr.NotFound()
 		}
-		_, rest, _ := strings.Cut(c.Path(), "/users/"+param)
-		if !connectionMayUse(c.Method(), strings.TrimSuffix(rest, "/")) {
+		_, rest, found := strings.Cut(c.Path(), "/users/"+param)
+		if !found || !connectionMayUse(c.Method(), strings.TrimSuffix(rest, "/")) {
 			return apierr.Forbidden()
 		}
 		_, err = d.Q().GetGrantedUser(c.Context(), sqlc.GetGrantedUserParams{ConnectionID: p.CredentialID, UserID: userID})

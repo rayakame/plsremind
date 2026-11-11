@@ -22,3 +22,9 @@ SELECT key, type, name FROM login_providers WHERE login_enabled ORDER BY type = 
 
 -- name: GetLoginProvider :one
 SELECT * FROM login_providers WHERE key = @key;
+
+-- name: DeleteOtherSessions :exec
+DELETE FROM sessions WHERE user_id = @user_id AND id <> @keep_id;
+
+-- name: ProbeTimezone :one
+SELECT (now() AT TIME ZONE @name::text)::text;

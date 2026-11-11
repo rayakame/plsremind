@@ -59,7 +59,8 @@ func (in input) apply(ctx context.Context, q *sqlc.Queries, now time.Time, row *
 	if in.ListID.HasValue() {
 		id, err := uuid.Parse(in.ListID.Val)
 		if err == nil {
-			_, err = q.GetList(ctx, sqlc.GetListParams{ID: id, UserID: row.UserID})
+			// The share lock makes a concurrent deletion of the list wait, or lets us see it is gone.
+			_, err = q.HoldList(ctx, sqlc.HoldListParams{ID: id, UserID: row.UserID})
 			if err != nil && !db.IsNotFound(err) {
 				return err
 			}

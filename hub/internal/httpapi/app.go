@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v3"
@@ -23,13 +24,23 @@ import (
 
 var Version = "dev"
 
+// rejectNUL keeps NUL bytes out of path and query values, which PostgreSQL cannot store in text.
+func rejectNUL(c fiber.Ctx) error {
+	if strings.Contains(c.OriginalURL(), "%00") {
+		return fiber.NewError(fiber.StatusBadRequest, "The URL must not contain NUL characters.")
+	}
+	return c.Next()
+}
+
 const bodyLimit = 1 << 20
 
 func New(d *deps.Deps) *fiber.App {
 	cfg := fiber.Config{
-		AppName:      "plsremind",
-		BodyLimit:    bodyLimit,
-		ErrorHandler: apierr.Handler,
+		AppName:   "plsremind",
+		BodyLimit: bodyLimit,
+		// Access checks compare paths as written, so routing must not be more lenient than they are.
+		CaseSensitive: true,
+		ErrorHandler:  apierr.Handler,
 	}
 	if d.Cfg.ProxyHeader != "" {
 		// Behind a reverse proxy every request comes from the proxy's address. The
@@ -52,7 +63,12 @@ func New(d *deps.Deps) *fiber.App {
 		d.RateAnon = ratelimit.New(20, time.Minute, d.Now)
 	}
 
-	api := app.Group("/api/v1", auth.Middleware(d), ratelimit.Middleware(d.Now, func(c fiber.Ctx) (*ratelimit.Limiter, string) {
+	api := app.Group("/api/v1", rejectNUL, auth.Middleware(d), ratelimit.Middleware(d.Now, func(c fiber.Ctx) (*ratelimit.Limiter, string) {
+		// Logging in and signing up are always counted per address. Otherwise anyone
+		// with an account could guess passwords on their own credential's larger budget.
+		if path := c.Path(); path == "/api/v1/setup" || strings.HasPrefix(path, "/api/v1/auth/") {
+			return d.RateAnon, c.IP()
+		}
 		if p, ok := auth.From(c); ok {
 			if p.Kind == auth.KindConnection {
 				return d.RateConn, p.CredentialID.String()

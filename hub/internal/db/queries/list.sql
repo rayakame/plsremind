@@ -22,3 +22,9 @@ RETURNING *;
 
 -- name: DeleteList :exec
 DELETE FROM lists WHERE id = @id;
+
+-- name: LockList :one
+SELECT * FROM lists WHERE id = @id AND user_id = @user_id FOR UPDATE;
+
+-- name: HoldList :one
+SELECT * FROM lists WHERE id = @id AND user_id = @user_id FOR SHARE;

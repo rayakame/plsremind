@@ -57,7 +57,7 @@ func register(d *deps.Deps) fiber.Handler {
 		if err := httpx.Body(c, &in); err != nil {
 			return err
 		}
-		if err := in.normalize(); err != nil {
+		if err := in.normalize(c.Context(), d.Q()); err != nil {
 			return err
 		}
 		var user sqlc.User

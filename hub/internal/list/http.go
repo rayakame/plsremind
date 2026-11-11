@@ -160,7 +160,7 @@ func remove(d *deps.Deps) fiber.Handler {
 			if err != nil {
 				return err
 			}
-			moved, err := item.MoveAll(c.Context(), q, now, userID, id, inbox.ID)
+			moved, err := item.MoveAll(c.Context(), q, now, id, inbox.ID)
 			if err != nil {
 				return err
 			}

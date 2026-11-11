@@ -121,7 +121,7 @@ func update(d *deps.Deps) fiber.Handler {
 		userID := auth.Target(c)
 		var updated Item
 		err = db.Tx(c.Context(), d.Pool, func(q *sqlc.Queries) error {
-			row, err := get(c.Context(), q, userID, id)
+			row, err := Lock(c.Context(), q, userID, id)
 			if err != nil {
 				return err
 			}
@@ -166,7 +166,7 @@ func remove(d *deps.Deps) fiber.Handler {
 		}
 		userID := auth.Target(c)
 		err = db.Tx(c.Context(), d.Pool, func(q *sqlc.Queries) error {
-			if _, err := get(c.Context(), q, userID, id); err != nil {
+			if _, err := Lock(c.Context(), q, userID, id); err != nil {
 				return err
 			}
 			if err := q.DeleteItem(c.Context(), id); err != nil {
@@ -302,7 +302,7 @@ func index(d *deps.Deps) fiber.Handler {
 		if err != nil {
 			return err
 		}
-		items, err := Views(c.Context(), q, userID, rows)
+		items, err := Views(c.Context(), q, rows)
 		if err != nil {
 			return err
 		}

@@ -64,7 +64,7 @@ type CreateOAuthStateParams struct {
 	Provider   string
 	Intent     string
 	UserID     *uuid.UUID
-	InviteCode string
+	InviteCode []byte
 	Verifier   string
 	ExpiresAt  time.Time
 }

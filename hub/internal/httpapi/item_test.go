@@ -2,6 +2,7 @@ package httpapi_test
 
 import (
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -321,4 +322,148 @@ func TestDeletingListMovesItemsToInbox(t *testing.T) {
 	tail := ev[len(ev)-3:]
 	require.Equal(t, []string{"item.updated", "item.updated", "list.deleted"}, []string{tail[0].Type, tail[1].Type, tail[2].Type})
 	require.Equal(t, inbox, tail[0].Payload.Get("list_id").String())
+}
+
+func TestAllDayDueWhenMidnightIsSkippedOrRepeated(t *testing.T) {
+	u := testkit.New(t).User(t, "mia")
+	require.Equal(t, 200, u.Do(t, "PATCH", "/users/@me", J{"timezone": "America/Havana"}).Status)
+	// Cuba moves its clocks at midnight: 2026-03-08 has no 00:00, 2026-11-01 has it twice.
+	for date, want := range map[string]string{
+		"2026-03-07": "2026-03-08T04:59:59Z",
+		"2026-10-31": "2026-11-01T03:59:59Z",
+		"2026-06-15": "2026-06-16T03:59:59Z",
+		"2026-12-15": "2026-12-16T04:59:59Z",
+	} {
+		r := u.Do(t, "POST", "/users/@me/items", J{"title": date, "due_date": date})
+		require.Equal(t, 201, r.Status)
+		require.Equal(t, want, r.Get("due_at").String(), date)
+	}
+	before := u.Do(t, "GET", "/users/@me/items?due_before=2026-03-08T05:00:00Z", nil)
+	require.Len(t, ids(before, "data.#.id"), 1, "filters agree with the due_at that responses show")
+	none := u.Do(t, "GET", "/users/@me/items?due_before=2026-03-08T04:59:59Z", nil)
+	require.Empty(t, ids(none, "data.#.id"))
+}
+
+func TestDuePagingTerminatesInMidnightTransitionZone(t *testing.T) {
+	u := testkit.New(t).User(t, "mia")
+	u.Do(t, "PATCH", "/users/@me", J{"timezone": "America/Havana"})
+	for _, date := range []string{"2026-03-07", "2026-03-07", "2026-03-07", "2026-10-31", "2026-10-31"} {
+		u.Do(t, "POST", "/users/@me/items", J{"title": "x", "due_date": date})
+	}
+	for _, order := range []string{"asc", "desc"} {
+		seen := map[string]bool{}
+		page := u.Do(t, "GET", "/users/@me/items?sort=due&limit=1&order="+order, nil)
+		for pages := 0; ; pages++ {
+			require.Less(t, pages, 8, "paging must end")
+			for _, id := range ids(page, "data.#.id") {
+				require.False(t, seen[id], "an item came twice")
+				seen[id] = true
+			}
+			next := page.Get("next_cursor").String()
+			if next == "" {
+				break
+			}
+			page = u.Do(t, "GET", "/users/@me/items?sort=due&limit=1&order="+order+"&cursor="+next, nil)
+		}
+		require.Len(t, seen, 5, order)
+	}
+}
+
+func TestTimezoneMustBeARealZoneName(t *testing.T) {
+	u := testkit.New(t).User(t, "mia")
+	r := u.Do(t, "PATCH", "/users/@me", J{"timezone": "Local"})
+	require.Equal(t, 422, r.Status)
+	ok := u.Do(t, "PATCH", "/users/@me", J{"timezone": "Asia/Kolkata"})
+	require.Equal(t, 200, ok.Status)
+	require.Equal(t, 200, u.Do(t, "GET", "/users/@me/items", nil).Status)
+}
+
+func TestConcurrentPatchesKeepBothChanges(t *testing.T) {
+	u := testkit.New(t).User(t, "mia")
+	for round := 0; round < 12; round++ {
+		id := u.Do(t, "POST", "/users/@me/items", J{"title": "before"}).Get("id").String()
+		var wg sync.WaitGroup
+		for _, body := range []J{{"title": "renamed"}, {"status": "done"}} {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				u.Do(t, "PATCH", "/users/@me/items/"+id, body, testkit.NoContract())
+			}()
+		}
+		wg.Wait()
+		got := u.Do(t, "GET", "/users/@me/items/"+id, nil)
+		require.Equal(t, []string{"renamed", "done"}, []string{got.Get("title").String(), got.Get("status").String()}, round)
+	}
+}
+
+func TestConcurrentDeletesLogOneEvent(t *testing.T) {
+	e := testkit.New(t)
+	u := e.User(t, "mia")
+	for round := 0; round < 8; round++ {
+		id := u.Do(t, "POST", "/users/@me/items", J{"title": "x"}).Get("id").String()
+		var wg sync.WaitGroup
+		for i := 0; i < 4; i++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				u.Do(t, "DELETE", "/users/@me/items/"+id, nil, testkit.NoContract())
+			}()
+		}
+		wg.Wait()
+	}
+	deleted := 0
+	for _, ev := range e.Events(t, u.UserID) {
+		if ev.Type == "item.deleted" {
+			deleted++
+		}
+	}
+	require.Equal(t, 8, deleted)
+}
+
+func TestCreatingIntoAListBeingDeletedNeverFails(t *testing.T) {
+	u := testkit.New(t).User(t, "mia")
+	for round := 0; round < 10; round++ {
+		list := u.Do(t, "POST", "/users/@me/lists", J{"name": "tmp"}).Get("id").String()
+		statuses := make([]int, 4)
+		var wg sync.WaitGroup
+		for i := range statuses {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				if i == 0 {
+					statuses[i] = u.Do(t, "DELETE", "/users/@me/lists/"+list, nil, testkit.NoContract()).Status
+					return
+				}
+				statuses[i] = u.Do(t, "POST", "/users/@me/items", J{"title": "x", "list_id": list}, testkit.NoContract()).Status
+			}()
+		}
+		wg.Wait()
+		require.Equal(t, 204, statuses[0])
+		for _, s := range statuses[1:] {
+			require.Contains(t, []int{201, 422}, s)
+		}
+	}
+	inbox := u.Do(t, "GET", "/users/@me/lists", nil).Get("0.id").String()
+	for _, listID := range ids(u.Do(t, "GET", "/users/@me/items?limit=100", nil), "data.#.list_id") {
+		require.Equal(t, inbox, listID)
+	}
+}
+
+func TestNULInTextIsRejected(t *testing.T) {
+	u := testkit.New(t).User(t, "mia")
+	for _, tc := range []struct {
+		method, path string
+		body         testkit.Raw
+	}{
+		{"POST", "/users/@me/items", `{"title":"a\u0000b"}`},
+		{"POST", "/users/@me/items", `{"title":"ok","note":"a\u0000b"}`},
+		{"POST", "/users/@me/lists", `{"name":"a\u0000b"}`},
+		{"PATCH", "/users/@me", `{"display_name":"a\u0000b"}`},
+	} {
+		r := u.Do(t, tc.method, tc.path, tc.body)
+		require.Equal(t, 422, r.Status, string(tc.body))
+	}
+	ok := u.Do(t, "POST", "/users/@me/items", testkit.Raw(`{"title":"C:\\u0000 is just text"}`))
+	require.Equal(t, 201, ok.Status)
+	require.Equal(t, `C:\u0000 is just text`, ok.Get("title").String())
 }

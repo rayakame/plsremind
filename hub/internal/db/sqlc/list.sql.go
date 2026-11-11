@@ -101,6 +101,30 @@ func (q *Queries) GetList(ctx context.Context, arg GetListParams) (List, error) 
 	return i, err
 }
 
+const holdList = `-- name: HoldList :one
+SELECT id, user_id, name, position, is_inbox, created_at, updated_at FROM lists WHERE id = $1 AND user_id = $2 FOR SHARE
+`
+
+type HoldListParams struct {
+	ID     uuid.UUID
+	UserID uuid.UUID
+}
+
+func (q *Queries) HoldList(ctx context.Context, arg HoldListParams) (List, error) {
+	row := q.db.QueryRow(ctx, holdList, arg.ID, arg.UserID)
+	var i List
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.Name,
+		&i.Position,
+		&i.IsInbox,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const listLists = `-- name: ListLists :many
 SELECT id, user_id, name, position, is_inbox, created_at, updated_at FROM lists WHERE user_id = $1 ORDER BY position, id
 `
@@ -131,6 +155,30 @@ func (q *Queries) ListLists(ctx context.Context, userID uuid.UUID) ([]List, erro
 		return nil, err
 	}
 	return items, nil
+}
+
+const lockList = `-- name: LockList :one
+SELECT id, user_id, name, position, is_inbox, created_at, updated_at FROM lists WHERE id = $1 AND user_id = $2 FOR UPDATE
+`
+
+type LockListParams struct {
+	ID     uuid.UUID
+	UserID uuid.UUID
+}
+
+func (q *Queries) LockList(ctx context.Context, arg LockListParams) (List, error) {
+	row := q.db.QueryRow(ctx, lockList, arg.ID, arg.UserID)
+	var i List
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.Name,
+		&i.Position,
+		&i.IsInbox,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
 }
 
 const renameList = `-- name: RenameList :one

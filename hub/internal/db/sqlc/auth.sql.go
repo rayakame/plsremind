@@ -36,6 +36,20 @@ func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) er
 	return err
 }
 
+const deleteOtherSessions = `-- name: DeleteOtherSessions :exec
+DELETE FROM sessions WHERE user_id = $1 AND id <> $2
+`
+
+type DeleteOtherSessionsParams struct {
+	UserID uuid.UUID
+	KeepID uuid.UUID
+}
+
+func (q *Queries) DeleteOtherSessions(ctx context.Context, arg DeleteOtherSessionsParams) error {
+	_, err := q.db.Exec(ctx, deleteOtherSessions, arg.UserID, arg.KeepID)
+	return err
+}
+
 const deleteSessionByHash = `-- name: DeleteSessionByHash :exec
 DELETE FROM sessions WHERE token_hash = $1
 `
@@ -135,6 +149,17 @@ func (q *Queries) ListLoginMethods(ctx context.Context) ([]ListLoginMethodsRow, 
 		return nil, err
 	}
 	return items, nil
+}
+
+const probeTimezone = `-- name: ProbeTimezone :one
+SELECT (now() AT TIME ZONE $1::text)::text
+`
+
+func (q *Queries) ProbeTimezone(ctx context.Context, name string) (string, error) {
+	row := q.db.QueryRow(ctx, probeTimezone, name)
+	var column_1 string
+	err := row.Scan(&column_1)
+	return column_1, err
 }
 
 const touchSession = `-- name: TouchSession :exec

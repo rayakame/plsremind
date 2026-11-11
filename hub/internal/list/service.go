@@ -40,9 +40,10 @@ func Inbox(ctx context.Context, q *sqlc.Queries, userID uuid.UUID) (sqlc.List, e
 	return q.GetInbox(ctx, userID)
 }
 
-// Get returns one of the user's lists, or not_found.
+// Get returns one of the user's lists, or not_found, and holds its row until the
+// transaction ends so that renames, deletions and moves into it do not interleave.
 func Get(ctx context.Context, q *sqlc.Queries, userID, id uuid.UUID) (sqlc.List, error) {
-	l, err := q.GetList(ctx, sqlc.GetListParams{ID: id, UserID: userID})
+	l, err := q.LockList(ctx, sqlc.LockListParams{ID: id, UserID: userID})
 	if db.IsNotFound(err) {
 		return sqlc.List{}, apierr.NotFound()
 	}

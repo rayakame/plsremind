@@ -306,3 +306,13 @@ func TestInfoListsEnabledLoginMethods(t *testing.T) {
 	require.Equal(t, []string{"password", "discord"}, ids(after, "login_methods.#.key"))
 	require.Equal(t, "Discord", after.Get("login_methods.1.name").String())
 }
+
+func TestPendingInviteCodeIsNotStoredInPlaintext(t *testing.T) {
+	e := testkit.New(t)
+	enableProvider(t, e, "discord")
+	code := e.Admin(t).Do(t, "POST", "/admin/invites", J{}).Get("code").String()
+	e.OAuthStart(t, "discord", "intent=login&invite_code="+code)
+	var stored []byte
+	require.NoError(t, e.Pool.QueryRow(context.Background(), "SELECT invite_code::bytea FROM oauth_states").Scan(&stored))
+	require.NotContains(t, string(stored), code)
+}

@@ -9,7 +9,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/rayakame/plsremind/hub/internal/db/sqlc"
 )
@@ -70,29 +69,24 @@ func CleanSubitemTitle(title string) (string, bool) {
 	return title, n >= 1 && n <= maxSubitemTitleLen
 }
 
-// EffectiveDue is the instant an item is due. An all-day item is due at the
-// last second of its day in loc.
-func EffectiveDue(dueAt *time.Time, dueDate pgtype.Date, loc *time.Location) *time.Time {
-	if dueAt != nil {
-		due := dueAt.UTC()
-		return &due
+// view builds the API item. allDayDue is the due instant of an all-day item as the
+// database computed it; the database is the only place that does this calculation.
+func view(row sqlc.Item, allDayDue *time.Time) Item {
+	due := row.DueAt
+	if row.DueDate.Valid {
+		due = allDayDue
 	}
-	if !dueDate.Valid {
-		return nil
+	if due != nil {
+		utc := due.UTC()
+		due = &utc
 	}
-	y, m, d := dueDate.Time.Date()
-	due := time.Date(y, m, d+1, 0, 0, 0, 0, loc).Add(-time.Second).UTC()
-	return &due
-}
-
-func view(row sqlc.Item, loc *time.Location) Item {
 	out := Item{
 		ID:        row.ID,
 		ListID:    row.ListID,
 		Title:     row.Title,
 		Note:      row.Note,
 		Priority:  row.Priority,
-		DueAt:     EffectiveDue(row.DueAt, row.DueDate, loc),
+		DueAt:     due,
 		AllDay:    row.DueDate.Valid,
 		Status:    row.Status,
 		Subitems:  []Subitem{},

@@ -4,7 +4,7 @@ CREATE TABLE oauth_states (
     provider text NOT NULL,
     intent text NOT NULL CHECK (intent IN ('login', 'link')),
     user_id uuid REFERENCES users ON DELETE CASCADE,
-    invite_code text NOT NULL DEFAULT '',
+    invite_code bytea,
     verifier text NOT NULL,
     expires_at timestamptz NOT NULL
 );

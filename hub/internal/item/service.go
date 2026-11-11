@@ -12,18 +12,6 @@ import (
 	"github.com/rayakame/plsremind/hub/internal/db/sqlc"
 )
 
-func location(ctx context.Context, q *sqlc.Queries, userID uuid.UUID) (*time.Location, error) {
-	user, err := q.GetUser(ctx, userID)
-	if err != nil {
-		return nil, err
-	}
-	loc, err := time.LoadLocation(user.Timezone)
-	if err != nil {
-		return time.UTC, nil
-	}
-	return loc, nil
-}
-
 func get(ctx context.Context, q *sqlc.Queries, userID, id uuid.UUID) (sqlc.Item, error) {
 	row, err := q.GetItem(ctx, sqlc.GetItemParams{ID: id, UserID: userID})
 	if db.IsNotFound(err) {
@@ -42,15 +30,19 @@ func Lock(ctx context.Context, q *sqlc.Queries, userID, id uuid.UUID) (sqlc.Item
 	return row, err
 }
 
-// Views turns rows of one user into API items.
-func Views(ctx context.Context, q *sqlc.Queries, userID uuid.UUID, rows []sqlc.Item) ([]Item, error) {
-	loc, err := location(ctx, q, userID)
-	if err != nil {
-		return nil, err
-	}
+// Views turns rows into API items.
+func Views(ctx context.Context, q *sqlc.Queries, rows []sqlc.Item) ([]Item, error) {
 	ids := make([]uuid.UUID, 0, len(rows))
 	for _, row := range rows {
 		ids = append(ids, row.ID)
+	}
+	dues, err := q.ListAllDayDue(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+	allDayDue := make(map[uuid.UUID]*time.Time, len(dues))
+	for _, due := range dues {
+		allDayDue[due.ID] = &due.Due
 	}
 	subitems, err := q.ListSubitems(ctx, ids)
 	if err != nil {
@@ -62,7 +54,7 @@ func Views(ctx context.Context, q *sqlc.Queries, userID uuid.UUID, rows []sqlc.I
 	}
 	items := make([]Item, 0, len(rows))
 	for _, row := range rows {
-		item := view(row, loc)
+		item := view(row, allDayDue[row.ID])
 		if subs := byItem[row.ID]; subs != nil {
 			item.Subitems = subs
 		}
@@ -77,7 +69,7 @@ func Load(ctx context.Context, q *sqlc.Queries, userID, id uuid.UUID) (Item, err
 	if err != nil {
 		return Item{}, err
 	}
-	items, err := Views(ctx, q, userID, []sqlc.Item{row})
+	items, err := Views(ctx, q, []sqlc.Item{row})
 	if err != nil {
 		return Item{}, err
 	}
@@ -90,11 +82,11 @@ func Touch(ctx context.Context, q *sqlc.Queries, now time.Time, itemID uuid.UUID
 }
 
 // MoveAll moves every item of a list to another list and returns them as they are now.
-func MoveAll(ctx context.Context, q *sqlc.Queries, now time.Time, userID, from, to uuid.UUID) ([]Item, error) {
+func MoveAll(ctx context.Context, q *sqlc.Queries, now time.Time, from, to uuid.UUID) ([]Item, error) {
 	rows, err := q.MoveItemsToList(ctx, sqlc.MoveItemsToListParams{ListID: from, TargetListID: to, Now: now})
 	if err != nil {
 		return nil, err
 	}
 	slices.SortFunc(rows, func(a, b sqlc.Item) int { return slices.Compare(a.ID[:], b.ID[:]) })
-	return Views(ctx, q, userID, rows)
+	return Views(ctx, q, rows)
 }

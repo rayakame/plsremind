@@ -107,8 +107,14 @@ func ValidateTimezone(tz string) error {
 	return nil
 }
 
-func checkTimezone(fields map[string]string, tz string) {
-	if ValidateTimezone(tz) != nil {
+// checkTimezone requires a name that both Go and the database know: the database
+// computes due times with it.
+func checkTimezone(ctx context.Context, q *sqlc.Queries, fields map[string]string, tz string) {
+	err := ValidateTimezone(tz)
+	if err == nil {
+		_, err = q.ProbeTimezone(ctx, tz)
+	}
+	if err != nil {
 		fields["timezone"] = "Must be an IANA time zone name such as Europe/Berlin."
 	}
 }

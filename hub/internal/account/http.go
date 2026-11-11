@@ -1,6 +1,7 @@
 package account
 
 import (
+	"context"
 	"net/http"
 	"strings"
 	"time"
@@ -53,7 +54,7 @@ type credentials struct {
 }
 
 // normalize trims the input and validates it for creating an account.
-func (in *credentials) normalize() error {
+func (in *credentials) normalize(ctx context.Context, q *sqlc.Queries) error {
 	in.Username = NormalizeUsername(in.Username)
 	in.DisplayName = strings.TrimSpace(in.DisplayName)
 	if in.DisplayName == "" {
@@ -66,7 +67,7 @@ func (in *credentials) normalize() error {
 	checkUsername(fields, in.Username)
 	checkPassword(fields, "password", in.Password)
 	checkDisplayName(fields, in.DisplayName)
-	checkTimezone(fields, in.Timezone)
+	checkTimezone(ctx, q, fields, in.Timezone)
 	if len(fields) > 0 {
 		return apierr.Validation(fields)
 	}
@@ -79,7 +80,7 @@ func setup(d *deps.Deps) fiber.Handler {
 		if err := httpx.Body(c, &in); err != nil {
 			return err
 		}
-		if err := in.normalize(); err != nil {
+		if err := in.normalize(c.Context(), d.Q()); err != nil {
 			return err
 		}
 		var user sqlc.User
@@ -154,6 +155,16 @@ func getProfile(d *deps.Deps) fiber.Handler {
 		if err != nil {
 			return err
 		}
+		// A connection gets what it needs to talk to the user at the right time, nothing more.
+		if p, _ := auth.From(c); p.Kind == auth.KindConnection {
+			full := View(user)
+			return c.JSON(fiber.Map{
+				"id":           full.ID,
+				"display_name": full.DisplayName,
+				"timezone":     full.Timezone,
+				"quiet_hours":  full.QuietHours,
+			})
+		}
 		return c.JSON(View(user))
 	}
 }
@@ -189,7 +200,7 @@ func patchProfile(d *deps.Deps) fiber.Handler {
 		}
 		if in.Timezone != nil {
 			params.Timezone = *in.Timezone
-			checkTimezone(fields, params.Timezone)
+			checkTimezone(c.Context(), q, fields, params.Timezone)
 		}
 		if in.QuietHours != nil {
 			start, okStart := parseClock(in.QuietHours.Start)
@@ -293,7 +304,12 @@ func setPassword(d *deps.Deps) fiber.Handler {
 			if err != nil {
 				return err
 			}
-			return q.UpdatePasswordHash(c.Context(), sqlc.UpdatePasswordHashParams{ID: identity.ID, PasswordHash: &hash})
+			if err := q.UpdatePasswordHash(c.Context(), sqlc.UpdatePasswordHashParams{ID: identity.ID, PasswordHash: &hash}); err != nil {
+				return err
+			}
+			// Whoever changes a password after a scare expects other devices to be logged out.
+			p, _ := auth.From(c)
+			return q.DeleteOtherSessions(c.Context(), sqlc.DeleteOtherSessionsParams{UserID: userID, KeepID: p.CredentialID})
 		})
 		if err != nil {
 			return err

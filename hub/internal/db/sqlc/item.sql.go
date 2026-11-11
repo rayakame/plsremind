@@ -107,6 +107,38 @@ func (q *Queries) GetItem(ctx context.Context, arg GetItemParams) (Item, error) 
 	return i, err
 }
 
+const listAllDayDue = `-- name: ListAllDayDue :many
+SELECT i.id, item_due(i.due_at, i.due_date, u.timezone)::timestamptz AS due
+FROM items i
+JOIN users u ON u.id = i.user_id
+WHERE i.id = ANY($1::uuid[]) AND i.due_date IS NOT NULL
+`
+
+type ListAllDayDueRow struct {
+	ID  uuid.UUID
+	Due time.Time
+}
+
+func (q *Queries) ListAllDayDue(ctx context.Context, itemIds []uuid.UUID) ([]ListAllDayDueRow, error) {
+	rows, err := q.db.Query(ctx, listAllDayDue, itemIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListAllDayDueRow
+	for rows.Next() {
+		var i ListAllDayDueRow
+		if err := rows.Scan(&i.ID, &i.Due); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listItemsByCreated = `-- name: ListItemsByCreated :many
 SELECT i.id, i.user_id, i.list_id, i.title, i.note, i.priority, i.due_at, i.due_date, i.status, i.completed_at, i.reminder_override, i.created_at, i.updated_at
 FROM items i

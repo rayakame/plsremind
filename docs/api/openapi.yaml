@@ -9,11 +9,19 @@ info:
     Errors always have the same shape, see the `Error` schema. Timestamps are UTC in
     RFC 3339 format. IDs are UUIDs.
 
+    ## Requests from browsers
+
+    A request that changes something and is authenticated by the session cookie must carry
+    an `Origin` header equal to the hub's public address, which browsers send on their own.
+    A write with any other `Origin` is refused with `403` and the code `csrf_failed`, unless
+    it uses a bearer token.
+
     ## Rate limits
 
     Every response carries `X-RateLimit-Limit`, `X-RateLimit-Remaining` and
     `X-RateLimit-Reset` (Unix seconds). Authenticated callers are counted per token or
-    session, everyone else per IP address. When the limit is used up the API answers
+    session, everyone else per IP address. Logging in and registering always count per IP
+    address. When the limit is used up the API answers
     `429` with the code `rate_limited` and a `Retry-After` header in seconds.
   license:
     name: MIT
@@ -156,11 +164,13 @@ paths:
       summary: Get a user's profile
       responses:
         "200":
-          description: The user.
+          description: The user. A connection only gets the fields of `UserSummary`.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/User"
+                anyOf:
+                  - $ref: "#/components/schemas/User"
+                  - $ref: "#/components/schemas/UserSummary"
         default:
           $ref: "#/components/responses/Error"
     delete:
@@ -1472,6 +1482,19 @@ components:
         created_at:
           type: string
           format: date-time
+    UserSummary:
+      type: object
+      required: [id, display_name, timezone, quiet_hours]
+      properties:
+        id:
+          type: string
+          format: uuid
+        display_name:
+          type: string
+        timezone:
+          type: string
+        quiet_hours:
+          $ref: "#/components/schemas/QuietHours"
     NewPasswordAccount:
       type: object
       required: [username, password]
