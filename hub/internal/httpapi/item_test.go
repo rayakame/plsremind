@@ -61,24 +61,24 @@ func TestAllDayDueFollowsTimezone(t *testing.T) {
 	e := testkit.New(t)
 	u := e.User(t, "mia")
 	u.Do(t, "PATCH", "/users/@me", J{"timezone": "Europe/Berlin"})
-	created := u.Do(t, "POST", "/users/@me/items", J{"title": "Abgabe", "due_date": "2026-11-13"})
+	created := u.Do(t, "POST", "/users/@me/items", J{"title": "Abgabe", "due_date": "2024-11-13"})
 	require.Equal(t, 201, created.Status)
 	require.True(t, created.Get("all_day").Bool())
-	require.Equal(t, "2026-11-13", created.Get("due_date").String())
+	require.Equal(t, "2024-11-13", created.Get("due_date").String())
 	id := created.Get("id").String()
 	get := func() string { return u.Do(t, "GET", "/users/@me/items/"+id, nil).Get("due_at").String() }
-	require.Equal(t, "2026-11-13T22:59:59Z", get())
+	require.Equal(t, "2024-11-13T22:59:59Z", get())
 
-	dst := u.Do(t, "POST", "/users/@me/items", J{"title": "Sommerzeit", "due_date": "2027-03-28"})
-	require.Equal(t, "2027-03-28T21:59:59Z", dst.Get("due_at").String())
+	dst := u.Do(t, "POST", "/users/@me/items", J{"title": "Sommerzeit", "due_date": "2025-03-30"})
+	require.Equal(t, "2025-03-30T21:59:59Z", dst.Get("due_at").String())
 
 	u.Do(t, "PATCH", "/users/@me", J{"timezone": "America/New_York"})
-	require.Equal(t, "2026-11-14T04:59:59Z", get())
+	require.Equal(t, "2024-11-14T04:59:59Z", get())
 	require.Len(t, e.Events(t, u.UserID), 2, "a timezone change writes no item events")
 
-	before := u.Do(t, "GET", "/users/@me/items?due_before=2026-11-14T04:00:00Z", nil)
+	before := u.Do(t, "GET", "/users/@me/items?due_before=2024-11-14T04:00:00Z", nil)
 	require.Empty(t, ids(before, "data.#.id"), "filters use the due time in the current timezone")
-	after := u.Do(t, "GET", "/users/@me/items?due_before=2026-11-14T05:00:00Z", nil)
+	after := u.Do(t, "GET", "/users/@me/items?due_before=2024-11-14T05:00:00Z", nil)
 	require.Equal(t, []string{id}, ids(after, "data.#.id"))
 }
 
@@ -327,27 +327,28 @@ func TestDeletingListMovesItemsToInbox(t *testing.T) {
 func TestAllDayDueWhenMidnightIsSkippedOrRepeated(t *testing.T) {
 	u := testkit.New(t).User(t, "mia")
 	require.Equal(t, 200, u.Do(t, "PATCH", "/users/@me", J{"timezone": "America/Havana"}).Status)
-	// Cuba moves its clocks at midnight: 2026-03-08 has no 00:00, 2026-11-01 has it twice.
+	// Cuba moves its clocks at midnight: 2024-03-10 had no 00:00, 2024-11-03 had it twice.
+	// The dates are in the past because time zone rules for the future keep changing.
 	for date, want := range map[string]string{
-		"2026-03-07": "2026-03-08T04:59:59Z",
-		"2026-10-31": "2026-11-01T03:59:59Z",
-		"2026-06-15": "2026-06-16T03:59:59Z",
-		"2026-12-15": "2026-12-16T04:59:59Z",
+		"2024-03-09": "2024-03-10T04:59:59Z",
+		"2024-11-02": "2024-11-03T03:59:59Z",
+		"2024-06-15": "2024-06-16T03:59:59Z",
+		"2024-12-15": "2024-12-16T04:59:59Z",
 	} {
 		r := u.Do(t, "POST", "/users/@me/items", J{"title": date, "due_date": date})
 		require.Equal(t, 201, r.Status)
 		require.Equal(t, want, r.Get("due_at").String(), date)
 	}
-	before := u.Do(t, "GET", "/users/@me/items?due_before=2026-03-08T05:00:00Z", nil)
+	before := u.Do(t, "GET", "/users/@me/items?due_before=2024-03-10T05:00:00Z", nil)
 	require.Len(t, ids(before, "data.#.id"), 1, "filters agree with the due_at that responses show")
-	none := u.Do(t, "GET", "/users/@me/items?due_before=2026-03-08T04:59:59Z", nil)
+	none := u.Do(t, "GET", "/users/@me/items?due_before=2024-03-10T04:59:59Z", nil)
 	require.Empty(t, ids(none, "data.#.id"))
 }
 
 func TestDuePagingTerminatesInMidnightTransitionZone(t *testing.T) {
 	u := testkit.New(t).User(t, "mia")
 	u.Do(t, "PATCH", "/users/@me", J{"timezone": "America/Havana"})
-	for _, date := range []string{"2026-03-07", "2026-03-07", "2026-03-07", "2026-10-31", "2026-10-31"} {
+	for _, date := range []string{"2024-03-09", "2024-03-09", "2024-03-09", "2024-11-02", "2024-11-02"} {
 		u.Do(t, "POST", "/users/@me/items", J{"title": "x", "due_date": date})
 	}
 	for _, order := range []string{"asc", "desc"} {
