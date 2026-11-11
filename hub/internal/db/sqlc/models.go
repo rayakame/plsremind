@@ -4,8 +4,68 @@
 
 package sqlc
 
+import (
+	"time"
+
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
+)
+
+type Identity struct {
+	ID            uuid.UUID
+	UserID        uuid.UUID
+	Provider      string
+	ExternalID    string
+	DisplayName   string
+	PasswordHash  *string
+	ProviderToken []byte
+	CreatedAt     time.Time
+}
+
 type InstanceSetting struct {
 	ID           bool
 	Name         string
 	Registration string
+}
+
+type List struct {
+	ID        uuid.UUID
+	UserID    uuid.UUID
+	Name      string
+	Position  int32
+	IsInbox   bool
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
+type LoginProvider struct {
+	Key          string
+	Type         string
+	Name         string
+	LoginEnabled bool
+	LinkEnabled  bool
+	ClientID     string
+	ClientSecret []byte
+	IssuerUrl    string
+}
+
+type Session struct {
+	ID         uuid.UUID
+	UserID     uuid.UUID
+	TokenHash  []byte
+	CreatedAt  time.Time
+	LastUsedAt time.Time
+	ExpiresAt  time.Time
+}
+
+type User struct {
+	ID          uuid.UUID
+	DisplayName string
+	Role        string
+	Timezone    string
+	QuietStart  pgtype.Time
+	QuietEnd    pgtype.Time
+	Disabled    bool
+	EventSeq    int64
+	CreatedAt   time.Time
 }

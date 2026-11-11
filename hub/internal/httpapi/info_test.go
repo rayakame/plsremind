@@ -1,7 +1,10 @@
 package httpapi_test
 
 import (
+	"bufio"
+	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"strings"
 	"testing"
@@ -28,8 +31,13 @@ func TestUnknownRouteIsJSON404(t *testing.T) {
 
 func TestOversizedBodyIs413(t *testing.T) {
 	base := testkit.New(t).Listen(t)
-	body := `{"x":"` + strings.Repeat("a", 2<<20) + `"}`
-	res, err := http.Post(base+"/api/v1/info", "application/json", strings.NewReader(body))
+	conn, err := net.Dial("tcp", strings.TrimPrefix(base, "http://"))
+	require.NoError(t, err)
+	defer conn.Close()
+	// Only the headers are sent: the server must refuse by the announced length alone.
+	_, err = fmt.Fprintf(conn, "POST /api/v1/info HTTP/1.1\r\nHost: hub.test\r\nContent-Type: application/json\r\nContent-Length: %d\r\n\r\n", 2<<20)
+	require.NoError(t, err)
+	res, err := http.ReadResponse(bufio.NewReader(conn), nil)
 	require.NoError(t, err)
 	defer res.Body.Close()
 	raw, err := io.ReadAll(res.Body)

@@ -13,9 +13,16 @@ info:
     identifier: MIT
 servers:
   - url: /api/v1
+security:
+  - session: []
+  - bearer: []
 tags:
   - name: Instance
-    description: Public information about this hub.
+    description: Public information about this hub and its first-time setup.
+  - name: Authentication
+    description: Logging in and out.
+  - name: Account
+    description: The profile and settings of a user.
 paths:
   /info:
     get:
@@ -30,7 +37,138 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Info"
+        default:
+          $ref: "#/components/responses/Error"
+  /setup:
+    post:
+      tags: [Instance]
+      operationId: setup
+      summary: Create the first admin
+      description: Only works while the instance has no users. The created user is an admin and is logged in.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NewPasswordAccount"
+      responses:
+        "201":
+          description: The admin account. A session cookie is set.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        default:
+          $ref: "#/components/responses/Error"
+  /auth/login:
+    post:
+      tags: [Authentication]
+      operationId: login
+      summary: Log in with username and password
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, password]
+              properties:
+                username:
+                  type: string
+                password:
+                  type: string
+      responses:
+        "200":
+          description: The logged-in user. A session cookie is set.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        default:
+          $ref: "#/components/responses/Error"
+  /auth/logout:
+    post:
+      tags: [Authentication]
+      operationId: logout
+      summary: End the current session
+      security: []
+      responses:
+        "204":
+          description: The session is gone.
+        default:
+          $ref: "#/components/responses/Error"
+  /users/{user}:
+    parameters:
+      - $ref: "#/components/parameters/User"
+    get:
+      tags: [Account]
+      operationId: getUser
+      summary: Get a user's profile
+      responses:
+        "200":
+          description: The user.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        default:
+          $ref: "#/components/responses/Error"
+    patch:
+      tags: [Account]
+      operationId: updateUser
+      summary: Change a user's profile
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                display_name:
+                  type: string
+                timezone:
+                  type: string
+                  description: IANA time zone name.
+                  examples: [Europe/Berlin]
+                quiet_hours:
+                  $ref: "#/components/schemas/QuietHours"
+      responses:
+        "200":
+          description: The updated user.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        default:
+          $ref: "#/components/responses/Error"
 components:
+  securitySchemes:
+    session:
+      type: apiKey
+      in: cookie
+      name: plsr_session
+      description: Dashboard session, set by logging in.
+    bearer:
+      type: http
+      scheme: bearer
+      description: A personal token (`plsr_pat_...`) or a connection token (`plsr_con_...`).
+  parameters:
+    User:
+      name: user
+      in: path
+      required: true
+      description: "`@me` for the caller. Connections pass the hub ID of the user they act for."
+      schema:
+        type: string
+  responses:
+    Error:
+      description: An error.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
   schemas:
     Error:
       type: object
@@ -54,9 +192,74 @@ components:
                 type: string
     Info:
       type: object
-      required: [name, version]
+      required: [name, version, setup_required, registration, login_methods]
       properties:
         name:
           type: string
         version:
           type: string
+        setup_required:
+          type: boolean
+          description: True until the first admin was created through `/setup`.
+        registration:
+          type: string
+          enum: [open, invite]
+        login_methods:
+          type: array
+          items:
+            type: object
+            required: [key, type, name]
+            properties:
+              key:
+                type: string
+              type:
+                type: string
+                enum: [password, github, discord, oidc]
+              name:
+                type: string
+    QuietHours:
+      type: object
+      required: [start, end]
+      description: Reminders that fall into this window are delivered when it ends.
+      properties:
+        start:
+          type: string
+          examples: ["22:00"]
+        end:
+          type: string
+          examples: ["08:00"]
+    User:
+      type: object
+      required: [id, display_name, role, timezone, quiet_hours, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        display_name:
+          type: string
+        role:
+          type: string
+          enum: [user, admin]
+        timezone:
+          type: string
+        quiet_hours:
+          $ref: "#/components/schemas/QuietHours"
+        created_at:
+          type: string
+          format: date-time
+    NewPasswordAccount:
+      type: object
+      required: [username, password]
+      properties:
+        username:
+          type: string
+          description: 3 to 32 characters from a-z, 0-9, underscore, dot and dash. Stored in lower case.
+        password:
+          type: string
+          description: 8 to 256 characters.
+        display_name:
+          type: string
+          description: Defaults to the username.
+        timezone:
+          type: string
+          description: IANA time zone name, defaults to UTC.
