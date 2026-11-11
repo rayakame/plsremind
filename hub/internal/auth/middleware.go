@@ -2,6 +2,8 @@ package auth
 
 import (
 	"net/http"
+	"strings"
+	"time"
 
 	"github.com/gofiber/fiber/v3"
 
@@ -23,7 +25,15 @@ func isWrite(method string) bool {
 // Middleware identifies the caller. Requests without valid credentials continue anonymously.
 func Middleware(d *deps.Deps) fiber.Handler {
 	return func(c fiber.Ctx) error {
-		p, ok, err := fromSession(c, d)
+		var p Principal
+		var ok bool
+		var err error
+		if header := c.Get(fiber.HeaderAuthorization); header != "" {
+			p, err = fromBearer(c, d, header)
+			ok = err == nil
+		} else {
+			p, ok, err = fromSession(c, d)
+		}
 		if err != nil {
 			return err
 		}
@@ -32,6 +42,43 @@ func Middleware(d *deps.Deps) fiber.Handler {
 		}
 		return c.Next()
 	}
+}
+
+const tokenTouchInterval = time.Minute
+
+// fromBearer never falls back to anonymous: a caller that sends a token expects it to count.
+func fromBearer(c fiber.Ctx, d *deps.Deps, header string) (Principal, error) {
+	token, found := strings.CutPrefix(header, "Bearer ")
+	if !found {
+		return Principal{}, apierr.Unauthorized()
+	}
+	switch {
+	case strings.HasPrefix(token, secret.PrefixPersonal):
+		return fromPersonalToken(c, d, token)
+	default:
+		return Principal{}, apierr.Unauthorized()
+	}
+}
+
+func fromPersonalToken(c fiber.Ctx, d *deps.Deps, token string) (Principal, error) {
+	q := d.Q()
+	row, err := q.GetPersonalTokenUser(c.Context(), secret.Hash(token))
+	if db.IsNotFound(err) {
+		return Principal{}, apierr.Unauthorized()
+	}
+	if err != nil {
+		return Principal{}, err
+	}
+	if row.Disabled {
+		return Principal{}, errDisabled()
+	}
+	now := d.Now()
+	if row.LastUsedAt == nil || now.Sub(*row.LastUsedAt) >= tokenTouchInterval {
+		if err := q.TouchPersonalToken(c.Context(), sqlc.TouchPersonalTokenParams{ID: row.TokenID, Now: &now}); err != nil {
+			return Principal{}, err
+		}
+	}
+	return Principal{Kind: KindPersonalToken, UserID: row.UserID, Role: row.Role, CredentialID: row.TokenID}, nil
 }
 
 func fromSession(c fiber.Ctx, d *deps.Deps) (Principal, bool, error) {

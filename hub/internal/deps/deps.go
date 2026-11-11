@@ -8,6 +8,7 @@ import (
 
 	"github.com/rayakame/plsremind/hub/internal/config"
 	"github.com/rayakame/plsremind/hub/internal/db/sqlc"
+	"github.com/rayakame/plsremind/hub/internal/ratelimit"
 )
 
 type Deps struct {
@@ -15,6 +16,10 @@ type Deps struct {
 	Pool *pgxpool.Pool
 	Now  func() time.Time
 	HTTP *http.Client
+
+	// RateAuth limits authenticated callers per credential, RateAnon everyone else per IP.
+	RateAuth *ratelimit.Limiter
+	RateAnon *ratelimit.Limiter
 }
 
 func (d *Deps) Q() *sqlc.Queries {

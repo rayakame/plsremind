@@ -8,6 +8,13 @@ info:
 
     Errors always have the same shape, see the `Error` schema. Timestamps are UTC in
     RFC 3339 format. IDs are UUIDs.
+
+    ## Rate limits
+
+    Every response carries `X-RateLimit-Limit`, `X-RateLimit-Remaining` and
+    `X-RateLimit-Reset` (Unix seconds). Authenticated callers are counted per token or
+    session, everyone else per IP address. When the limit is used up the API answers
+    `429` with the code `rate_limited` and a `Retry-After` header in seconds.
   license:
     name: MIT
     identifier: MIT
@@ -423,6 +430,70 @@ paths:
           description: The password is set.
         default:
           $ref: "#/components/responses/Error"
+  /users/{user}/tokens:
+    parameters:
+      - $ref: "#/components/parameters/User"
+    get:
+      tags: [Account]
+      operationId: listTokens
+      summary: List personal tokens
+      security:
+        - session: []
+      responses:
+        "200":
+          description: The tokens, without their secret values.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PersonalToken"
+        default:
+          $ref: "#/components/responses/Error"
+    post:
+      tags: [Account]
+      operationId: createToken
+      summary: Create a personal token
+      description: |
+        A personal token lets your own tools use the API as you. It reaches your lists, items and
+        settings, but it cannot manage tokens, change the password, unlink accounts or delete the account.
+      security:
+        - session: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name:
+                  type: string
+                  description: 1 to 64 characters, for you to recognise the token later.
+      responses:
+        "201":
+          description: The token. `token` is only shown this once.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PersonalToken"
+        default:
+          $ref: "#/components/responses/Error"
+  /users/{user}/tokens/{id}:
+    parameters:
+      - $ref: "#/components/parameters/User"
+      - $ref: "#/components/parameters/Id"
+    delete:
+      tags: [Account]
+      operationId: deleteToken
+      summary: Revoke a personal token
+      security:
+        - session: []
+      responses:
+        "204":
+          description: The token no longer works.
+        default:
+          $ref: "#/components/responses/Error"
 components:
   securitySchemes:
     session:
@@ -627,3 +698,21 @@ components:
           properties:
             disabled:
               type: boolean
+    PersonalToken:
+      type: object
+      required: [id, name, created_at, last_used_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        token:
+          type: string
+          description: Only present in the response that creates the token.
+        created_at:
+          type: string
+          format: date-time
+        last_used_at:
+          type: [string, "null"]
+          format: date-time
