@@ -18,6 +18,7 @@ import (
 	"github.com/rayakame/plsremind/hub/internal/reminder"
 	"github.com/rayakame/plsremind/hub/internal/subitem"
 	"github.com/rayakame/plsremind/hub/internal/token"
+	"github.com/rayakame/plsremind/hub/internal/web"
 )
 
 var Version = "dev"
@@ -25,11 +26,20 @@ var Version = "dev"
 const bodyLimit = 1 << 20
 
 func New(d *deps.Deps) *fiber.App {
-	app := fiber.New(fiber.Config{
+	cfg := fiber.Config{
 		AppName:      "plsremind",
 		BodyLimit:    bodyLimit,
 		ErrorHandler: apierr.Handler,
-	})
+	}
+	if d.Cfg.ProxyHeader != "" {
+		// Behind a reverse proxy every request comes from the proxy's address. The
+		// header is only believed when the direct peer is on a local or private network.
+		cfg.ProxyHeader = d.Cfg.ProxyHeader
+		cfg.TrustProxy = true
+		cfg.TrustProxyConfig = fiber.TrustProxyConfig{Loopback: true, Private: true}
+		cfg.EnableIPValidation = true
+	}
+	app := fiber.New(cfg)
 
 	if d.RateAuth == nil {
 		d.RateAuth = ratelimit.New(120, time.Minute, d.Now)
@@ -68,5 +78,6 @@ func New(d *deps.Deps) *fiber.App {
 	connection.Register(api, user, admin, d)
 
 	app.Use("/api", func(fiber.Ctx) error { return fiber.ErrNotFound })
+	app.Get("/*", web.Handler())
 	return app
 }

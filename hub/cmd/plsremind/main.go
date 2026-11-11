@@ -8,6 +8,8 @@ import (
 	"os/signal"
 	"syscall"
 	"time"
+	// Time zone names must resolve even where the system ships no zone database.
+	_ "time/tzdata"
 
 	"github.com/gofiber/fiber/v3"
 
@@ -47,6 +49,21 @@ func run() error {
 		Now:  time.Now,
 		HTTP: &http.Client{Timeout: 10 * time.Second},
 	})
+
+	go func() {
+		ticker := time.NewTicker(time.Hour)
+		defer ticker.Stop()
+		for {
+			if err := httpapi.Sweep(ctx, pool, time.Now()); err != nil && ctx.Err() == nil {
+				slog.Error("sweep expired rows", "err", err)
+			}
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+			}
+		}
+	}()
 
 	go func() {
 		<-ctx.Done()

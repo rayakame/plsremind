@@ -13,6 +13,8 @@ type Config struct {
 	DatabaseURL string
 	PublicURL   string
 	ListenAddr  string
+	// ProxyHeader names the header a reverse proxy puts the client address in.
+	ProxyHeader string
 	SecretKey   [32]byte
 }
 
@@ -22,6 +24,7 @@ func Load() (Config, error) {
 		DatabaseURL: os.Getenv("PLSREMIND_DATABASE_URL"),
 		PublicURL:   strings.TrimRight(os.Getenv("PLSREMIND_PUBLIC_URL"), "/"),
 		ListenAddr:  os.Getenv("PLSREMIND_LISTEN_ADDR"),
+		ProxyHeader: os.Getenv("PLSREMIND_PROXY_HEADER"),
 	}
 	if cfg.ListenAddr == "" {
 		cfg.ListenAddr = ":8080"

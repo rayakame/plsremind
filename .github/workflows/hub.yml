@@ -2,9 +2,9 @@ name: hub
 
 on:
   push:
-    paths: ["hub/**", "docs/api/**", ".github/workflows/hub.yml"]
+    paths: ["hub/**", "docs/api/**", "deploy/**", ".github/workflows/hub.yml"]
   pull_request:
-    paths: ["hub/**", "docs/api/**", ".github/workflows/hub.yml"]
+    paths: ["hub/**", "docs/api/**", "deploy/**", ".github/workflows/hub.yml"]
 
 jobs:
   test:
@@ -17,8 +17,17 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version-file: hub/go.mod
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
       - uses: sqlc-dev/setup-sqlc@v4
         with:
           sqlc-version: "1.31.1"
       - run: make lint
       - run: make test
+
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - run: deploy/smoke.sh
