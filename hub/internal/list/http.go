@@ -15,6 +15,7 @@ import (
 	"github.com/rayakame/plsremind/hub/internal/deps"
 	"github.com/rayakame/plsremind/hub/internal/eventlog"
 	"github.com/rayakame/plsremind/hub/internal/httpx"
+	"github.com/rayakame/plsremind/hub/internal/item"
 )
 
 func Register(user fiber.Router, d *deps.Deps) {
@@ -155,6 +156,19 @@ func remove(d *deps.Deps) fiber.Handler {
 				return errInbox()
 			}
 			now := d.Now()
+			inbox, err := Inbox(c.Context(), q, userID)
+			if err != nil {
+				return err
+			}
+			moved, err := item.MoveAll(c.Context(), q, now, userID, id, inbox.ID)
+			if err != nil {
+				return err
+			}
+			for _, it := range moved {
+				if err := eventlog.Append(c.Context(), q, now, userID, actor(c), "item.updated", it); err != nil {
+					return err
+				}
+			}
 			if err := q.DeleteList(c.Context(), id); err != nil {
 				return err
 			}

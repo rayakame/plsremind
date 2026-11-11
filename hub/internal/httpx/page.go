@@ -34,7 +34,8 @@ func ParsePage(c fiber.Ctx) (Page, error) {
 	return page, nil
 }
 
-func errCursor() error {
+// ErrCursor is the error for a cursor that cannot be used with the request.
+func ErrCursor() error {
 	return apierr.New(http.StatusBadRequest, "invalid_cursor", "The cursor is not valid for this request.")
 }
 
@@ -46,10 +47,10 @@ func EncodeCursor(v any) string {
 func DecodeCursor(s string, v any) error {
 	raw, err := base64.RawURLEncoding.DecodeString(s)
 	if err != nil {
-		return errCursor()
+		return ErrCursor()
 	}
 	if err := json.Unmarshal(raw, v); err != nil {
-		return errCursor()
+		return ErrCursor()
 	}
 	return nil
 }

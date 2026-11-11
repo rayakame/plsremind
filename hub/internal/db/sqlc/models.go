@@ -48,6 +48,22 @@ type Invite struct {
 	UsedBy    *uuid.UUID
 }
 
+type Item struct {
+	ID               uuid.UUID
+	UserID           uuid.UUID
+	ListID           uuid.UUID
+	Title            string
+	Note             string
+	Priority         string
+	DueAt            *time.Time
+	DueDate          pgtype.Date
+	Status           string
+	CompletedAt      *time.Time
+	ReminderOverride []byte
+	CreatedAt        time.Time
+	UpdatedAt        time.Time
+}
+
 type List struct {
 	ID        uuid.UUID
 	UserID    uuid.UUID

@@ -43,6 +43,16 @@ tags:
 
       Every deadline is also announced at the moment it is due. `follow_up` controls nagging
       after that: `daily` every 24 hours, `twice_daily` every 12 hours, for at most one week.
+  - name: Items
+    description: |
+      An item is a todo or a deadline. There is no separate type: an item with a due time is a
+      deadline, and setting or clearing the due time turns one into the other.
+
+      A due time is either `due_at`, an exact moment, or `due_date`, a whole day. An all-day
+      item is due at 23:59:59 of that day in the user's time zone, and `due_at` in responses
+      always carries the resulting moment.
+
+      Completing an item is a `PATCH` with `status: "done"`.
 paths:
   /info:
     get:
@@ -658,6 +668,149 @@ paths:
           description: The default applies again.
         default:
           $ref: "#/components/responses/Error"
+  /users/{user}/items:
+    parameters:
+      - $ref: "#/components/parameters/User"
+    get:
+      tags: [Items]
+      operationId: listItems
+      summary: List items
+      parameters:
+        - name: list_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [open, done, all]
+            default: open
+        - name: has_due
+          in: query
+          description: Only deadlines (`true`) or only todos without a due time (`false`).
+          schema:
+            type: boolean
+        - name: due_before
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: due_after
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: sort
+          in: query
+          description: With `due`, items without a due time always come last.
+          schema:
+            type: string
+            enum: [created, due, priority]
+            default: created
+        - name: order
+          in: query
+          description: With `sort=priority`, `desc` lists high priority first.
+          schema:
+            type: string
+            enum: [asc, desc]
+            default: asc
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Cursor"
+      responses:
+        "200":
+          description: One page of items.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, next_cursor]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Item"
+                  next_cursor:
+                    $ref: "#/components/schemas/NextCursor"
+        default:
+          $ref: "#/components/responses/Error"
+    post:
+      tags: [Items]
+      operationId: createItem
+      summary: Create an item
+      description: Only `title` is required. Without `list_id` the item goes to the inbox.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: "#/components/schemas/ItemInput"
+                - type: object
+                  required: [title]
+      responses:
+        "201":
+          description: The new item.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Item"
+        default:
+          $ref: "#/components/responses/Error"
+  /users/{user}/items/{id}:
+    parameters:
+      - $ref: "#/components/parameters/User"
+      - $ref: "#/components/parameters/Id"
+    get:
+      tags: [Items]
+      operationId: getItem
+      summary: Get an item
+      responses:
+        "200":
+          description: The item.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Item"
+        default:
+          $ref: "#/components/responses/Error"
+    patch:
+      tags: [Items]
+      operationId: updateItem
+      summary: Change an item
+      description: |
+        Only the fields you send change. Send `status` to complete or reopen the item and
+        `list_id` to move it. `null` for `due_at` or `due_date` removes the due time.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: "#/components/schemas/ItemInput"
+                - type: object
+                  properties:
+                    status:
+                      type: string
+      responses:
+        "200":
+          description: The updated item.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Item"
+        default:
+          $ref: "#/components/responses/Error"
+    delete:
+      tags: [Items]
+      operationId: deleteItem
+      summary: Delete an item for good
+      responses:
+        "204":
+          description: The item is gone.
+        default:
+          $ref: "#/components/responses/Error"
 components:
   securitySchemes:
     session:
@@ -938,3 +1091,107 @@ components:
         is_default:
           type: boolean
           description: False once the user replaced the plan.
+    ReminderOverride:
+      type: object
+      description: |
+        Replaces the reminder plan for one item. `off` silences every automatic reminder for
+        the item, including the one at its due time. `custom` replaces only the reminders
+        before the due time. Manual reminders are never affected.
+      required: [mode]
+      properties:
+        mode:
+          type: string
+          enum: ["off", custom]
+        before:
+          $ref: "#/components/schemas/Before"
+    ItemInput:
+      type: object
+      properties:
+        title:
+          type: string
+          description: 1 to 500 characters.
+        note:
+          type: string
+          description: At most 10000 characters.
+        list_id:
+          type: string
+        priority:
+          type: string
+        due_at:
+          type: [string, "null"]
+          description: An exact due time. Cannot be combined with `due_date`.
+        due_date:
+          type: [string, "null"]
+          description: An all-day deadline, as `YYYY-MM-DD`.
+        reminder_override:
+          oneOf:
+            - type: "null"
+            - type: object
+    Item:
+      type: object
+      required: [id, list_id, title, note, priority, due_at, due_date, all_day, status, completed_at, reminder_override, subitems, created_at, updated_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        list_id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        note:
+          type: string
+        priority:
+          $ref: "#/components/schemas/Priority"
+        due_at:
+          type: [string, "null"]
+          format: date-time
+          description: When the item is due. Null for a todo.
+        due_date:
+          type: [string, "null"]
+          format: date
+          description: Set for all-day deadlines.
+        all_day:
+          type: boolean
+        status:
+          type: string
+          enum: [open, done]
+        completed_at:
+          type: [string, "null"]
+          format: date-time
+        reminder_override:
+          oneOf:
+            - type: "null"
+            - $ref: "#/components/schemas/ReminderOverride"
+        subitems:
+          type: array
+          items:
+            $ref: "#/components/schemas/Subitem"
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    Subitem:
+      type: object
+      required: [id, item_id, title, done, position, created_at, updated_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        item_id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        done:
+          type: boolean
+        position:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
