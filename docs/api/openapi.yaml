@@ -23,6 +23,8 @@ tags:
     description: Logging in and out.
   - name: Account
     description: The profile and settings of a user.
+  - name: Admin
+    description: Instance administration. Needs a dashboard session of an admin.
 paths:
   /info:
     get:
@@ -115,6 +117,18 @@ paths:
                 $ref: "#/components/schemas/User"
         default:
           $ref: "#/components/responses/Error"
+    delete:
+      tags: [Account]
+      operationId: deleteUser
+      summary: Delete the account and all its data
+      description: Session only. The last active admin cannot delete themselves.
+      security:
+        - session: []
+      responses:
+        "204":
+          description: The account is gone.
+        default:
+          $ref: "#/components/responses/Error"
     patch:
       tags: [Account]
       operationId: updateUser
@@ -143,6 +157,272 @@ paths:
                 $ref: "#/components/schemas/User"
         default:
           $ref: "#/components/responses/Error"
+  /auth/register:
+    post:
+      tags: [Authentication]
+      operationId: register
+      summary: Create an account with username and password
+      description: Needs `invite_code` unless registration is open. The new user is logged in.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: "#/components/schemas/NewPasswordAccount"
+                - type: object
+                  properties:
+                    invite_code:
+                      type: string
+      responses:
+        "201":
+          description: The new user. A session cookie is set.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        default:
+          $ref: "#/components/responses/Error"
+  /users/{user}/identities:
+    parameters:
+      - $ref: "#/components/parameters/User"
+    get:
+      tags: [Account]
+      operationId: listIdentities
+      summary: List the accounts linked to a user
+      responses:
+        "200":
+          description: The identities.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Identity"
+        default:
+          $ref: "#/components/responses/Error"
+  /users/{user}/password:
+    parameters:
+      - $ref: "#/components/parameters/User"
+    put:
+      tags: [Account]
+      operationId: setPassword
+      summary: Change or set the password
+      description: |
+        Session only. With an existing password, send `current_password`. An account that only
+        logs in through a provider sends `username` instead to get a password login.
+      security:
+        - session: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [new_password]
+              properties:
+                new_password:
+                  type: string
+                current_password:
+                  type: string
+                username:
+                  type: string
+      responses:
+        "204":
+          description: The password is set.
+        default:
+          $ref: "#/components/responses/Error"
+  /admin/settings:
+    get:
+      tags: [Admin]
+      operationId: getSettings
+      summary: Get instance settings
+      security:
+        - session: []
+      responses:
+        "200":
+          description: The settings.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Settings"
+        default:
+          $ref: "#/components/responses/Error"
+    patch:
+      tags: [Admin]
+      operationId: updateSettings
+      summary: Change instance settings
+      security:
+        - session: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                registration:
+                  type: string
+      responses:
+        "200":
+          description: The updated settings.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Settings"
+        default:
+          $ref: "#/components/responses/Error"
+  /admin/invites:
+    get:
+      tags: [Admin]
+      operationId: listInvites
+      summary: List invites
+      security:
+        - session: []
+      responses:
+        "200":
+          description: All invites, newest first. Codes are not included.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Invite"
+        default:
+          $ref: "#/components/responses/Error"
+    post:
+      tags: [Admin]
+      operationId: createInvite
+      summary: Create an invite
+      security:
+        - session: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                expires_in:
+                  $ref: "#/components/schemas/Duration"
+      responses:
+        "201":
+          description: The invite. `code` is only shown this once.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Invite"
+        default:
+          $ref: "#/components/responses/Error"
+  /admin/invites/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    delete:
+      tags: [Admin]
+      operationId: deleteInvite
+      summary: Revoke an invite
+      security:
+        - session: []
+      responses:
+        "204":
+          description: The invite is gone.
+        default:
+          $ref: "#/components/responses/Error"
+  /admin/users:
+    get:
+      tags: [Admin]
+      operationId: listUsers
+      summary: List users
+      security:
+        - session: []
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Cursor"
+      responses:
+        "200":
+          description: One page of users, oldest first.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, next_cursor]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/AdminUser"
+                  next_cursor:
+                    $ref: "#/components/schemas/NextCursor"
+        default:
+          $ref: "#/components/responses/Error"
+  /admin/users/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    patch:
+      tags: [Admin]
+      operationId: updateUserAccess
+      summary: Change a user's role or disable them
+      description: Disabling a user ends their sessions. The last active admin cannot be demoted or disabled.
+      security:
+        - session: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                role:
+                  type: string
+                disabled:
+                  type: boolean
+      responses:
+        "200":
+          description: The updated user.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminUser"
+        default:
+          $ref: "#/components/responses/Error"
+    delete:
+      tags: [Admin]
+      operationId: adminDeleteUser
+      summary: Delete a user and all their data
+      security:
+        - session: []
+      responses:
+        "204":
+          description: The user is gone.
+        default:
+          $ref: "#/components/responses/Error"
+  /admin/users/{id}/password:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    put:
+      tags: [Admin]
+      operationId: resetPassword
+      summary: Set a new password for a user
+      description: Ends the user's sessions.
+      security:
+        - session: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [new_password]
+              properties:
+                new_password:
+                  type: string
+      responses:
+        "204":
+          description: The password is set.
+        default:
+          $ref: "#/components/responses/Error"
 components:
   securitySchemes:
     session:
@@ -160,6 +440,26 @@ components:
       in: path
       required: true
       description: "`@me` for the caller. Connections pass the hub ID of the user they act for."
+      schema:
+        type: string
+    Id:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    Limit:
+      name: limit
+      in: query
+      description: Page size, 1 to 100.
+      schema:
+        type: integer
+        default: 50
+    Cursor:
+      name: cursor
+      in: query
+      description: The `next_cursor` of the previous page.
       schema:
         type: string
   responses:
@@ -263,3 +563,67 @@ components:
         timezone:
           type: string
           description: IANA time zone name, defaults to UTC.
+    Duration:
+      type: string
+      description: A span of time made of days, hours and minutes in descending order, without spaces.
+      examples: ["3d", "1d12h", "90m"]
+    NextCursor:
+      type: [string, "null"]
+      description: Pass as `cursor` to get the next page. Null on the last page.
+    Identity:
+      type: object
+      required: [id, provider, external_id, display_name, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        provider:
+          type: string
+          examples: [discord]
+        external_id:
+          type: string
+          description: The user's ID at the provider. For `password` this is the username.
+        display_name:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+    Settings:
+      type: object
+      required: [name, registration]
+      properties:
+        name:
+          type: string
+        registration:
+          type: string
+          enum: [open, invite]
+    Invite:
+      type: object
+      required: [id, created_at, expires_at, used_at, used_by]
+      properties:
+        id:
+          type: string
+          format: uuid
+        code:
+          type: string
+          description: Only present in the response that creates the invite.
+        created_at:
+          type: string
+          format: date-time
+        expires_at:
+          type: string
+          format: date-time
+        used_at:
+          type: [string, "null"]
+          format: date-time
+        used_by:
+          type: [string, "null"]
+          format: uuid
+    AdminUser:
+      allOf:
+        - $ref: "#/components/schemas/User"
+        - type: object
+          required: [disabled]
+          properties:
+            disabled:
+              type: boolean

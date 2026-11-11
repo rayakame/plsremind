@@ -24,7 +24,9 @@ func New(d *deps.Deps) *fiber.App {
 	api.Get("/info", info(d))
 	user := api.Group("/users/:user", auth.ResolveUser(d))
 
-	account.Register(api, user, d)
+	admin := api.Group("/admin", auth.RequireAdmin())
+
+	account.Register(api, user, admin, d)
 
 	app.Use("/api", func(fiber.Ctx) error { return fiber.ErrNotFound })
 	return app

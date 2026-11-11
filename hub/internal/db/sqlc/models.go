@@ -28,6 +28,16 @@ type InstanceSetting struct {
 	Registration string
 }
 
+type Invite struct {
+	ID        uuid.UUID
+	CodeHash  []byte
+	CreatedBy *uuid.UUID
+	CreatedAt time.Time
+	ExpiresAt time.Time
+	UsedAt    *time.Time
+	UsedBy    *uuid.UUID
+}
+
 type List struct {
 	ID        uuid.UUID
 	UserID    uuid.UUID

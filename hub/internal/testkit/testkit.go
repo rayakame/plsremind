@@ -119,6 +119,8 @@ type Env struct {
 	Pool  *pgxpool.Pool
 	Deps  *deps.Deps
 	Clock *FakeClock
+
+	admin *Client
 }
 
 // New returns an environment with its own freshly migrated database.

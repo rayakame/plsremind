@@ -3,8 +3,10 @@ package account
 import (
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/gofiber/fiber/v3"
+	"github.com/google/uuid"
 
 	"github.com/rayakame/plsremind/hub/internal/apierr"
 	"github.com/rayakame/plsremind/hub/internal/auth"
@@ -12,16 +14,31 @@ import (
 	"github.com/rayakame/plsremind/hub/internal/db/sqlc"
 	"github.com/rayakame/plsremind/hub/internal/deps"
 	"github.com/rayakame/plsremind/hub/internal/httpx"
+	"github.com/rayakame/plsremind/hub/internal/secret"
 )
 
 // Register mounts the public account routes on api and the profile routes on user.
-func Register(api, user fiber.Router, d *deps.Deps) {
+func Register(api, user, admin fiber.Router, d *deps.Deps) {
 	api.Post("/setup", setup(d))
+	api.Post("/auth/register", register(d))
 	api.Post("/auth/login", login(d))
 	api.Post("/auth/logout", logout(d))
 
 	user.Get("", getProfile(d))
 	user.Patch("", patchProfile(d))
+	user.Delete("", auth.RequireSession(), deleteProfile(d))
+	user.Get("/identities", listIdentities(d))
+	user.Put("/password", auth.RequireSession(), setPassword(d))
+
+	admin.Get("/settings", getSettings(d))
+	admin.Patch("/settings", patchSettings(d))
+	admin.Get("/invites", listInvites(d))
+	admin.Post("/invites", createInvite(d))
+	admin.Delete("/invites/:id", deleteInvite(d))
+	admin.Get("/users", listUsers(d))
+	admin.Patch("/users/:id", patchUserAccess(d))
+	admin.Delete("/users/:id", adminDeleteUser(d))
+	admin.Put("/users/:id/password", resetPassword(d))
 }
 
 type credentials struct {
@@ -179,5 +196,90 @@ func patchProfile(d *deps.Deps) fiber.Handler {
 			return err
 		}
 		return c.JSON(View(user))
+	}
+}
+
+func deleteProfile(d *deps.Deps) fiber.Handler {
+	return func(c fiber.Ctx) error {
+		if err := DeleteUser(c.Context(), d, auth.Target(c)); err != nil {
+			return err
+		}
+		if err := auth.EndSession(c, d); err != nil {
+			return err
+		}
+		return c.SendStatus(http.StatusNoContent)
+	}
+}
+
+type Identity struct {
+	ID          uuid.UUID `json:"id"`
+	Provider    string    `json:"provider"`
+	ExternalID  string    `json:"external_id"`
+	DisplayName string    `json:"display_name"`
+	CreatedAt   time.Time `json:"created_at"`
+}
+
+func listIdentities(d *deps.Deps) fiber.Handler {
+	return func(c fiber.Ctx) error {
+		rows, err := d.Q().ListIdentities(c.Context(), auth.Target(c))
+		if err != nil {
+			return err
+		}
+		identities := make([]Identity, 0, len(rows))
+		for _, row := range rows {
+			identities = append(identities, Identity{
+				ID:          row.ID,
+				Provider:    row.Provider,
+				ExternalID:  row.ExternalID,
+				DisplayName: row.DisplayName,
+				CreatedAt:   row.CreatedAt.UTC(),
+			})
+		}
+		return c.JSON(identities)
+	}
+}
+
+func setPassword(d *deps.Deps) fiber.Handler {
+	return func(c fiber.Ctx) error {
+		var in struct {
+			Username        string `json:"username"`
+			CurrentPassword string `json:"current_password"`
+			NewPassword     string `json:"new_password"`
+		}
+		if err := httpx.Body(c, &in); err != nil {
+			return err
+		}
+		userID := auth.Target(c)
+		err := db.Tx(c.Context(), d.Pool, func(q *sqlc.Queries) error {
+			identity, err := q.GetPasswordIdentity(c.Context(), userID)
+			hasPassword := err == nil
+			if err != nil && !db.IsNotFound(err) {
+				return err
+			}
+			fields := map[string]string{}
+			checkPassword(fields, "new_password", in.NewPassword)
+			username := NormalizeUsername(in.Username)
+			if !hasPassword {
+				checkUsername(fields, username)
+			}
+			if len(fields) > 0 {
+				return apierr.Validation(fields)
+			}
+			if !hasPassword {
+				return AddPassword(c.Context(), q, d.Now(), userID, username, in.NewPassword)
+			}
+			if !secret.VerifyPassword(*identity.PasswordHash, in.CurrentPassword) {
+				return apierr.New(http.StatusForbidden, "invalid_credentials", "The current password is wrong.")
+			}
+			hash, err := secret.HashPassword(in.NewPassword)
+			if err != nil {
+				return err
+			}
+			return q.UpdatePasswordHash(c.Context(), sqlc.UpdatePasswordHashParams{ID: identity.ID, PasswordHash: &hash})
+		})
+		if err != nil {
+			return err
+		}
+		return c.SendStatus(http.StatusNoContent)
 	}
 }

@@ -24,3 +24,25 @@ func (q *Queries) GetSettings(ctx context.Context) (GetSettingsRow, error) {
 	err := row.Scan(&i.Name, &i.Registration)
 	return i, err
 }
+
+const updateSettings = `-- name: UpdateSettings :one
+UPDATE instance_settings SET name = $1, registration = $2
+RETURNING name, registration
+`
+
+type UpdateSettingsParams struct {
+	Name         string
+	Registration string
+}
+
+type UpdateSettingsRow struct {
+	Name         string
+	Registration string
+}
+
+func (q *Queries) UpdateSettings(ctx context.Context, arg UpdateSettingsParams) (UpdateSettingsRow, error) {
+	row := q.db.QueryRow(ctx, updateSettings, arg.Name, arg.Registration)
+	var i UpdateSettingsRow
+	err := row.Scan(&i.Name, &i.Registration)
+	return i, err
+}

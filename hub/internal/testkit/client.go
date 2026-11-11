@@ -34,7 +34,24 @@ func (e *Env) sessionClient(r *Resp) *Client {
 // Admin sets the instance up and returns the first user, an admin named root.
 func (e *Env) Admin(t *testing.T) *Client {
 	t.Helper()
-	r := e.Do(t, "POST", "/setup", J{"username": "root", "password": Password})
+	if e.admin == nil {
+		r := e.Do(t, "POST", "/setup", J{"username": "root", "password": Password})
+		require.Equal(t, 201, r.Status, string(r.Body))
+		e.admin = e.sessionClient(r)
+	}
+	return e.admin
+}
+
+// User registers a regular user through an invite.
+func (e *Env) User(t *testing.T, username string) *Client {
+	t.Helper()
+	invite := e.Admin(t).Do(t, "POST", "/admin/invites", J{})
+	require.Equal(t, 201, invite.Status, string(invite.Body))
+	r := e.Do(t, "POST", "/auth/register", J{
+		"username":    username,
+		"password":    Password,
+		"invite_code": invite.Get("code").String(),
+	})
 	require.Equal(t, 201, r.Status, string(r.Body))
 	return e.sessionClient(r)
 }
