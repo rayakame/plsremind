@@ -1,0 +1,5 @@
+extends:
+  - recommended
+rules:
+  # Every operation documents its errors through the shared `default` response.
+  operation-4xx-response: off

@@ -1,0 +1,35 @@
+services:
+  hub:
+    build:
+      context: ../hub
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      # The password travels separately so that it may contain any character.
+      PLSREMIND_DATABASE_URL: postgres://plsremind@db:5432/plsremind?sslmode=disable
+      PGPASSWORD: ${POSTGRES_PASSWORD:-plsremind}
+      PLSREMIND_PUBLIC_URL: ${PLSREMIND_PUBLIC_URL:-http://localhost:${PLSREMIND_PORT:-8080}}
+      PLSREMIND_SECRET_KEY: ${PLSREMIND_SECRET_KEY:?set PLSREMIND_SECRET_KEY, see docs/self-hosting.md}
+      PLSREMIND_PROXY_HEADER: ${PLSREMIND_PROXY_HEADER:-}
+    ports:
+      - "${PLSREMIND_PORT:-8080}:8080"
+
+  db:
+    image: postgres:18
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: plsremind
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-plsremind}
+      POSTGRES_DB: plsremind
+    volumes:
+      - db:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U plsremind -d plsremind"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  db:

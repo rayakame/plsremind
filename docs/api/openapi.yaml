@@ -1,0 +1,1846 @@
+openapi: 3.1.0
+info:
+  title: plsremind API
+  version: "1"
+  description: |
+    The plsremind hub exposes one API for everything: the dashboard, connections and
+    your own adapters all use the endpoints described here.
+
+    Errors always have the same shape, see the `Error` schema. Timestamps are UTC in
+    RFC 3339 format. IDs are UUIDs.
+
+    ## Requests from browsers
+
+    A request that changes something and is authenticated by the session cookie must carry
+    an `Origin` header equal to the hub's public address, which browsers send on their own.
+    A write with any other `Origin` is refused with `403` and the code `csrf_failed`, unless
+    it uses a bearer token.
+
+    ## Rate limits
+
+    Every response carries `X-RateLimit-Limit`, `X-RateLimit-Remaining` and
+    `X-RateLimit-Reset` (Unix seconds). Authenticated callers are counted per token or
+    session, everyone else per IP address. Logging in and registering always count per IP
+    address. When the limit is used up the API answers
+    `429` with the code `rate_limited` and a `Retry-After` header in seconds.
+  license:
+    name: MIT
+    identifier: MIT
+servers:
+  - url: /api/v1
+security:
+  - session: []
+  - bearer: []
+tags:
+  - name: Instance
+    description: Public information about this hub and its first-time setup.
+  - name: Authentication
+    description: Logging in and out.
+  - name: Account
+    description: The profile and settings of a user.
+  - name: Admin
+    description: Instance administration. Needs a dashboard session of an admin.
+  - name: Lists
+    description: |
+      Every item lives in exactly one list. Each user has an inbox that cannot be renamed or
+      deleted; items created without a list go there.
+  - name: Reminder plans
+    description: |
+      A plan says when the hub reminds about a deadline on its own. There is one plan per
+      priority. Each has a default that a user can replace, and a single item can override it.
+
+      Every deadline is also announced at the moment it is due. `follow_up` controls nagging
+      after that: `daily` every 24 hours, `twice_daily` every 12 hours, for at most one week.
+  - name: Items
+    description: |
+      An item is a todo or a deadline. There is no separate type: an item with a due time is a
+      deadline, and setting or clearing the due time turns one into the other.
+
+      A due time is either `due_at`, an exact moment, or `due_date`, a whole day. An all-day
+      item is due at 23:59:59 of that day in the user's time zone, and `due_at` in responses
+      always carries the resulting moment.
+
+      Completing an item is a `PATCH` with `status: "done"`.
+  - name: Subitems
+    description: |
+      A one-level checklist inside an item, for example the steps of a deadline. Subitems have
+      no due time and no reminders, and checking them off never completes the item itself.
+  - name: Manual reminders
+    description: |
+      Reminders a user asks for explicitly, in the style of "remind me again in 2 hours". They
+      work for todos and deadlines alike and are independent of the reminder plans.
+  - name: Connections
+    description: |
+      A connection is an integration the admin installs for everyone, for example the Discord
+      bot. It authenticates with its own token and names the user it acts for in the path:
+      `/users/{hub user id}/...`.
+
+      A connection can act for a user as soon as the user has linked an account at the
+      connection's provider, and the user can switch that off. It reaches the user's lists,
+      items, subitems and manual reminders and can read the profile and the reminder plans.
+      It cannot touch anything else. Users it may not act for look like they do not exist.
+paths:
+  /info:
+    get:
+      tags: [Instance]
+      operationId: getInfo
+      summary: Get instance information
+      security: []
+      responses:
+        "200":
+          description: Instance information.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Info"
+        default:
+          $ref: "#/components/responses/Error"
+  /setup:
+    post:
+      tags: [Instance]
+      operationId: setup
+      summary: Create the first admin
+      description: Only works while the instance has no users. The created user is an admin and is logged in.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NewPasswordAccount"
+      responses:
+        "201":
+          description: The admin account. A session cookie is set.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        default:
+          $ref: "#/components/responses/Error"
+  /auth/login:
+    post:
+      tags: [Authentication]
+      operationId: login
+      summary: Log in with username and password
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, password]
+              properties:
+                username:
+                  type: string
+                password:
+                  type: string
+      responses:
+        "200":
+          description: The logged-in user. A session cookie is set.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        default:
+          $ref: "#/components/responses/Error"
+  /auth/logout:
+    post:
+      tags: [Authentication]
+      operationId: logout
+      summary: End the current session
+      security: []
+      responses:
+        "204":
+          description: The session is gone.
+        default:
+          $ref: "#/components/responses/Error"
+  /users/{user}:
+    parameters:
+      - $ref: "#/components/parameters/User"
+    get:
+      tags: [Account]
+      operationId: getUser
+      summary: Get a user's profile
+      responses:
+        "200":
+          description: The user. A connection only gets the fields of `UserSummary`.
+          content:
+            application/json:
+              schema:
+                anyOf:
+                  - $ref: "#/components/schemas/User"
+                  - $ref: "#/components/schemas/UserSummary"
+        default:
+          $ref: "#/components/responses/Error"
+    delete:
+      tags: [Account]
+      operationId: deleteUser
+      summary: Delete the account and all its data
+      description: Session only. The last active admin cannot delete themselves.
+      security:
+        - session: []
+      responses:
+        "204":
+          description: The account is gone.
+        default:
+          $ref: "#/components/responses/Error"
+    patch:
+      tags: [Account]
+      operationId: updateUser
+      summary: Change a user's profile
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                display_name:
+                  type: string
+                timezone:
+                  type: string
+                  description: IANA time zone name.
+                  examples: [Europe/Berlin]
+                quiet_hours:
+                  $ref: "#/components/schemas/QuietHours"
+      responses:
+        "200":
+          description: The updated user.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        default:
+          $ref: "#/components/responses/Error"
+  /auth/register:
+    post:
+      tags: [Authentication]
+      operationId: register
+      summary: Create an account with username and password
+      description: Needs `invite_code` unless registration is open. The new user is logged in.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: "#/components/schemas/NewPasswordAccount"
+                - type: object
+                  properties:
+                    invite_code:
+                      type: string
+      responses:
+        "201":
+          description: The new user. A session cookie is set.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        default:
+          $ref: "#/components/responses/Error"
+  /users/{user}/identities:
+    parameters:
+      - $ref: "#/components/parameters/User"
+    get:
+      tags: [Account]
+      operationId: listIdentities
+      summary: List the accounts linked to a user
+      responses:
+        "200":
+          description: The identities.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Identity"
+        default:
+          $ref: "#/components/responses/Error"
+  /users/{user}/password:
+    parameters:
+      - $ref: "#/components/parameters/User"
+    put:
+      tags: [Account]
+      operationId: setPassword
+      summary: Change or set the password
+      description: |
+        Session only. With an existing password, send `current_password`. An account that only
+        logs in through a provider sends `username` instead to get a password login.
+
+        Changing the password logs out every other session and revokes all personal tokens
+        of the account.
+      security:
+        - session: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [new_password]
+              properties:
+                new_password:
+                  type: string
+                current_password:
+                  type: string
+                username:
+                  type: string
+      responses:
+        "204":
+          description: The password is set.
+        default:
+          $ref: "#/components/responses/Error"
+  /admin/settings:
+    get:
+      tags: [Admin]
+      operationId: getSettings
+      summary: Get instance settings
+      security:
+        - session: []
+      responses:
+        "200":
+          description: The settings.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Settings"
+        default:
+          $ref: "#/components/responses/Error"
+    patch:
+      tags: [Admin]
+      operationId: updateSettings
+      summary: Change instance settings
+      security:
+        - session: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                registration:
+                  type: string
+      responses:
+        "200":
+          description: The updated settings.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Settings"
+        default:
+          $ref: "#/components/responses/Error"
+  /admin/invites:
+    get:
+      tags: [Admin]
+      operationId: listInvites
+      summary: List invites
+      security:
+        - session: []
+      responses:
+        "200":
+          description: All invites, newest first. Codes are not included.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Invite"
+        default:
+          $ref: "#/components/responses/Error"
+    post:
+      tags: [Admin]
+      operationId: createInvite
+      summary: Create an invite
+      security:
+        - session: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                expires_in:
+                  $ref: "#/components/schemas/Duration"
+      responses:
+        "201":
+          description: The invite. `code` is only shown this once.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Invite"
+        default:
+          $ref: "#/components/responses/Error"
+  /admin/invites/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    delete:
+      tags: [Admin]
+      operationId: deleteInvite
+      summary: Revoke an invite
+      security:
+        - session: []
+      responses:
+        "204":
+          description: The invite is gone.
+        default:
+          $ref: "#/components/responses/Error"
+  /admin/users:
+    get:
+      tags: [Admin]
+      operationId: listUsers
+      summary: List users
+      security:
+        - session: []
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Cursor"
+      responses:
+        "200":
+          description: One page of users, oldest first.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, next_cursor]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/AdminUser"
+                  next_cursor:
+                    $ref: "#/components/schemas/NextCursor"
+        default:
+          $ref: "#/components/responses/Error"
+  /admin/users/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    patch:
+      tags: [Admin]
+      operationId: updateUserAccess
+      summary: Change a user's role or disable them
+      description: Disabling a user ends their sessions. The last active admin cannot be demoted or disabled.
+      security:
+        - session: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                role:
+                  type: string
+                disabled:
+                  type: boolean
+      responses:
+        "200":
+          description: The updated user.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminUser"
+        default:
+          $ref: "#/components/responses/Error"
+    delete:
+      tags: [Admin]
+      operationId: adminDeleteUser
+      summary: Delete a user and all their data
+      security:
+        - session: []
+      responses:
+        "204":
+          description: The user is gone.
+        default:
+          $ref: "#/components/responses/Error"
+  /admin/users/{id}/password:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    put:
+      tags: [Admin]
+      operationId: resetPassword
+      summary: Set a new password for a user
+      description: Ends the user's sessions and revokes their personal tokens.
+      security:
+        - session: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [new_password]
+              properties:
+                new_password:
+                  type: string
+      responses:
+        "204":
+          description: The password is set.
+        default:
+          $ref: "#/components/responses/Error"
+  /users/{user}/tokens:
+    parameters:
+      - $ref: "#/components/parameters/User"
+    get:
+      tags: [Account]
+      operationId: listTokens
+      summary: List personal tokens
+      security:
+        - session: []
+      responses:
+        "200":
+          description: The tokens, without their secret values.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PersonalToken"
+        default:
+          $ref: "#/components/responses/Error"
+    post:
+      tags: [Account]
+      operationId: createToken
+      summary: Create a personal token
+      description: |
+        A personal token lets your own tools use the API as you. It reaches your lists, items and
+        settings, but it cannot manage tokens, change the password, unlink accounts or delete the account.
+      security:
+        - session: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name:
+                  type: string
+                  description: 1 to 64 characters, for you to recognise the token later.
+      responses:
+        "201":
+          description: The token. `token` is only shown this once.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PersonalToken"
+        default:
+          $ref: "#/components/responses/Error"
+  /users/{user}/tokens/{id}:
+    parameters:
+      - $ref: "#/components/parameters/User"
+      - $ref: "#/components/parameters/Id"
+    delete:
+      tags: [Account]
+      operationId: deleteToken
+      summary: Revoke a personal token
+      security:
+        - session: []
+      responses:
+        "204":
+          description: The token no longer works.
+        default:
+          $ref: "#/components/responses/Error"
+  /users/{user}/lists:
+    parameters:
+      - $ref: "#/components/parameters/User"
+    get:
+      tags: [Lists]
+      operationId: listLists
+      summary: List all lists
+      responses:
+        "200":
+          description: The lists in display order.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/List"
+        default:
+          $ref: "#/components/responses/Error"
+    post:
+      tags: [Lists]
+      operationId: createList
+      summary: Create a list
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ListName"
+      responses:
+        "201":
+          description: The new list, placed last.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/List"
+        default:
+          $ref: "#/components/responses/Error"
+  /users/{user}/lists/order:
+    parameters:
+      - $ref: "#/components/parameters/User"
+    put:
+      tags: [Lists]
+      operationId: reorderLists
+      summary: Set the display order of all lists
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Order"
+      responses:
+        "200":
+          description: The lists in their new order.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/List"
+        default:
+          $ref: "#/components/responses/Error"
+  /users/{user}/lists/{id}:
+    parameters:
+      - $ref: "#/components/parameters/User"
+      - $ref: "#/components/parameters/Id"
+    patch:
+      tags: [Lists]
+      operationId: renameList
+      summary: Rename a list
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ListName"
+      responses:
+        "200":
+          description: The renamed list.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/List"
+        default:
+          $ref: "#/components/responses/Error"
+    delete:
+      tags: [Lists]
+      operationId: deleteList
+      summary: Delete a list
+      description: Items in the list are moved to the inbox, not deleted.
+      responses:
+        "204":
+          description: The list is gone.
+        default:
+          $ref: "#/components/responses/Error"
+  /users/{user}/reminder-plans:
+    parameters:
+      - $ref: "#/components/parameters/User"
+    get:
+      tags: [Reminder plans]
+      operationId: listReminderPlans
+      summary: Get the plans for all three priorities
+      responses:
+        "200":
+          description: The plans, in the order low, normal, high.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ReminderPlan"
+        default:
+          $ref: "#/components/responses/Error"
+  /users/{user}/reminder-plans/{priority}:
+    parameters:
+      - $ref: "#/components/parameters/User"
+      - name: priority
+        in: path
+        required: true
+        schema:
+          $ref: "#/components/schemas/Priority"
+    put:
+      tags: [Reminder plans]
+      operationId: setReminderPlan
+      summary: Replace the plan of one priority
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                before:
+                  $ref: "#/components/schemas/Before"
+                follow_up:
+                  type: string
+      responses:
+        "200":
+          description: The stored plan, with `before` sorted and without duplicates.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReminderPlan"
+        default:
+          $ref: "#/components/responses/Error"
+    delete:
+      tags: [Reminder plans]
+      operationId: resetReminderPlan
+      summary: Go back to the default plan
+      responses:
+        "204":
+          description: The default applies again.
+        default:
+          $ref: "#/components/responses/Error"
+  /users/{user}/items:
+    parameters:
+      - $ref: "#/components/parameters/User"
+    get:
+      tags: [Items]
+      operationId: listItems
+      summary: List items
+      parameters:
+        - name: list_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [open, done, all]
+            default: open
+        - name: has_due
+          in: query
+          description: Only deadlines (`true`) or only todos without a due time (`false`).
+          schema:
+            type: boolean
+        - name: due_before
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: due_after
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: sort
+          in: query
+          description: With `due`, items without a due time always come last.
+          schema:
+            type: string
+            enum: [created, due, priority]
+            default: created
+        - name: order
+          in: query
+          description: With `sort=priority`, `desc` lists high priority first.
+          schema:
+            type: string
+            enum: [asc, desc]
+            default: asc
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Cursor"
+      responses:
+        "200":
+          description: One page of items.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, next_cursor]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Item"
+                  next_cursor:
+                    $ref: "#/components/schemas/NextCursor"
+        default:
+          $ref: "#/components/responses/Error"
+    post:
+      tags: [Items]
+      operationId: createItem
+      summary: Create an item
+      description: Only `title` is required. Without `list_id` the item goes to the inbox.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: "#/components/schemas/ItemInput"
+                - type: object
+                  required: [title]
+      responses:
+        "201":
+          description: The new item.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Item"
+        default:
+          $ref: "#/components/responses/Error"
+  /users/{user}/items/{id}:
+    parameters:
+      - $ref: "#/components/parameters/User"
+      - $ref: "#/components/parameters/Id"
+    get:
+      tags: [Items]
+      operationId: getItem
+      summary: Get an item
+      responses:
+        "200":
+          description: The item.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Item"
+        default:
+          $ref: "#/components/responses/Error"
+    patch:
+      tags: [Items]
+      operationId: updateItem
+      summary: Change an item
+      description: |
+        Only the fields you send change. Send `status` to complete or reopen the item and
+        `list_id` to move it. `null` for `due_at` or `due_date` removes the due time.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: "#/components/schemas/ItemInput"
+                - type: object
+                  properties:
+                    status:
+                      type: string
+      responses:
+        "200":
+          description: The updated item.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Item"
+        default:
+          $ref: "#/components/responses/Error"
+    delete:
+      tags: [Items]
+      operationId: deleteItem
+      summary: Delete an item for good
+      responses:
+        "204":
+          description: The item is gone.
+        default:
+          $ref: "#/components/responses/Error"
+  /users/{user}/items/{id}/subitems:
+    parameters:
+      - $ref: "#/components/parameters/User"
+      - $ref: "#/components/parameters/Id"
+    post:
+      tags: [Subitems]
+      operationId: createSubitem
+      summary: Add a subitem
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                title:
+                  type: string
+                  description: 1 to 200 characters.
+      responses:
+        "201":
+          description: The new subitem, placed last.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Subitem"
+        default:
+          $ref: "#/components/responses/Error"
+  /users/{user}/items/{id}/subitems/order:
+    parameters:
+      - $ref: "#/components/parameters/User"
+      - $ref: "#/components/parameters/Id"
+    put:
+      tags: [Subitems]
+      operationId: reorderSubitems
+      summary: Set the order of an item's subitems
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Order"
+      responses:
+        "200":
+          description: The subitems in their new order.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Subitem"
+        default:
+          $ref: "#/components/responses/Error"
+  /users/{user}/items/{id}/subitems/{sid}:
+    parameters:
+      - $ref: "#/components/parameters/User"
+      - $ref: "#/components/parameters/Id"
+      - name: sid
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    patch:
+      tags: [Subitems]
+      operationId: updateSubitem
+      summary: Rename a subitem or check it off
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                title:
+                  type: string
+                done:
+                  type: boolean
+      responses:
+        "200":
+          description: The updated subitem.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Subitem"
+        default:
+          $ref: "#/components/responses/Error"
+    delete:
+      tags: [Subitems]
+      operationId: deleteSubitem
+      summary: Delete a subitem
+      responses:
+        "204":
+          description: The subitem is gone.
+        default:
+          $ref: "#/components/responses/Error"
+  /users/{user}/items/{id}/reminders:
+    parameters:
+      - $ref: "#/components/parameters/User"
+      - $ref: "#/components/parameters/Id"
+    get:
+      tags: [Manual reminders]
+      operationId: listReminders
+      summary: List an item's manual reminders
+      responses:
+        "200":
+          description: The reminders, earliest first.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ManualReminder"
+        default:
+          $ref: "#/components/responses/Error"
+    post:
+      tags: [Manual reminders]
+      operationId: createReminder
+      summary: Remind about an item at a chosen time
+      description: Send exactly one of `at` and `in`. Not possible for items that are done.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                at:
+                  type: string
+                  description: A moment in the future, as an RFC 3339 timestamp.
+                in:
+                  type: string
+                  description: A duration from now, such as `2h`.
+      responses:
+        "201":
+          description: The new reminder.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ManualReminder"
+        default:
+          $ref: "#/components/responses/Error"
+  /users/{user}/items/{id}/reminders/{rid}:
+    parameters:
+      - $ref: "#/components/parameters/User"
+      - $ref: "#/components/parameters/Id"
+      - name: rid
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    delete:
+      tags: [Manual reminders]
+      operationId: deleteReminder
+      summary: Cancel a manual reminder
+      responses:
+        "204":
+          description: The reminder is gone.
+        default:
+          $ref: "#/components/responses/Error"
+  /connection/users/lookup:
+    get:
+      tags: [Connections]
+      operationId: lookupUser
+      summary: Find the hub user behind an external account
+      description: |
+        Only for connection tokens. Searches the accounts at the connection's own provider,
+        so the Discord bot passes a Discord user ID.
+      security:
+        - bearer: []
+      parameters:
+        - name: external_id
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: The user.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [id, display_name, timezone]
+                properties:
+                  id:
+                    type: string
+                    format: uuid
+                  display_name:
+                    type: string
+                  timezone:
+                    type: string
+        default:
+          $ref: "#/components/responses/Error"
+  /users/{user}/connections:
+    parameters:
+      - $ref: "#/components/parameters/User"
+    get:
+      tags: [Connections]
+      operationId: listUserConnections
+      summary: List the connections available to a user
+      responses:
+        "200":
+          description: The connections the admin has installed and enabled.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/UserConnection"
+        default:
+          $ref: "#/components/responses/Error"
+  /users/{user}/connections/{id}:
+    parameters:
+      - $ref: "#/components/parameters/User"
+      - $ref: "#/components/parameters/Id"
+    put:
+      tags: [Connections]
+      operationId: setConnectionGrant
+      summary: Allow or forbid a connection to act for the user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                enabled:
+                  type: boolean
+      responses:
+        "200":
+          description: The connection with the new setting.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserConnection"
+        default:
+          $ref: "#/components/responses/Error"
+  /admin/connections:
+    get:
+      tags: [Admin]
+      operationId: listConnections
+      summary: List connections
+      security:
+        - session: []
+      responses:
+        "200":
+          description: All connections, without their tokens.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Connection"
+        default:
+          $ref: "#/components/responses/Error"
+    post:
+      tags: [Admin]
+      operationId: createConnection
+      summary: Install a connection
+      security:
+        - session: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  description: 1 to 64 characters.
+                description:
+                  type: string
+                  description: At most 500 characters.
+                provider:
+                  type: string
+                  description: The provider whose accounts the connection works with, for example `discord`.
+      responses:
+        "201":
+          description: The connection. `token` is only shown this once.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Connection"
+        default:
+          $ref: "#/components/responses/Error"
+  /admin/connections/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    patch:
+      tags: [Admin]
+      operationId: updateConnection
+      summary: Change or disable a connection
+      security:
+        - session: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                description:
+                  type: string
+                enabled:
+                  type: boolean
+      responses:
+        "200":
+          description: The updated connection.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Connection"
+        default:
+          $ref: "#/components/responses/Error"
+    delete:
+      tags: [Admin]
+      operationId: deleteConnection
+      summary: Remove a connection
+      security:
+        - session: []
+      responses:
+        "204":
+          description: The connection is gone and its token no longer works.
+        default:
+          $ref: "#/components/responses/Error"
+  /admin/connections/{id}/token:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    post:
+      tags: [Admin]
+      operationId: rotateConnectionToken
+      summary: Replace a connection's token
+      description: The old token stops working immediately.
+      security:
+        - session: []
+      responses:
+        "200":
+          description: The connection with its new `token`, shown only this once.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Connection"
+        default:
+          $ref: "#/components/responses/Error"
+  /auth/oauth/{provider}/start:
+    parameters:
+      - $ref: "#/components/parameters/Provider"
+    get:
+      tags: [Authentication]
+      operationId: startOAuth
+      summary: Start logging in or linking through a provider
+      description: |
+        Open this address in the browser. It redirects to the provider and, after the user
+        agrees, back to the hub.
+
+        With `intent=login` the user is logged in, and a new account is created if the
+        provider account is not known yet. With `intent=link` the provider account is added
+        to the logged-in user.
+
+        Every outcome ends with a redirect to the dashboard. On failure the address carries
+        `?auth_error=` with one of `invalid_state`, `provider_error`, `login_disabled`,
+        `link_disabled`, `registration_closed`, `invalid_invite`, `identity_taken` or
+        `account_disabled`.
+      security: []
+      parameters:
+        - name: intent
+          in: query
+          schema:
+            type: string
+            enum: [login, link]
+            default: login
+        - name: invite_code
+          in: query
+          description: Needed to create an account while registration is invite-only.
+          schema:
+            type: string
+      responses:
+        "302":
+          description: Redirect to the provider, or to the dashboard with `auth_error`.
+        default:
+          $ref: "#/components/responses/Error"
+  /auth/oauth/{provider}/callback:
+    parameters:
+      - $ref: "#/components/parameters/Provider"
+    get:
+      tags: [Authentication]
+      operationId: finishOAuth
+      summary: Return address for the provider
+      description: Register this address as the redirect URI at the provider. It is not called directly.
+      security: []
+      parameters:
+        - name: state
+          in: query
+          schema:
+            type: string
+        - name: code
+          in: query
+          schema:
+            type: string
+        - name: error
+          in: query
+          schema:
+            type: string
+      responses:
+        "302":
+          description: Redirect to the dashboard, with `auth_error` on failure.
+        default:
+          $ref: "#/components/responses/Error"
+  /users/{user}/identities/{id}:
+    parameters:
+      - $ref: "#/components/parameters/User"
+      - $ref: "#/components/parameters/Id"
+    delete:
+      tags: [Account]
+      operationId: unlinkIdentity
+      summary: Unlink an account
+      description: |
+        Session only. The hub also withdraws its access at the provider where the provider
+        supports that. The last remaining identity cannot be removed.
+      security:
+        - session: []
+      responses:
+        "204":
+          description: The account is unlinked.
+        default:
+          $ref: "#/components/responses/Error"
+  /admin/providers:
+    get:
+      tags: [Admin]
+      operationId: listProviders
+      summary: List login providers
+      security:
+        - session: []
+      responses:
+        "200":
+          description: All providers, enabled or not.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/LoginProvider"
+        default:
+          $ref: "#/components/responses/Error"
+  /admin/providers/{key}:
+    parameters:
+      - name: key
+        in: path
+        required: true
+        schema:
+          type: string
+    put:
+      tags: [Admin]
+      operationId: setProvider
+      summary: Configure a login provider
+      description: |
+        Only the fields you send change. `password`, `github` and `discord` are built in. Any
+        other key creates an OIDC provider and needs `type: "oidc"`.
+
+        `login_enabled` and `link_enabled` are separate: a provider can be off for logging in
+        and still let users link their account, which is what a connection needs to find them.
+        At least one provider must keep `login_enabled`.
+      security:
+        - session: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                type:
+                  type: string
+                name:
+                  type: string
+                login_enabled:
+                  type: boolean
+                link_enabled:
+                  type: boolean
+                client_id:
+                  type: string
+                client_secret:
+                  type: string
+                  description: Stored encrypted and never returned.
+                issuer_url:
+                  type: string
+                  description: OIDC only. The hub reads the provider's configuration from here.
+      responses:
+        "200":
+          description: The provider.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoginProvider"
+        default:
+          $ref: "#/components/responses/Error"
+    delete:
+      tags: [Admin]
+      operationId: deleteProvider
+      summary: Delete an OIDC provider
+      description: Not possible for built-in providers or while users have accounts linked through it.
+      security:
+        - session: []
+      responses:
+        "204":
+          description: The provider is gone.
+        default:
+          $ref: "#/components/responses/Error"
+components:
+  securitySchemes:
+    session:
+      type: apiKey
+      in: cookie
+      name: plsr_session
+      description: Dashboard session, set by logging in.
+    bearer:
+      type: http
+      scheme: bearer
+      description: A personal token (`plsr_pat_...`) or a connection token (`plsr_con_...`).
+  parameters:
+    User:
+      name: user
+      in: path
+      required: true
+      description: "`@me` for the caller. Connections pass the hub ID of the user they act for."
+      schema:
+        type: string
+    Provider:
+      name: provider
+      in: path
+      required: true
+      description: The key of a login provider, for example `github`.
+      schema:
+        type: string
+    Id:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    Limit:
+      name: limit
+      in: query
+      description: Page size, 1 to 100.
+      schema:
+        type: integer
+        default: 50
+    Cursor:
+      name: cursor
+      in: query
+      description: The `next_cursor` of the previous page.
+      schema:
+        type: string
+  responses:
+    Error:
+      description: An error.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+  schemas:
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+              description: Stable machine-readable code.
+              examples: [not_found]
+            message:
+              type: string
+              description: Human-readable explanation in English.
+            fields:
+              type: object
+              description: Per-field messages, only present for `validation_failed`.
+              additionalProperties:
+                type: string
+    Info:
+      type: object
+      required: [name, version, setup_required, registration, login_methods]
+      properties:
+        name:
+          type: string
+        version:
+          type: string
+        setup_required:
+          type: boolean
+          description: True until the first admin was created through `/setup`.
+        registration:
+          type: string
+          enum: [open, invite]
+        login_methods:
+          type: array
+          items:
+            type: object
+            required: [key, type, name]
+            properties:
+              key:
+                type: string
+              type:
+                type: string
+                enum: [password, github, discord, oidc]
+              name:
+                type: string
+    QuietHours:
+      type: object
+      required: [start, end]
+      description: Reminders that fall into this window are delivered when it ends.
+      properties:
+        start:
+          type: string
+          examples: ["22:00"]
+        end:
+          type: string
+          examples: ["08:00"]
+    User:
+      type: object
+      required: [id, display_name, role, timezone, quiet_hours, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        display_name:
+          type: string
+        role:
+          type: string
+          enum: [user, admin]
+        timezone:
+          type: string
+        quiet_hours:
+          $ref: "#/components/schemas/QuietHours"
+        created_at:
+          type: string
+          format: date-time
+    UserSummary:
+      type: object
+      required: [id, display_name, timezone, quiet_hours]
+      properties:
+        id:
+          type: string
+          format: uuid
+        display_name:
+          type: string
+        timezone:
+          type: string
+        quiet_hours:
+          $ref: "#/components/schemas/QuietHours"
+    NewPasswordAccount:
+      type: object
+      required: [username, password]
+      properties:
+        username:
+          type: string
+          description: 3 to 32 characters from a-z, 0-9, underscore, dot and dash. Stored in lower case.
+        password:
+          type: string
+          description: 8 to 256 characters.
+        display_name:
+          type: string
+          description: Defaults to the username.
+        timezone:
+          type: string
+          description: IANA time zone name, defaults to UTC.
+    Duration:
+      type: string
+      description: A span of time made of days, hours and minutes in descending order, without spaces.
+      examples: ["3d", "1d12h", "90m"]
+    NextCursor:
+      type: [string, "null"]
+      description: Pass as `cursor` to get the next page. Null on the last page.
+    Identity:
+      type: object
+      required: [id, provider, external_id, display_name, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        provider:
+          type: string
+          examples: [discord]
+        external_id:
+          type: string
+          description: The user's ID at the provider. For `password` this is the username.
+        display_name:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+    Settings:
+      type: object
+      required: [name, registration]
+      properties:
+        name:
+          type: string
+        registration:
+          type: string
+          enum: [open, invite]
+    Invite:
+      type: object
+      required: [id, created_at, expires_at, used_at, used_by]
+      properties:
+        id:
+          type: string
+          format: uuid
+        code:
+          type: string
+          description: Only present in the response that creates the invite.
+        created_at:
+          type: string
+          format: date-time
+        expires_at:
+          type: string
+          format: date-time
+        used_at:
+          type: [string, "null"]
+          format: date-time
+        used_by:
+          type: [string, "null"]
+          format: uuid
+    AdminUser:
+      allOf:
+        - $ref: "#/components/schemas/User"
+        - type: object
+          required: [disabled]
+          properties:
+            disabled:
+              type: boolean
+    PersonalToken:
+      type: object
+      required: [id, name, created_at, last_used_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        token:
+          type: string
+          description: Only present in the response that creates the token.
+        created_at:
+          type: string
+          format: date-time
+        last_used_at:
+          type: [string, "null"]
+          format: date-time
+    List:
+      type: object
+      required: [id, name, position, is_inbox, created_at, updated_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        position:
+          type: integer
+        is_inbox:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    ListName:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          description: 1 to 100 characters.
+    Order:
+      type: object
+      required: [ids]
+      properties:
+        ids:
+          type: array
+          description: Every ID exactly once, in the wanted order.
+          items:
+            type: string
+            format: uuid
+    Priority:
+      type: string
+      enum: [low, normal, high]
+    Before:
+      type: array
+      description: How long before the due time to remind. At most 10 entries, each between `1m` and `365d`.
+      items:
+        $ref: "#/components/schemas/Duration"
+    ReminderPlan:
+      type: object
+      required: [priority, before, follow_up, is_default]
+      properties:
+        priority:
+          $ref: "#/components/schemas/Priority"
+        before:
+          $ref: "#/components/schemas/Before"
+        follow_up:
+          type: string
+          enum: [never, daily, twice_daily]
+        is_default:
+          type: boolean
+          description: False once the user replaced the plan.
+    ReminderOverride:
+      type: object
+      description: |
+        Replaces the reminder plan for one item. `off` silences every automatic reminder for
+        the item, including the one at its due time. `custom` replaces only the reminders
+        before the due time. Manual reminders are never affected.
+      required: [mode]
+      properties:
+        mode:
+          type: string
+          enum: ["off", custom]
+        before:
+          $ref: "#/components/schemas/Before"
+    ItemInput:
+      type: object
+      properties:
+        title:
+          type: string
+          description: 1 to 500 characters.
+        note:
+          type: string
+          description: At most 10000 characters.
+        list_id:
+          type: string
+        priority:
+          type: string
+        due_at:
+          type: [string, "null"]
+          description: An exact due time. Cannot be combined with `due_date`.
+        due_date:
+          type: [string, "null"]
+          description: An all-day deadline, as `YYYY-MM-DD`.
+        subitems:
+          type: array
+          description: Titles of subitems to create with the item. Ignored when updating.
+          items:
+            type: string
+        reminder_override:
+          oneOf:
+            - type: "null"
+            - type: object
+    Item:
+      type: object
+      required: [id, list_id, title, note, priority, due_at, due_date, all_day, status, completed_at, reminder_override, subitems, created_at, updated_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        list_id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        note:
+          type: string
+        priority:
+          $ref: "#/components/schemas/Priority"
+        due_at:
+          type: [string, "null"]
+          format: date-time
+          description: When the item is due. Null for a todo.
+        due_date:
+          type: [string, "null"]
+          format: date
+          description: Set for all-day deadlines.
+        all_day:
+          type: boolean
+        status:
+          type: string
+          enum: [open, done]
+        completed_at:
+          type: [string, "null"]
+          format: date-time
+        reminder_override:
+          oneOf:
+            - type: "null"
+            - $ref: "#/components/schemas/ReminderOverride"
+        subitems:
+          type: array
+          items:
+            $ref: "#/components/schemas/Subitem"
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    Subitem:
+      type: object
+      required: [id, item_id, title, done, position, created_at, updated_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        item_id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        done:
+          type: boolean
+        position:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    ManualReminder:
+      type: object
+      required: [id, item_id, remind_at, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        item_id:
+          type: string
+          format: uuid
+        remind_at:
+          type: string
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+    Connection:
+      type: object
+      required: [id, name, description, provider, enabled, created_at, last_used_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        description:
+          type: string
+        provider:
+          type: string
+        enabled:
+          type: boolean
+        token:
+          type: string
+          description: Only present right after creating the connection or replacing its token.
+        created_at:
+          type: string
+          format: date-time
+        last_used_at:
+          type: [string, "null"]
+          format: date-time
+    UserConnection:
+      type: object
+      required: [id, name, description, provider, linked, enabled]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        description:
+          type: string
+        provider:
+          type: string
+        linked:
+          type: boolean
+          description: Whether the user has an account at the connection's provider.
+        enabled:
+          type: boolean
+          description: Whether the connection may act for the user right now.
+    LoginProvider:
+      type: object
+      required: [key, type, name, login_enabled, link_enabled, client_id, has_client_secret, issuer_url]
+      properties:
+        key:
+          type: string
+          description: Also the `provider` of identities created through it.
+        type:
+          type: string
+          enum: [password, github, discord, oidc]
+        name:
+          type: string
+        login_enabled:
+          type: boolean
+        link_enabled:
+          type: boolean
+        client_id:
+          type: string
+        has_client_secret:
+          type: boolean
+        issuer_url:
+          type: string
