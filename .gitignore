@@ -1,0 +1,8 @@
+.DS_Store
+.idea/
+.vscode/
+*.test
+*.out
+/hub/bin/
+/docs/api/index.html
+.env
