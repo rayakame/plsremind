@@ -59,13 +59,12 @@ func (h *Hub) listenOnce(ctx context.Context) error {
 	}
 }
 
-// everything makes all sessions catch up, after signals may have been missed.
+// everything makes all sessions catch up, after signals may have been missed:
+// new events, changed grants, withdrawn access and deliveries nobody was told about.
 func (h *Hub) everything() {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	for _, s := range h.sessions {
-		s.box.post(func(m *mailbox) { m.all = true })
-	}
+	h.each(func(*Session) bool { return true }, func(s *Session) {
+		s.box.post(func(m *mailbox) { m.all, m.validate, m.unsent, m.reconcile = true, true, true, true })
+	})
 }
 
 func (h *Hub) handle(s signal.Signal) {
@@ -98,12 +97,7 @@ func (h *Hub) handle(s signal.Signal) {
 		})
 	case signal.Delivery:
 		if s.DeliveryID != nil {
-			// Rendering a delivery takes a few queries; they must not hold up the other signals.
-			select {
-			case h.outbox <- *s.DeliveryID:
-			default:
-				slog.Warn("gateway delivery queue is full, the delivery waits for the next login")
-			}
+			h.enqueue(outgoing{id: *s.DeliveryID})
 		}
 	case signal.Closed:
 		// Acknowledged deliveries need no announcement: whoever confirmed them knows.
@@ -117,10 +111,8 @@ func (h *Hub) handle(s signal.Signal) {
 		if channel == nil {
 			return
 		}
-		data := envelope{UserID: *s.UserID, Data: map[string]any{"id": *s.DeliveryID, "status": s.Status}}
-		h.each(func(sess *Session) bool { return sess.principal.CredentialID == *channel && sess.wants("deliveries") }, func(sess *Session) {
-			sess.box.post(func(m *mailbox) { m.frames = append(m.frames, loose{"delivery.closed", data}) })
-		})
+		// Through the same queue as new deliveries, so that "closed" cannot arrive before "created".
+		h.enqueue(outgoing{id: *s.DeliveryID, closed: true, channel: *channel, userID: *s.UserID, status: s.Status})
 	case signal.Connection:
 		if s.ConnectionID != nil {
 			h.each(func(sess *Session) bool { return sess.principal.CredentialID == *s.ConnectionID }, func(sess *Session) {
@@ -157,15 +149,46 @@ func (h *Hub) eachCovering(userID uuid.UUID, fn func(*Session)) {
 	}
 }
 
-// deliver sends new deliveries to the sessions of their channel, one at a time.
+// outgoing is a delivery to announce: a new one, or one that was closed.
+type outgoing struct {
+	id      uuid.UUID
+	closed  bool
+	channel uuid.UUID
+	userID  uuid.UUID
+	status  string
+}
+
+// enqueue hands a delivery to the sender. Rendering one takes a few queries,
+// which must not hold up the other signals.
+func (h *Hub) enqueue(o outgoing) {
+	select {
+	case h.outbox <- o:
+	default:
+		// The queue is full. Nothing is lost for good: every session asks the
+		// database for what it was never sent.
+		slog.Warn("gateway delivery queue is full, sessions will ask for what they missed")
+		h.each(func(sess *Session) bool { return sess.wants("deliveries") }, func(sess *Session) {
+			sess.box.post(func(m *mailbox) { m.unsent = true })
+		})
+	}
+}
+
+// deliver announces deliveries to the sessions of their channel, one at a time and in order.
 func (h *Hub) deliver(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case id := <-h.outbox:
-			if err := h.deliverOne(ctx, id); err != nil && ctx.Err() == nil {
-				slog.Error("gateway could not send a delivery", "delivery", id, "err", err)
+		case o := <-h.outbox:
+			if o.closed {
+				data := envelope{UserID: o.userID, Data: map[string]any{"id": o.id, "status": o.status}}
+				h.each(func(sess *Session) bool { return sess.principal.CredentialID == o.channel && sess.wants("deliveries") }, func(sess *Session) {
+					sess.box.post(func(m *mailbox) { m.frames = append(m.frames, loose{"delivery.closed", data}) })
+				})
+				continue
+			}
+			if err := h.deliverOne(ctx, o.id); err != nil && ctx.Err() == nil {
+				slog.Error("gateway could not send a delivery", "delivery", o.id, "err", err)
 			}
 		}
 	}

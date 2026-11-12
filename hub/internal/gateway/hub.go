@@ -3,11 +3,14 @@ package gateway
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"slices"
 	"sync"
 	"time"
 
 	"github.com/google/uuid"
 
+	"github.com/rayakame/plsremind/hub/internal/apierr"
 	"github.com/rayakame/plsremind/hub/internal/auth"
 	"github.com/rayakame/plsremind/hub/internal/deps"
 	"github.com/rayakame/plsremind/hub/internal/secret"
@@ -24,14 +27,14 @@ type Hub struct {
 	// listening is closed each time the signal connection is (re)established.
 	listening chan struct{}
 	// outbox holds new deliveries waiting to be rendered and sent.
-	outbox chan uuid.UUID
+	outbox chan outgoing
 
 	cancel context.CancelFunc
 	wg     sync.WaitGroup
 }
 
 func NewHub(d *deps.Deps) *Hub {
-	return &Hub{d: d, sessions: map[string]*Session{}, byUser: map[uuid.UUID]map[*Session]struct{}{}, listening: make(chan struct{}), outbox: make(chan uuid.UUID, 4096)}
+	return &Hub{d: d, sessions: map[string]*Session{}, byUser: map[uuid.UUID]map[*Session]struct{}{}, listening: make(chan struct{}), outbox: make(chan outgoing, 4096)}
 }
 
 // Start runs the hub's background work until Shutdown.
@@ -79,7 +82,7 @@ func (h *Hub) Shutdown() {
 		s.mu.Unlock()
 		if c != nil {
 			c.send(encode(OpReconnect, nil, nil, nil))
-			c.finish(1012, "restarting")
+			c.finish(CloseRestart, "restarting")
 		}
 	}
 }
@@ -93,24 +96,26 @@ func (h *Hub) reap(ctx context.Context) {
 			return
 		case <-time.After(max(interval, 10*time.Millisecond)):
 		}
+		// Checked and removed under one lock, so a session cannot be resumed
+		// in the moment it is being forgotten.
 		now := time.Now()
 		h.mu.Lock()
 		var gone []*Session
 		for _, s := range h.sessions {
 			if s.expired(now) {
+				h.forget(s)
 				gone = append(gone, s)
 			}
 		}
 		h.mu.Unlock()
 		for _, s := range gone {
-			h.drop(s, 0, "")
+			s.halt()
 		}
 	}
 }
 
-// drop forgets a session for good. With a code, its connection is closed with it.
-func (h *Hub) drop(s *Session, code int, reason string) {
-	h.mu.Lock()
+// forget removes a session from the hub's books. The caller holds h.mu.
+func (h *Hub) forget(s *Session) {
 	delete(h.sessions, s.id)
 	for userID, sessions := range h.byUser {
 		delete(sessions, s)
@@ -118,6 +123,12 @@ func (h *Hub) drop(s *Session, code int, reason string) {
 			delete(h.byUser, userID)
 		}
 	}
+}
+
+// drop forgets a session for good. With a code, its connection is closed with it.
+func (h *Hub) drop(s *Session, code int, reason string) {
+	h.mu.Lock()
+	h.forget(s)
 	h.mu.Unlock()
 	s.halt()
 	if code != 0 {
@@ -148,32 +159,89 @@ func (h *Hub) cover(s *Session, userID uuid.UUID) {
 	h.byUser[userID][s] = struct{}{}
 }
 
-func (h *Hub) countFor(credential uuid.UUID) int {
+// admit makes room for a new session of a credential, or refuses it. Only
+// connected sessions count against the limit: a client that reconnects with
+// Identify leaves a detached session behind each time, and those give way,
+// oldest first.
+func (h *Hub) admit(credential uuid.UUID) bool {
 	h.mu.Lock()
-	defer h.mu.Unlock()
-	n := 0
+	var attached int
+	var detached []*Session
 	for _, s := range h.sessions {
-		if s.principal.CredentialID == credential {
-			n++
+		if s.principal.CredentialID != credential {
+			continue
+		}
+		if s.attached() {
+			attached++
+		} else {
+			detached = append(detached, s)
 		}
 	}
-	return n
+	limit := h.d.Gateway.MaxSessions
+	if attached >= limit {
+		h.mu.Unlock()
+		return false
+	}
+	slices.SortFunc(detached, func(a, b *Session) int { return a.createdAt.Compare(b.createdAt) })
+	var evicted []*Session
+	for attached+len(detached) >= limit && len(detached) > 0 {
+		h.forget(detached[0])
+		evicted = append(evicted, detached[0])
+		detached = detached[1:]
+	}
+	h.mu.Unlock()
+	for _, s := range evicted {
+		s.halt()
+	}
+	return true
+}
+
+type verdict int
+
+const (
+	allowed verdict = iota
+	// denied: these credentials do not work, and will not work on a retry.
+	denied
+	// trouble: the hub could not find out, usually because the database is away.
+	trouble
+)
+
+// judge tells a refusal from a failure to check. Only a refusal may ever be
+// reported to the client as "your credentials are no good".
+func judge(found bool, err error) verdict {
+	var refusal *apierr.Error
+	switch {
+	case errors.As(err, &refusal):
+		return denied
+	case err != nil:
+		return trouble
+	case !found:
+		return denied
+	}
+	return allowed
 }
 
 // authenticate finds out who is on the other end: by token, or by the session
 // cookie of the upgrade request.
-func (h *Hub) authenticate(ctx context.Context, token, cookie string, sameOrigin bool) (auth.Principal, string, bool) {
+func (h *Hub) authenticate(ctx context.Context, token, cookie string, sameOrigin bool) (auth.Principal, string, verdict) {
 	switch {
 	case token != "":
 		p, err := auth.Authenticate(ctx, h.d, token)
-		return p, "", err == nil
+		return p, "", judge(true, err)
 	case sameOrigin:
 		// A browser cannot put a token into the handshake, so the dashboard comes with
 		// its session cookie. Only pages of this hub may use it that way.
 		p, found, err := auth.SessionPrincipal(ctx, h.d, cookie)
-		return p, cookie, err == nil && found
+		return p, cookie, judge(found, err)
 	}
-	return auth.Principal{}, "", false
+	return auth.Principal{}, "", denied
+}
+
+func refusal(v verdict) int {
+	if v == trouble {
+		return CloseInternal
+	}
+	return CloseAuthFailed
 }
 
 // resume attaches a connection to a session that lost its own. invalid means
@@ -183,9 +251,9 @@ func (h *Hub) resume(ctx context.Context, c *conn, raw json.RawMessage, cookie s
 	if err := json.Unmarshal(raw, &in); err != nil {
 		return nil, CloseDecode, false
 	}
-	p, _, ok := h.authenticate(ctx, in.Token, cookie, sameOrigin)
-	if !ok {
-		return nil, CloseAuthFailed, false
+	p, _, v := h.authenticate(ctx, in.Token, cookie, sameOrigin)
+	if v != allowed {
+		return nil, refusal(v), false
 	}
 	h.mu.Lock()
 	s = h.sessions[in.SessionID]
@@ -195,9 +263,21 @@ func (h *Hub) resume(ctx context.Context, c *conn, raw json.RawMessage, cookie s
 		return nil, 0, true
 	}
 
+	// Holding the send lock keeps new events behind the replay.
+	s.sendMu.Lock()
+	defer s.sendMu.Unlock()
+
+	// The session is looked up again and attached under the hub's lock, so it
+	// cannot be reaped in between and left attached but forgotten.
+	h.mu.Lock()
+	if h.sessions[in.SessionID] != s {
+		h.mu.Unlock()
+		return nil, 0, true
+	}
 	s.mu.Lock()
 	if in.Seq > s.seq {
 		s.mu.Unlock()
+		h.mu.Unlock()
 		return nil, CloseInvalidSeq, false
 	}
 	// Everything after in.Seq must still be in the buffer.
@@ -207,22 +287,29 @@ func (h *Hub) resume(ctx context.Context, c *conn, raw json.RawMessage, cookie s
 	}
 	if in.Seq < oldest-1 {
 		s.mu.Unlock()
-		h.drop(s, 0, "")
+		h.forget(s)
+		h.mu.Unlock()
+		s.halt()
 		return nil, 0, true
 	}
 	previous := s.conn
 	s.conn = c
-	for _, missed := range s.buffer {
-		if missed.seq > in.Seq {
-			c.send(missed.frame)
+	var missed [][]byte
+	for _, frame := range s.buffer {
+		if frame.seq > in.Seq {
+			missed = append(missed, frame.frame)
 		}
 	}
 	s.mu.Unlock()
+	h.mu.Unlock()
+
 	if previous != nil {
 		previous.close(CloseAlreadyAuthenticated, "resumed elsewhere")
 	}
-	s.emit(EventResumed, true, struct{}{})
-	s.box.post(func(m *mailbox) { m.pending, m.validate = true, true })
+	for _, frame := range missed {
+		c.send(frame)
+	}
+	s.box.post(func(m *mailbox) { m.resumed, m.validate = true, true })
 	return s, 0, false
 }
 
@@ -236,31 +323,34 @@ func (h *Hub) identify(ctx context.Context, c *conn, raw json.RawMessage, cookie
 	if !ok {
 		return nil, CloseInvalidIntents
 	}
-	p, cookie, ok := h.authenticate(ctx, in.Token, cookie, sameOrigin)
-	if !ok {
-		return nil, CloseAuthFailed
+	p, cookie, v := h.authenticate(ctx, in.Token, cookie, sameOrigin)
+	if v != allowed {
+		return nil, refusal(v)
 	}
 	for _, intent := range intents {
 		if !auth.HasIntent(p, intent) {
 			return nil, CloseDisallowedIntents
 		}
 	}
-	if h.countFor(p.CredentialID) >= h.d.Gateway.MaxSessions {
+	if !h.admit(p.CredentialID) {
 		return nil, CloseRateLimited
 	}
 
 	id, _ := secret.NewToken("")
 	s := &Session{
-		id: id, hub: h, principal: p, intents: intents, token: in.Token, cookie: cookie, conn: c,
+		id: id, hub: h, principal: p, intents: intents, token: in.Token, cookie: cookie, conn: c, createdAt: time.Now(),
 		box: newMailbox(), stop: make(chan struct{}), cursors: map[uuid.UUID]int64{},
 	}
-	welcome, err := h.ready(ctx, s)
-	if err != nil {
-		return nil, CloseAuthFailed
-	}
+	// Registered before the list of users is read: a grant that changes from
+	// here on finds the session and is looked at again.
 	h.mu.Lock()
 	h.sessions[s.id] = s
 	h.mu.Unlock()
+	welcome, err := h.ready(ctx, s)
+	if err != nil {
+		h.drop(s, 0, "")
+		return nil, CloseInternal
+	}
 	s.emit(EventReady, true, welcome)
 	go s.run()
 	s.box.post(func(m *mailbox) { m.start = true })

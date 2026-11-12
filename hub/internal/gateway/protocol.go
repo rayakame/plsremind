@@ -17,7 +17,7 @@ const (
 	OpHeartbeatACK   = 11
 )
 
-// Close codes.
+// Close codes of the gateway's own.
 const (
 	CloseUnknownOp            = 4001
 	CloseDecode               = 4002
@@ -42,8 +42,17 @@ var Opcodes = map[int]string{
 	OpHeartbeatACK:   "Heartbeat ACK",
 }
 
+// Standard WebSocket close codes the gateway also uses.
+const (
+	// CloseInternal: something went wrong inside the hub. Reconnecting is right.
+	CloseInternal = 1011
+	// CloseRestart: the hub is shutting down or restarting.
+	CloseRestart = 1012
+)
+
 // CloseCodes lists every close code the gateway uses.
 var CloseCodes = []int{
+	CloseInternal, CloseRestart,
 	CloseUnknownOp, CloseDecode, CloseAuthFailed, CloseAlreadyAuthenticated,
 	CloseInvalidSeq, CloseRateLimited, CloseTimeout, CloseInvalidIntents, CloseDisallowedIntents,
 }

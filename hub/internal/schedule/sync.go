@@ -101,11 +101,19 @@ func input(ctx context.Context, q *sqlc.Queries, row sqlc.Item) (Input, error) {
 	return in, nil
 }
 
-// SyncItem rewrites the upcoming reminders of one item. It runs in the
-// transaction that changed whatever the times depend on.
+func key(kind string, scheduledFor time.Time) string {
+	return kind + " " + scheduledFor.UTC().Format(time.RFC3339Nano)
+}
+
+// SyncItem brings the schedule of one item in line with what the item, the
+// user's plan and their quiet hours now say. It runs in the transaction that
+// changed any of those.
 //
-// Rows whose time has already come are left alone: they are the ticker's to
-// fire, and removing them here would lose a reminder that was due.
+// A reminder is scheduled if the moment it is meant for is still ahead, or if
+// it was already scheduled and has not gone out: quiet hours can hold a
+// reminder past its moment, and it must survive an edit in that time. What
+// went out before is never scheduled again, and a moment that had passed
+// before the reminder ever existed is not made up.
 func SyncItem(ctx context.Context, q *sqlc.Queries, now time.Time, itemID uuid.UUID) error {
 	row, err := q.GetItemByID(ctx, itemID)
 	if db.IsNotFound(err) {
@@ -121,21 +129,53 @@ func SyncItem(ctx context.Context, q *sqlc.Queries, now time.Time, itemID uuid.U
 	if err != nil {
 		return err
 	}
+	planned := All(in)
+	wanted := make(map[string]bool, len(planned))
+	for _, p := range planned {
+		wanted[key(string(p.Kind), p.For)] = true
+	}
+
+	existing, err := q.ListItemSchedule(ctx, itemID)
+	if err != nil {
+		return err
+	}
+	// Rows whose time has come belong to the ticker and stay, unless the item no
+	// longer has that reminder at all, as after its deadline was moved.
+	scheduled := make(map[string]bool, len(existing))
+	waiting := map[string]bool{}
+	var obsolete []uuid.UUID
+	for _, e := range existing {
+		k := key(e.Kind, e.ScheduledFor)
+		scheduled[k] = true
+		switch {
+		case e.FireAt.After(now):
+		case wanted[k]:
+			waiting[k] = true
+		default:
+			obsolete = append(obsolete, e.ID)
+		}
+	}
+	if err := q.DeleteScheduledReminders(ctx, obsolete); err != nil {
+		return err
+	}
 	if err := q.DeleteFutureSchedule(ctx, sqlc.DeleteFutureScheduleParams{ItemID: itemID, Now: now}); err != nil {
 		return err
 	}
-	// Quiet hours can move a reminder that already went out to a later time.
-	// What the log knows was handled must not be scheduled a second time.
 	handled, err := q.ListHandledReminders(ctx, itemID)
 	if err != nil {
 		return err
 	}
 	done := make(map[string]bool, len(handled))
 	for _, h := range handled {
-		done[h.Kind+h.ScheduledFor.UTC().Format(time.RFC3339Nano)] = true
+		done[key(h.Kind, h.ScheduledFor)] = true
 	}
-	for _, p := range Compute(in, now) {
-		if done[string(p.Kind)+p.For.UTC().Format(time.RFC3339Nano)] {
+
+	for _, p := range planned {
+		k := key(string(p.Kind), p.For)
+		if done[k] || waiting[k] {
+			continue
+		}
+		if !p.For.After(now) && !scheduled[k] {
 			continue
 		}
 		params := sqlc.InsertScheduledReminderParams{

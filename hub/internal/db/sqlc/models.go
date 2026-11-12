@@ -154,6 +154,7 @@ type ReminderLog struct {
 	Kind          string
 	OffsetSeconds *int32
 	ScheduledFor  time.Time
+	FireAt        time.Time
 	FiredAt       time.Time
 	Outcome       string
 }

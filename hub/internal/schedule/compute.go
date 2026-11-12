@@ -65,6 +65,11 @@ func rank(k Kind) int {
 
 // Compute returns every reminder of an item that is still ahead of now, earliest first.
 func Compute(in Input, now time.Time) []Planned {
+	return slices.DeleteFunc(All(in), func(p Planned) bool { return !p.At.After(now) })
+}
+
+// All returns every reminder an item has, past ones included, earliest first.
+func All(in Input) []Planned {
 	if !in.Open {
 		return nil
 	}
@@ -91,7 +96,6 @@ func Compute(in Input, now time.Time) []Planned {
 		planned = append(planned, Planned{Kind: KindManual, ManualID: m.ID, At: m.At, For: m.At})
 	}
 
-	planned = slices.DeleteFunc(planned, func(p Planned) bool { return !p.At.After(now) })
 	slices.SortStableFunc(planned, func(a, b Planned) int { return a.At.Compare(b.At) })
 	return planned
 }

@@ -1,16 +1,23 @@
 -- name: LockDueReminders :many
-SELECT * FROM scheduled_reminders
-WHERE fire_at <= @now
-ORDER BY fire_at, id
-LIMIT @batch
-FOR UPDATE SKIP LOCKED;
+-- Whole items at a time: which reminder of an item goes out depends on all of
+-- its due reminders, so they must not be split across batches.
+SELECT r.* FROM scheduled_reminders r
+WHERE r.fire_at <= @now
+  AND r.item_id IN (
+      SELECT s.item_id FROM scheduled_reminders s
+      WHERE s.fire_at <= @now
+      GROUP BY s.item_id
+      ORDER BY min(s.fire_at), s.item_id
+      LIMIT @batch)
+ORDER BY r.fire_at, r.id
+FOR UPDATE OF r SKIP LOCKED;
 
 -- name: DeleteScheduledReminders :exec
 DELETE FROM scheduled_reminders WHERE id = ANY(@ids::uuid[]);
 
 -- name: InsertReminderLog :exec
-INSERT INTO reminder_log (id, user_id, item_id, kind, offset_seconds, scheduled_for, fired_at, outcome)
-VALUES (@id, @user_id, @item_id, @kind, @offset_seconds, @scheduled_for, @fired_at, @outcome);
+INSERT INTO reminder_log (id, user_id, item_id, kind, offset_seconds, scheduled_for, fire_at, fired_at, outcome)
+VALUES (@id, @user_id, @item_id, @kind, @offset_seconds, @scheduled_for, @fire_at, @fired_at, @outcome);
 
 -- name: ListReminderConnections :many
 SELECT c.id
@@ -41,33 +48,57 @@ RETURNING *;
 
 -- name: SupersedeConnectionDeliveries :many
 UPDATE deliveries SET status = 'superseded', closed_at = @now
-WHERE item_id = @item_id AND connection_id = @connection_id AND status = 'pending'
+WHERE id IN (
+    SELECT d.id FROM deliveries d
+    WHERE d.item_id = @item_id AND d.connection_id = @connection_id AND d.status = 'pending'
+    ORDER BY d.id
+    FOR UPDATE)
 RETURNING *;
 
 -- name: SupersedeTokenDeliveries :many
 UPDATE deliveries SET status = 'superseded', closed_at = @now
-WHERE item_id = @item_id AND token_id = @token_id AND status = 'pending'
+WHERE id IN (
+    SELECT d.id FROM deliveries d
+    WHERE d.item_id = @item_id AND d.token_id = @token_id AND d.status = 'pending'
+    ORDER BY d.id
+    FOR UPDATE)
 RETURNING *;
 
 -- name: ExpireDeliveries :many
 UPDATE deliveries SET status = 'expired', closed_at = @now
-WHERE status = 'pending' AND expires_at < @now
+WHERE id IN (
+    SELECT d.id FROM deliveries d
+    WHERE d.status = 'pending' AND d.expires_at < @now
+    ORDER BY d.id
+    FOR UPDATE)
 RETURNING *;
 
 -- name: CancelItemDeliveries :many
 UPDATE deliveries SET status = 'cancelled', closed_at = @now
-WHERE item_id = @item_id AND status = 'pending'
+WHERE id IN (
+    SELECT d.id FROM deliveries d
+    WHERE d.item_id = @item_id AND d.status = 'pending'
+    ORDER BY d.id
+    FOR UPDATE)
 RETURNING *;
 
 -- name: CancelConnectionDeliveries :many
 UPDATE deliveries SET status = 'cancelled', closed_at = @now
-WHERE connection_id = @connection_id AND status = 'pending'
-  AND (sqlc.narg('user_id')::uuid IS NULL OR user_id = sqlc.narg('user_id'))
+WHERE id IN (
+    SELECT d.id FROM deliveries d
+    WHERE d.connection_id = @connection_id AND d.status = 'pending'
+      AND (sqlc.narg('user_id')::uuid IS NULL OR d.user_id = sqlc.narg('user_id'))
+    ORDER BY d.id
+    FOR UPDATE)
 RETURNING *;
 
 -- name: CancelTokenDeliveries :many
 UPDATE deliveries SET status = 'cancelled', closed_at = @now
-WHERE token_id = @token_id AND status = 'pending'
+WHERE id IN (
+    SELECT d.id FROM deliveries d
+    WHERE d.token_id = @token_id AND d.status = 'pending'
+    ORDER BY d.id
+    FOR UPDATE)
 RETURNING *;
 
 -- name: ListPendingConnectionDeliveries :many
@@ -75,6 +106,7 @@ SELECT sqlc.embed(d), sqlc.embed(r)
 FROM deliveries d
 JOIN reminder_log r ON r.id = d.reminder_id
 WHERE d.connection_id = @connection_id AND d.status = 'pending'
+  AND (NOT @only_unsent::boolean OR d.attempts = 0)
 ORDER BY d.id
 FOR UPDATE OF d;
 
@@ -83,6 +115,7 @@ SELECT sqlc.embed(d), sqlc.embed(r)
 FROM deliveries d
 JOIN reminder_log r ON r.id = d.reminder_id
 WHERE d.token_id = @token_id AND d.status = 'pending'
+  AND (NOT @only_unsent::boolean OR d.attempts = 0)
 ORDER BY d.id
 FOR UPDATE OF d;
 
@@ -136,3 +169,7 @@ RETURNING id;
 
 -- name: GetDeliveryChannel :one
 SELECT connection_id, token_id FROM deliveries WHERE id = @id AND status = 'pending';
+
+-- name: ReleaseUserHeldDeliveries :exec
+UPDATE deliveries SET held_until = @now
+WHERE user_id = @user_id AND status = 'pending' AND held_until IS NOT NULL;

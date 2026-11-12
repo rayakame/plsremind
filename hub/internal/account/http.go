@@ -14,6 +14,7 @@ import (
 	"github.com/rayakame/plsremind/hub/internal/auth"
 	"github.com/rayakame/plsremind/hub/internal/db"
 	"github.com/rayakame/plsremind/hub/internal/db/sqlc"
+	"github.com/rayakame/plsremind/hub/internal/delivery"
 	"github.com/rayakame/plsremind/hub/internal/deps"
 	"github.com/rayakame/plsremind/hub/internal/eventlog"
 	"github.com/rayakame/plsremind/hub/internal/httpx"
@@ -186,57 +187,65 @@ func patchProfile(d *deps.Deps) fiber.Handler {
 		if err := httpx.Body(c, &in); err != nil {
 			return err
 		}
-		q := d.Q()
-		user, err := q.GetUser(c.Context(), auth.Target(c))
-		if err != nil {
-			return err
-		}
-		params := sqlc.UpdateUserProfileParams{
-			ID:          user.ID,
-			DisplayName: user.DisplayName,
-			Timezone:    user.Timezone,
-			QuietStart:  user.QuietStart,
-			QuietEnd:    user.QuietEnd,
-		}
+		// What can be checked without the stored profile is checked up front; the
+		// time zone probe in particular must not run inside the transaction.
 		fields := map[string]string{}
+		var displayName string
 		if in.DisplayName != nil {
-			params.DisplayName = strings.TrimSpace(*in.DisplayName)
-			checkDisplayName(fields, params.DisplayName)
+			displayName = strings.TrimSpace(*in.DisplayName)
+			checkDisplayName(fields, displayName)
 		}
 		if in.Timezone != nil {
-			params.Timezone = *in.Timezone
-			checkTimezone(c.Context(), q, fields, params.Timezone)
+			checkTimezone(c.Context(), d.Q(), fields, *in.Timezone)
 		}
-		switch {
-		case in.QuietHours.Null:
-			params.QuietStart, params.QuietEnd = pgtype.Time{}, pgtype.Time{}
-		case in.QuietHours.Set:
-			start, okStart := parseClock(in.QuietHours.Val.Start)
-			end, okEnd := parseClock(in.QuietHours.Val.End)
-			if !okStart || !okEnd || start == end {
+		var quietStart, quietEnd pgtype.Time
+		if in.QuietHours.HasValue() {
+			var okStart, okEnd bool
+			quietStart, okStart = parseClock(in.QuietHours.Val.Start)
+			quietEnd, okEnd = parseClock(in.QuietHours.Val.End)
+			if !okStart || !okEnd || quietStart == quietEnd {
 				fields["quiet_hours"] = "Start and end must be two different times in HH:MM format."
 			}
-			params.QuietStart, params.QuietEnd = start, end
 		}
 		if len(fields) > 0 {
 			return apierr.Validation(fields)
 		}
-		before := user
-		retime := params.Timezone != user.Timezone || params.QuietStart != user.QuietStart || params.QuietEnd != user.QuietEnd
-		err = db.UserTx(c.Context(), d.Pool, user.ID, func(q *sqlc.Queries) error {
+
+		var user sqlc.User
+		err := db.UserTx(c.Context(), d.Pool, auth.Target(c), func(q *sqlc.Queries) error {
+			before, err := q.GetUser(c.Context(), auth.Target(c))
+			if err != nil {
+				return err
+			}
+			params := sqlc.UpdateUserProfileParams{
+				ID:          before.ID,
+				DisplayName: before.DisplayName,
+				Timezone:    before.Timezone,
+				QuietStart:  before.QuietStart,
+				QuietEnd:    before.QuietEnd,
+			}
+			if in.DisplayName != nil {
+				params.DisplayName = displayName
+			}
+			if in.Timezone != nil {
+				params.Timezone = *in.Timezone
+			}
+			if in.QuietHours.Set {
+				params.QuietStart, params.QuietEnd = quietStart, quietEnd
+			}
 			user, err = q.UpdateUserProfile(c.Context(), params)
 			if err != nil {
 				return err
 			}
 			now := d.Now()
 			p, _ := auth.From(c)
-			if err := eventlog.Append(c.Context(), q, now, user.ID, eventlog.ActorFrom(p), "user.updated", View(user)); err != nil {
+			actor := eventlog.ActorFrom(p)
+			if err := eventlog.Append(c.Context(), q, now, user.ID, actor, "user.updated", View(user)); err != nil {
 				return err
 			}
-			if !retime {
-				return nil
-			}
-			if params.Timezone != before.Timezone {
+			rezoned := user.Timezone != before.Timezone
+			requieted := user.QuietStart != before.QuietStart || user.QuietEnd != before.QuietEnd
+			if rezoned {
 				// An all-day deadline ends with the day in the user's zone, so its due
 				// time just moved. Clients that keep items in memory need to hear that.
 				moved, err := item.OpenAllDay(c.Context(), q, user.ID)
@@ -244,10 +253,19 @@ func patchProfile(d *deps.Deps) fiber.Handler {
 					return err
 				}
 				for _, it := range moved {
-					if err := eventlog.Append(c.Context(), q, now, user.ID, eventlog.ActorFrom(p), "item.updated", it); err != nil {
+					if err := eventlog.Append(c.Context(), q, now, user.ID, actor, "item.updated", it); err != nil {
 						return err
 					}
 				}
+			}
+			if requieted {
+				// What the old quiet hours were holding back is looked at again.
+				if err := delivery.ReleaseHeldFor(c.Context(), q, now, user.ID); err != nil {
+					return err
+				}
+			}
+			if !rezoned && !requieted {
+				return nil
 			}
 			// All-day deadlines and quiet hours are reckoned in the user's own time.
 			return schedule.SyncUser(c.Context(), q, now, user.ID)

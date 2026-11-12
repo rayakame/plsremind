@@ -21,8 +21,14 @@ type mailbox struct {
 	recheck  map[uuid.UUID]struct{}
 	all      bool
 	pending  bool
-	frames   []loose
-	wake     chan struct{}
+	// resumed: the client came back; RESUMED and what waits for it are due.
+	resumed bool
+	// unsent: deliveries may have been created without the session hearing of it.
+	unsent bool
+	// reconcile: grants may have changed without the session hearing of it.
+	reconcile bool
+	frames    []loose
+	wake      chan struct{}
 }
 
 // loose is a dispatch outside the numbered sequence, such as a delivery.
@@ -46,19 +52,25 @@ func (m *mailbox) post(fn func(m *mailbox)) {
 }
 
 type work struct {
-	start    bool
-	validate bool
-	all      bool
-	pending  bool
-	frames   []loose
-	dirty    []uuid.UUID
-	recheck  []uuid.UUID
+	start     bool
+	validate  bool
+	all       bool
+	pending   bool
+	resumed   bool
+	unsent    bool
+	reconcile bool
+	frames    []loose
+	dirty     []uuid.UUID
+	recheck   []uuid.UUID
 }
 
 func (m *mailbox) take() work {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	w := work{start: m.start, all: m.all, validate: m.validate, pending: m.pending, frames: m.frames}
+	w := work{
+		start: m.start, all: m.all, validate: m.validate, pending: m.pending, frames: m.frames,
+		resumed: m.resumed, unsent: m.unsent, reconcile: m.reconcile,
+	}
 	for id := range m.dirty {
 		w.dirty = append(w.dirty, id)
 	}
@@ -66,6 +78,7 @@ func (m *mailbox) take() work {
 		w.recheck = append(w.recheck, id)
 	}
 	m.start, m.all, m.validate, m.pending, m.frames = false, false, false, false, nil
+	m.resumed, m.unsent, m.reconcile = false, false, false
 	m.dirty, m.recheck = map[uuid.UUID]struct{}{}, map[uuid.UUID]struct{}{}
 	return w
 }
@@ -87,7 +100,7 @@ func (s *Session) run() {
 		if err := s.do(ctx, w); err != nil {
 			slog.Error("gateway session work failed", "session", s.id, "err", err)
 			// The client's picture may now be incomplete. Ending the session makes it start over.
-			s.hub.drop(s, CloseTimeout, "internal error")
+			s.hub.drop(s, CloseInternal, "internal error")
 			cancel()
 			return
 		}
@@ -110,6 +123,11 @@ func (s *Session) do(ctx context.Context, w work) error {
 		}
 		s.initial = nil
 	}
+	if w.reconcile {
+		if err := s.reconcile(ctx); err != nil {
+			return err
+		}
+	}
 	if w.all {
 		for userID := range s.cursors {
 			w.dirty = append(w.dirty, userID)
@@ -125,18 +143,26 @@ func (s *Session) do(ctx context.Context, w work) error {
 			return err
 		}
 	}
+	if w.resumed {
+		s.emit(EventResumed, true, struct{}{})
+	}
 	for _, f := range w.frames {
 		s.emit(f.event, false, f.data)
 	}
-	if w.start || w.pending {
-		return s.sendPending(ctx)
+	switch {
+	case w.start || w.pending || w.resumed:
+		return s.sendPending(ctx, false)
+	case w.unsent:
+		return s.sendPending(ctx, true)
 	}
 	return nil
 }
 
 // sendPending hands the session's channel everything that is still waiting for
 // it. This is how a reminder reaches an adapter that was away when it fired.
-func (s *Session) sendPending(ctx context.Context) error {
+// With onlyUnsent it is limited to deliveries that were never handed out, which
+// makes up for a signal that got lost without repeating anything.
+func (s *Session) sendPending(ctx context.Context, onlyUnsent bool) error {
 	if !s.wants("deliveries") {
 		return nil
 	}
@@ -144,7 +170,7 @@ func (s *Session) sendPending(ctx context.Context) error {
 	if err != nil || !ok {
 		return err
 	}
-	views, err := delivery.Pending(ctx, s.hub.d, ch)
+	views, err := delivery.Pending(ctx, s.hub.d, ch, onlyUnsent)
 	if err != nil {
 		return err
 	}

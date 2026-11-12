@@ -3,6 +3,7 @@ package gateway
 import (
 	"context"
 	"encoding/json"
+	"log/slog"
 	"strings"
 
 	"github.com/google/uuid"
@@ -124,20 +125,17 @@ func (s *Session) recheck(ctx context.Context, userID uuid.UUID) error {
 	return nil
 }
 
-// revalidate checks that whoever identified may still be here.
+// revalidate checks that whoever identified may still be here. It returns a
+// close code only when access is definitely gone. If the check itself fails,
+// the session stays and is looked at again at the next heartbeat: a database
+// that is briefly away must not tell clients that their token is dead.
 func (s *Session) revalidate(ctx context.Context) (code int) {
-	var p auth.Principal
-	var err error
-	if s.token != "" {
-		p, err = auth.Authenticate(ctx, s.hub.d, s.token)
-	} else {
-		var found bool
-		p, found, err = auth.SessionPrincipal(ctx, s.hub.d, s.cookie)
-		if err == nil && !found {
-			return CloseAuthFailed
-		}
-	}
-	if err != nil || p.CredentialID != s.principal.CredentialID {
+	p, _, v := s.hub.authenticate(ctx, s.token, s.cookie, true)
+	switch {
+	case v == trouble:
+		slog.Warn("gateway could not check a session's access, keeping it for now", "session", s.id)
+		return 0
+	case v == denied || p.CredentialID != s.principal.CredentialID:
 		return CloseAuthFailed
 	}
 	for _, intent := range s.intents {
@@ -146,6 +144,33 @@ func (s *Session) revalidate(ctx context.Context) (code int) {
 		}
 	}
 	return 0
+}
+
+// reconcile compares the users a connection session follows with the users it
+// may follow, after grant changes may have gone unheard.
+func (s *Session) reconcile(ctx context.Context) error {
+	if s.principal.Kind != auth.KindConnection || !s.keepsState() {
+		return nil
+	}
+	granted, err := s.hub.d.Q().ListGrantedUsers(ctx, s.principal.CredentialID)
+	if err != nil {
+		return err
+	}
+	seen := make(map[uuid.UUID]bool, len(granted))
+	for _, userID := range granted {
+		seen[userID] = true
+	}
+	for userID := range s.cursors {
+		if !seen[userID] {
+			granted = append(granted, userID)
+		}
+	}
+	for _, userID := range granted {
+		if err := s.recheck(ctx, userID); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // syncUser sends the user's state and from then on follows their event log.
@@ -161,7 +186,21 @@ func (s *Session) syncUser(ctx context.Context, userID uuid.UUID) error {
 	defer tx.Rollback(ctx) //nolint:errcheck
 	q := sqlc.New(tx)
 
+	if s.principal.Kind == auth.KindConnection {
+		// Checked inside the snapshot: a grant withdrawn a moment ago must not be
+		// answered with the user's whole state.
+		_, err := q.GetGrantedUser(ctx, sqlc.GetGrantedUserParams{ConnectionID: s.principal.CredentialID, UserID: userID})
+		if db.IsNotFound(err) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+	}
 	seq, err := q.GetEventSeq(ctx, userID)
+	if db.IsNotFound(err) {
+		return nil
+	}
 	if err != nil {
 		return err
 	}

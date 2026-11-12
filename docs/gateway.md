@@ -153,7 +153,9 @@ counterparts of Discord's `GUILD_DELETE` and `GUILD_CREATE`.
 - `data` is always the whole object after the change, so you replace your copy. For
   `*.deleted` it is `{"id": "..."}`, with `item_id` added for subitems and reminders.
 - `actor` says who made the change: `kind` is `session`, `personal_token` or `connection`,
-  and `id` identifies it. Compare it with your own to recognise your own changes.
+  and `id` identifies it. Compare it with your own to recognise your own changes. It is
+  `null` when the hub tells a connection that something about a user's access changed,
+  for example that they switched reminders through it off.
 - Every change to a subitem or a manual reminder is followed by `item.updated` with the
   whole item. If you keep items in memory you can ignore the `subitem.*` and `reminder.*`
   events and just replace the item.
@@ -221,12 +223,16 @@ What to do with a delivery:
 3. If it cannot reach them, say so: `{"status": "failed", "reason": "direct messages are closed"}`.
    The reason is shown to the user. A failed delivery is not tried again.
 
+A `409` with the code `delivery_closed` means the hub closed the delivery in the meantime,
+for example because the item was completed. Treat it as done.
+
 The hub never confirms anything on its own, and neither should a library on your behalf.
 Until a delivery is confirmed it is sent again **every time you identify or resume**, with
 a growing `attempt`. It is not repeated while you stay connected. After 24 hours it expires.
 
-- `late` is true when the reminder's time is more than a minute in the past. Use
-  `reminder.scheduled_for` to say when it was meant for.
+- `late` is true when the reminder reaches you more than a minute after it should have
+  gone out, because you or the hub were away. A reminder that quiet hours moved and that
+  then left on time is not late. `reminder.scheduled_for` is the moment it was meant for.
 - If you were away while several reminders for the same item came due, you only get the
   newest.
 - While a user is in their quiet hours, `before` and `follow_up` deliveries are held back
@@ -256,6 +262,8 @@ form. A script that runs every few minutes can remind people with that alone.
 
 | Code | Meaning | Reconnect? |
 |---|---|---|
+| 1011 | Something went wrong inside the hub, or it could not reach its database | yes |
+| 1012 | The hub is shutting down or restarting | yes |
 | 4001 | Unknown opcode, or one that only the hub may send | yes |
 | 4002 | The message was not valid JSON for the gateway | yes |
 | 4004 | Authentication failed, or your access was withdrawn | no, the token will not work again |
@@ -266,12 +274,16 @@ form. A script that runs every few minutes can remind people with that alone.
 | 4013 | Unknown or missing intents | no, fix the intents |
 | 4014 | An intent that the admin does not allow this connection | no, ask for less |
 
-Limits: 10 sessions per token, 60 client messages per minute. A client may only send
-Heartbeat, Identify and Resume.
+Limits: 10 connected sessions per token, 60 client messages per minute. A client may only
+send Heartbeat, Identify and Resume.
+
+When you reconnect, pause first and let the pause grow while the hub stays unreachable.
+The handshake counts against the hub's rate limit for unauthenticated requests.
 
 Your access is checked again whenever something about it changes and on every heartbeat.
 A deleted token, an ended login, a disabled user or a disabled connection closes the
-connection with 4004. A connection whose allowed intents no longer cover the session's
+connection with 4004. That code is only sent when the hub knows your access is gone; if
+it merely could not check, the session stays. A connection whose allowed intents no longer cover the session's
 is closed with 4014.
 
 ## Events at a glance

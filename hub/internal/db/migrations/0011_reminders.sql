@@ -41,6 +41,8 @@ CREATE TABLE reminder_log (
     kind text NOT NULL CHECK (kind IN ('before', 'due', 'follow_up', 'manual')),
     offset_seconds integer,
     scheduled_for timestamptz NOT NULL,
+    -- When it was supposed to go out, which quiet hours can put after scheduled_for.
+    fire_at timestamptz NOT NULL,
     fired_at timestamptz NOT NULL,
     outcome text NOT NULL CHECK (outcome IN ('fired', 'missed', 'superseded'))
 );

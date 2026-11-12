@@ -14,8 +14,12 @@ import (
 
 const cancelConnectionDeliveries = `-- name: CancelConnectionDeliveries :many
 UPDATE deliveries SET status = 'cancelled', closed_at = $1
-WHERE connection_id = $2 AND status = 'pending'
-  AND ($3::uuid IS NULL OR user_id = $3)
+WHERE id IN (
+    SELECT d.id FROM deliveries d
+    WHERE d.connection_id = $2 AND d.status = 'pending'
+      AND ($3::uuid IS NULL OR d.user_id = $3)
+    ORDER BY d.id
+    FOR UPDATE)
 RETURNING id, reminder_id, user_id, item_id, connection_id, token_id, status, reason, attempts, held_until, created_at, expires_at, closed_at
 `
 
@@ -61,7 +65,11 @@ func (q *Queries) CancelConnectionDeliveries(ctx context.Context, arg CancelConn
 
 const cancelItemDeliveries = `-- name: CancelItemDeliveries :many
 UPDATE deliveries SET status = 'cancelled', closed_at = $1
-WHERE item_id = $2 AND status = 'pending'
+WHERE id IN (
+    SELECT d.id FROM deliveries d
+    WHERE d.item_id = $2 AND d.status = 'pending'
+    ORDER BY d.id
+    FOR UPDATE)
 RETURNING id, reminder_id, user_id, item_id, connection_id, token_id, status, reason, attempts, held_until, created_at, expires_at, closed_at
 `
 
@@ -106,7 +114,11 @@ func (q *Queries) CancelItemDeliveries(ctx context.Context, arg CancelItemDelive
 
 const cancelTokenDeliveries = `-- name: CancelTokenDeliveries :many
 UPDATE deliveries SET status = 'cancelled', closed_at = $1
-WHERE token_id = $2 AND status = 'pending'
+WHERE id IN (
+    SELECT d.id FROM deliveries d
+    WHERE d.token_id = $2 AND d.status = 'pending'
+    ORDER BY d.id
+    FOR UPDATE)
 RETURNING id, reminder_id, user_id, item_id, connection_id, token_id, status, reason, attempts, held_until, created_at, expires_at, closed_at
 `
 
@@ -208,7 +220,11 @@ func (q *Queries) DeleteScheduledReminders(ctx context.Context, ids []uuid.UUID)
 
 const expireDeliveries = `-- name: ExpireDeliveries :many
 UPDATE deliveries SET status = 'expired', closed_at = $1
-WHERE status = 'pending' AND expires_at < $1
+WHERE id IN (
+    SELECT d.id FROM deliveries d
+    WHERE d.status = 'pending' AND d.expires_at < $1
+    ORDER BY d.id
+    FOR UPDATE)
 RETURNING id, reminder_id, user_id, item_id, connection_id, token_id, status, reason, attempts, held_until, created_at, expires_at, closed_at
 `
 
@@ -263,7 +279,7 @@ func (q *Queries) GetDeliveryChannel(ctx context.Context, id uuid.UUID) (GetDeli
 }
 
 const getPendingDelivery = `-- name: GetPendingDelivery :one
-SELECT d.id, d.reminder_id, d.user_id, d.item_id, d.connection_id, d.token_id, d.status, d.reason, d.attempts, d.held_until, d.created_at, d.expires_at, d.closed_at, r.id, r.user_id, r.item_id, r.kind, r.offset_seconds, r.scheduled_for, r.fired_at, r.outcome
+SELECT d.id, d.reminder_id, d.user_id, d.item_id, d.connection_id, d.token_id, d.status, d.reason, d.attempts, d.held_until, d.created_at, d.expires_at, d.closed_at, r.id, r.user_id, r.item_id, r.kind, r.offset_seconds, r.scheduled_for, r.fire_at, r.fired_at, r.outcome
 FROM deliveries d
 JOIN reminder_log r ON r.id = d.reminder_id
 WHERE d.id = $1 AND d.status = 'pending'
@@ -298,6 +314,7 @@ func (q *Queries) GetPendingDelivery(ctx context.Context, id uuid.UUID) (GetPend
 		&i.ReminderLog.Kind,
 		&i.ReminderLog.OffsetSeconds,
 		&i.ReminderLog.ScheduledFor,
+		&i.ReminderLog.FireAt,
 		&i.ReminderLog.FiredAt,
 		&i.ReminderLog.Outcome,
 	)
@@ -368,8 +385,8 @@ func (q *Queries) InsertDelivery(ctx context.Context, arg InsertDeliveryParams) 
 }
 
 const insertReminderLog = `-- name: InsertReminderLog :exec
-INSERT INTO reminder_log (id, user_id, item_id, kind, offset_seconds, scheduled_for, fired_at, outcome)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+INSERT INTO reminder_log (id, user_id, item_id, kind, offset_seconds, scheduled_for, fire_at, fired_at, outcome)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 `
 
 type InsertReminderLogParams struct {
@@ -379,6 +396,7 @@ type InsertReminderLogParams struct {
 	Kind          string
 	OffsetSeconds *int32
 	ScheduledFor  time.Time
+	FireAt        time.Time
 	FiredAt       time.Time
 	Outcome       string
 }
@@ -391,6 +409,7 @@ func (q *Queries) InsertReminderLog(ctx context.Context, arg InsertReminderLogPa
 		arg.Kind,
 		arg.OffsetSeconds,
 		arg.ScheduledFor,
+		arg.FireAt,
 		arg.FiredAt,
 		arg.Outcome,
 	)
@@ -477,21 +496,27 @@ func (q *Queries) ListLogDeliveries(ctx context.Context, reminderIds []uuid.UUID
 }
 
 const listPendingConnectionDeliveries = `-- name: ListPendingConnectionDeliveries :many
-SELECT d.id, d.reminder_id, d.user_id, d.item_id, d.connection_id, d.token_id, d.status, d.reason, d.attempts, d.held_until, d.created_at, d.expires_at, d.closed_at, r.id, r.user_id, r.item_id, r.kind, r.offset_seconds, r.scheduled_for, r.fired_at, r.outcome
+SELECT d.id, d.reminder_id, d.user_id, d.item_id, d.connection_id, d.token_id, d.status, d.reason, d.attempts, d.held_until, d.created_at, d.expires_at, d.closed_at, r.id, r.user_id, r.item_id, r.kind, r.offset_seconds, r.scheduled_for, r.fire_at, r.fired_at, r.outcome
 FROM deliveries d
 JOIN reminder_log r ON r.id = d.reminder_id
 WHERE d.connection_id = $1 AND d.status = 'pending'
+  AND (NOT $2::boolean OR d.attempts = 0)
 ORDER BY d.id
 FOR UPDATE OF d
 `
+
+type ListPendingConnectionDeliveriesParams struct {
+	ConnectionID *uuid.UUID
+	OnlyUnsent   bool
+}
 
 type ListPendingConnectionDeliveriesRow struct {
 	Delivery    Delivery
 	ReminderLog ReminderLog
 }
 
-func (q *Queries) ListPendingConnectionDeliveries(ctx context.Context, connectionID *uuid.UUID) ([]ListPendingConnectionDeliveriesRow, error) {
-	rows, err := q.db.Query(ctx, listPendingConnectionDeliveries, connectionID)
+func (q *Queries) ListPendingConnectionDeliveries(ctx context.Context, arg ListPendingConnectionDeliveriesParams) ([]ListPendingConnectionDeliveriesRow, error) {
+	rows, err := q.db.Query(ctx, listPendingConnectionDeliveries, arg.ConnectionID, arg.OnlyUnsent)
 	if err != nil {
 		return nil, err
 	}
@@ -519,6 +544,7 @@ func (q *Queries) ListPendingConnectionDeliveries(ctx context.Context, connectio
 			&i.ReminderLog.Kind,
 			&i.ReminderLog.OffsetSeconds,
 			&i.ReminderLog.ScheduledFor,
+			&i.ReminderLog.FireAt,
 			&i.ReminderLog.FiredAt,
 			&i.ReminderLog.Outcome,
 		); err != nil {
@@ -533,21 +559,27 @@ func (q *Queries) ListPendingConnectionDeliveries(ctx context.Context, connectio
 }
 
 const listPendingTokenDeliveries = `-- name: ListPendingTokenDeliveries :many
-SELECT d.id, d.reminder_id, d.user_id, d.item_id, d.connection_id, d.token_id, d.status, d.reason, d.attempts, d.held_until, d.created_at, d.expires_at, d.closed_at, r.id, r.user_id, r.item_id, r.kind, r.offset_seconds, r.scheduled_for, r.fired_at, r.outcome
+SELECT d.id, d.reminder_id, d.user_id, d.item_id, d.connection_id, d.token_id, d.status, d.reason, d.attempts, d.held_until, d.created_at, d.expires_at, d.closed_at, r.id, r.user_id, r.item_id, r.kind, r.offset_seconds, r.scheduled_for, r.fire_at, r.fired_at, r.outcome
 FROM deliveries d
 JOIN reminder_log r ON r.id = d.reminder_id
 WHERE d.token_id = $1 AND d.status = 'pending'
+  AND (NOT $2::boolean OR d.attempts = 0)
 ORDER BY d.id
 FOR UPDATE OF d
 `
+
+type ListPendingTokenDeliveriesParams struct {
+	TokenID    *uuid.UUID
+	OnlyUnsent bool
+}
 
 type ListPendingTokenDeliveriesRow struct {
 	Delivery    Delivery
 	ReminderLog ReminderLog
 }
 
-func (q *Queries) ListPendingTokenDeliveries(ctx context.Context, tokenID *uuid.UUID) ([]ListPendingTokenDeliveriesRow, error) {
-	rows, err := q.db.Query(ctx, listPendingTokenDeliveries, tokenID)
+func (q *Queries) ListPendingTokenDeliveries(ctx context.Context, arg ListPendingTokenDeliveriesParams) ([]ListPendingTokenDeliveriesRow, error) {
+	rows, err := q.db.Query(ctx, listPendingTokenDeliveries, arg.TokenID, arg.OnlyUnsent)
 	if err != nil {
 		return nil, err
 	}
@@ -575,6 +607,7 @@ func (q *Queries) ListPendingTokenDeliveries(ctx context.Context, tokenID *uuid.
 			&i.ReminderLog.Kind,
 			&i.ReminderLog.OffsetSeconds,
 			&i.ReminderLog.ScheduledFor,
+			&i.ReminderLog.FireAt,
 			&i.ReminderLog.FiredAt,
 			&i.ReminderLog.Outcome,
 		); err != nil {
@@ -621,7 +654,7 @@ func (q *Queries) ListReminderConnections(ctx context.Context, userID uuid.UUID)
 }
 
 const listReminderLog = `-- name: ListReminderLog :many
-SELECT id, user_id, item_id, kind, offset_seconds, scheduled_for, fired_at, outcome FROM reminder_log
+SELECT id, user_id, item_id, kind, offset_seconds, scheduled_for, fire_at, fired_at, outcome FROM reminder_log
 WHERE user_id = $1
   AND ($2::uuid IS NULL OR item_id = $2)
   AND ($3::uuid IS NULL OR id < $3)
@@ -657,6 +690,7 @@ func (q *Queries) ListReminderLog(ctx context.Context, arg ListReminderLogParams
 			&i.Kind,
 			&i.OffsetSeconds,
 			&i.ScheduledFor,
+			&i.FireAt,
 			&i.FiredAt,
 			&i.Outcome,
 		); err != nil {
@@ -724,11 +758,16 @@ func (q *Queries) LockDelivery(ctx context.Context, id uuid.UUID) (Delivery, err
 }
 
 const lockDueReminders = `-- name: LockDueReminders :many
-SELECT id, item_id, user_id, kind, offset_seconds, manual_id, fire_at, scheduled_for FROM scheduled_reminders
-WHERE fire_at <= $1
-ORDER BY fire_at, id
-LIMIT $2
-FOR UPDATE SKIP LOCKED
+SELECT r.id, r.item_id, r.user_id, r.kind, r.offset_seconds, r.manual_id, r.fire_at, r.scheduled_for FROM scheduled_reminders r
+WHERE r.fire_at <= $1
+  AND r.item_id IN (
+      SELECT s.item_id FROM scheduled_reminders s
+      WHERE s.fire_at <= $1
+      GROUP BY s.item_id
+      ORDER BY min(s.fire_at), s.item_id
+      LIMIT $2)
+ORDER BY r.fire_at, r.id
+FOR UPDATE OF r SKIP LOCKED
 `
 
 type LockDueRemindersParams struct {
@@ -736,6 +775,8 @@ type LockDueRemindersParams struct {
 	Batch int32
 }
 
+// Whole items at a time: which reminder of an item goes out depends on all of
+// its due reminders, so they must not be split across batches.
 func (q *Queries) LockDueReminders(ctx context.Context, arg LockDueRemindersParams) ([]ScheduledReminder, error) {
 	rows, err := q.db.Query(ctx, lockDueReminders, arg.Now, arg.Batch)
 	if err != nil {
@@ -791,6 +832,21 @@ func (q *Queries) ReleaseHeldDeliveries(ctx context.Context, now *time.Time) ([]
 	return items, nil
 }
 
+const releaseUserHeldDeliveries = `-- name: ReleaseUserHeldDeliveries :exec
+UPDATE deliveries SET held_until = $1
+WHERE user_id = $2 AND status = 'pending' AND held_until IS NOT NULL
+`
+
+type ReleaseUserHeldDeliveriesParams struct {
+	Now    *time.Time
+	UserID uuid.UUID
+}
+
+func (q *Queries) ReleaseUserHeldDeliveries(ctx context.Context, arg ReleaseUserHeldDeliveriesParams) error {
+	_, err := q.db.Exec(ctx, releaseUserHeldDeliveries, arg.Now, arg.UserID)
+	return err
+}
+
 const sendDelivery = `-- name: SendDelivery :one
 UPDATE deliveries SET attempts = attempts + 1, held_until = NULL WHERE id = $1
 RETURNING attempts
@@ -805,7 +861,11 @@ func (q *Queries) SendDelivery(ctx context.Context, id uuid.UUID) (int32, error)
 
 const supersedeConnectionDeliveries = `-- name: SupersedeConnectionDeliveries :many
 UPDATE deliveries SET status = 'superseded', closed_at = $1
-WHERE item_id = $2 AND connection_id = $3 AND status = 'pending'
+WHERE id IN (
+    SELECT d.id FROM deliveries d
+    WHERE d.item_id = $2 AND d.connection_id = $3 AND d.status = 'pending'
+    ORDER BY d.id
+    FOR UPDATE)
 RETURNING id, reminder_id, user_id, item_id, connection_id, token_id, status, reason, attempts, held_until, created_at, expires_at, closed_at
 `
 
@@ -851,7 +911,11 @@ func (q *Queries) SupersedeConnectionDeliveries(ctx context.Context, arg Superse
 
 const supersedeTokenDeliveries = `-- name: SupersedeTokenDeliveries :many
 UPDATE deliveries SET status = 'superseded', closed_at = $1
-WHERE item_id = $2 AND token_id = $3 AND status = 'pending'
+WHERE id IN (
+    SELECT d.id FROM deliveries d
+    WHERE d.item_id = $2 AND d.token_id = $3 AND d.status = 'pending'
+    ORDER BY d.id
+    FOR UPDATE)
 RETURNING id, reminder_id, user_id, item_id, connection_id, token_id, status, reason, attempts, held_until, created_at, expires_at, closed_at
 `
 

@@ -10,9 +10,11 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/rayakame/plsremind/hub/internal/apierr"
+	"github.com/rayakame/plsremind/hub/internal/auth"
 	"github.com/rayakame/plsremind/hub/internal/db"
 	"github.com/rayakame/plsremind/hub/internal/db/sqlc"
 	"github.com/rayakame/plsremind/hub/internal/deps"
+	"github.com/rayakame/plsremind/hub/internal/eventlog"
 	"github.com/rayakame/plsremind/hub/internal/httpx"
 	"github.com/rayakame/plsremind/hub/internal/secret"
 	"github.com/rayakame/plsremind/hub/internal/signal"
@@ -68,7 +70,7 @@ type Revoker interface {
 // the tokens the hub held for their linked accounts.
 func DeleteUser(ctx context.Context, d *deps.Deps, revoker Revoker, id uuid.UUID) error {
 	var identities []sqlc.Identity
-	err := db.Tx(ctx, d.Pool, func(q *sqlc.Queries) error {
+	remove := func(q *sqlc.Queries) error {
 		user, err := lockedUser(ctx, q, id)
 		if err != nil {
 			return err
@@ -84,7 +86,15 @@ func DeleteUser(ctx context.Context, d *deps.Deps, revoker Revoker, id uuid.UUID
 			return err
 		}
 		return signal.ForUser(ctx, q, signal.User, id)
-	})
+	}
+	// Deleting a user touches rows the reminder ticker may hold at that moment.
+	// PostgreSQL then stops one of the two; trying again is all it takes.
+	var err error
+	for attempt := 0; attempt < 3; attempt++ {
+		if err = db.Tx(ctx, d.Pool, remove); !db.IsDeadlock(err) {
+			break
+		}
+	}
 	if err != nil {
 		return err
 	}
@@ -218,6 +228,11 @@ func patchUserAccess(d *deps.Deps) fiber.Handler {
 			}
 			updated, err = q.UpdateUserAccess(c.Context(), params)
 			if err != nil {
+				return err
+			}
+			// The user's own clients show the role, so they are told like about any other profile change.
+			admin, _ := auth.From(c)
+			if err := eventlog.Append(c.Context(), q, d.Now(), id, eventlog.ActorFrom(admin), "user.updated", View(updated)); err != nil {
 				return err
 			}
 			return signal.ForUser(c.Context(), q, signal.User, id)

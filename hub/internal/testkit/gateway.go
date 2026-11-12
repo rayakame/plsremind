@@ -51,10 +51,28 @@ type GatewayClient struct {
 	pauseOnce sync.Once
 }
 
-// Pause makes the client stop reading, the way a hung program would.
+// Pause makes the client stop reading and stop sending heartbeats, the way a hung program would.
 func (g *GatewayClient) Pause() {
 	g.StopHeartbeat()
+	g.PauseReading()
+}
+
+// PauseReading makes the client stop reading while its heartbeats go on: a
+// program that is alive but no longer takes what it is sent.
+func (g *GatewayClient) PauseReading() {
 	g.pauseOnce.Do(func() { close(g.pause) })
+}
+
+// KillListener cuts the connection on which the hub hears about changes, as a
+// restart of PostgreSQL would.
+func (e *Env) KillListener(t *testing.T) {
+	t.Helper()
+	var killed int
+	err := e.Pool.QueryRow(context.Background(),
+		`SELECT count(pg_terminate_backend(pid)) FROM pg_stat_activity
+		 WHERE datname = current_database() AND pid <> pg_backend_pid() AND query LIKE 'LISTEN %'`).Scan(&killed)
+	require.NoError(t, err)
+	require.Equal(t, 1, killed, "expected exactly one listening connection")
 }
 
 // ExpectEnded requires the connection to end, however it ends.

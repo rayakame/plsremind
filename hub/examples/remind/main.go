@@ -72,7 +72,9 @@ func main() {
 		log.Fatal("set PLSREMIND_URL and PLSREMIND_TOKEN")
 	}
 
+	wait := time.Second
 	for {
+		started := time.Now()
 		err := run(base, token, *once)
 		if errors.Is(err, errDone) {
 			return
@@ -82,9 +84,14 @@ func main() {
 			log.Fatalf("the hub refused the connection: %v", err)
 		}
 		// Deliveries that were not confirmed come again after every login,
-		// so a plain reconnect is all it takes to not lose any.
-		log.Printf("connection lost (%v), reconnecting", err)
-		time.Sleep(2 * time.Second)
+		// so a plain reconnect is all it takes to not lose any. The pause grows
+		// while the hub stays unreachable and starts over after a good connection.
+		if time.Since(started) > time.Minute {
+			wait = time.Second
+		}
+		log.Printf("connection lost (%v), reconnecting in %s", err, wait)
+		time.Sleep(wait)
+		wait = min(wait*2, time.Minute)
 	}
 }
 
@@ -205,7 +212,9 @@ func acknowledge(base, token, id string) error {
 		return err
 	}
 	defer res.Body.Close()
-	if res.StatusCode != http.StatusOK {
+	// 409 means the hub closed the delivery in the meantime, for example because
+	// the item was completed. There is nothing left to confirm.
+	if res.StatusCode != http.StatusOK && res.StatusCode != http.StatusConflict {
 		return fmt.Errorf("confirming delivery %s: status %d", id, res.StatusCode)
 	}
 	return nil

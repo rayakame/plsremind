@@ -91,6 +91,7 @@ func (h *Hub) serve(ws *websocket.Conn) {
 			}
 			var code int
 			if session, code = h.identify(ctx, c, in.D, cookie, sameOrigin); code != 0 {
+				session = nil
 				c.close(code, "identify refused")
 				return
 			}

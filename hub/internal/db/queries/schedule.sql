@@ -16,3 +16,6 @@ VALUES (@id, @item_id, @user_id, @kind, @offset_seconds, @manual_id, @fire_at, @
 
 -- name: ListHandledReminders :many
 SELECT kind, scheduled_for FROM reminder_log WHERE item_id = @item_id;
+
+-- name: ListItemSchedule :many
+SELECT * FROM scheduled_reminders WHERE item_id = @item_id FOR UPDATE;

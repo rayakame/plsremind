@@ -119,6 +119,39 @@ func (q *Queries) ListHandledReminders(ctx context.Context, itemID uuid.UUID) ([
 	return items, nil
 }
 
+const listItemSchedule = `-- name: ListItemSchedule :many
+SELECT id, item_id, user_id, kind, offset_seconds, manual_id, fire_at, scheduled_for FROM scheduled_reminders WHERE item_id = $1 FOR UPDATE
+`
+
+func (q *Queries) ListItemSchedule(ctx context.Context, itemID uuid.UUID) ([]ScheduledReminder, error) {
+	rows, err := q.db.Query(ctx, listItemSchedule, itemID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ScheduledReminder
+	for rows.Next() {
+		var i ScheduledReminder
+		if err := rows.Scan(
+			&i.ID,
+			&i.ItemID,
+			&i.UserID,
+			&i.Kind,
+			&i.OffsetSeconds,
+			&i.ManualID,
+			&i.FireAt,
+			&i.ScheduledFor,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listOpenItemIDs = `-- name: ListOpenItemIDs :many
 SELECT id FROM items WHERE user_id = $1 AND status = 'open' ORDER BY id
 `

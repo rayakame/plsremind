@@ -80,9 +80,11 @@ func build(ctx context.Context, q *sqlc.Queries, now time.Time, d sqlc.Delivery,
 		return View{}, err
 	}
 	view := View{
-		ID:       d.ID,
-		Attempt:  attempt,
-		Late:     now.Sub(r.ScheduledFor) > lateAfter,
+		ID:      d.ID,
+		Attempt: attempt,
+		// Measured from when it should have gone out. A reminder that quiet hours
+		// moved and that then left on time is not late.
+		Late:     now.Sub(r.FireAt) > lateAfter,
 		Reminder: viewReminder(r),
 		Item:     it,
 		User:     User{ID: user.ID, DisplayName: user.DisplayName, Timezone: user.Timezone},
@@ -117,6 +119,7 @@ func held(now time.Time, r sqlc.ReminderLog, user sqlc.User) (time.Time, bool) {
 func render(ctx context.Context, q *sqlc.Queries, now time.Time, rows []pendingRow, provider string) ([]View, error) {
 	views := make([]View, 0, len(rows))
 	users := map[uuid.UUID]sqlc.User{}
+	channels := map[uuid.UUID][]Channel{}
 	for _, row := range rows {
 		user, ok := users[row.delivery.UserID]
 		if !ok {
@@ -125,6 +128,24 @@ func render(ctx context.Context, q *sqlc.Queries, now time.Time, rows []pendingR
 				return nil, err
 			}
 			users[user.ID] = user
+		}
+		reminds, err := stillReminds(ctx, q, channels, row.delivery)
+		if err != nil {
+			return nil, err
+		}
+		if !reminds {
+			// The channel was switched off, or the user disabled, in the moment
+			// the reminder fired. It is withdrawn instead of handed out.
+			closed, err := q.CloseDelivery(ctx, sqlc.CloseDeliveryParams{ID: row.delivery.ID, Status: "cancelled", Now: &now})
+			if err != nil && !db.IsNotFound(err) {
+				return nil, err
+			}
+			if err == nil {
+				if err := announceClosed(ctx, q, []sqlc.Delivery{closed}); err != nil {
+					return nil, err
+				}
+			}
+			continue
 		}
 		if until, wait := held(now, row.reminder, user); wait {
 			if err := q.HoldDelivery(ctx, sqlc.HoldDeliveryParams{ID: row.delivery.ID, HeldUntil: &until}); err != nil {
@@ -141,9 +162,34 @@ func render(ctx context.Context, q *sqlc.Queries, now time.Time, rows []pendingR
 	return views, nil
 }
 
+// stillReminds reports whether the delivery's channel is still a way the user is reminded through.
+func stillReminds(ctx context.Context, q *sqlc.Queries, cache map[uuid.UUID][]Channel, row sqlc.Delivery) (bool, error) {
+	channels, ok := cache[row.UserID]
+	if !ok {
+		var err error
+		if channels, err = Channels(ctx, q, row.UserID); err != nil {
+			return false, err
+		}
+		cache[row.UserID] = channels
+	}
+	for _, ch := range channels {
+		if ch.owns(row) {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// ReleaseHeldFor lets go of what was held back for a user's quiet hours, after
+// those hours changed. The ticker sends it on its next round.
+func ReleaseHeldFor(ctx context.Context, q *sqlc.Queries, now time.Time, userID uuid.UUID) error {
+	return q.ReleaseUserHeldDeliveries(ctx, sqlc.ReleaseUserHeldDeliveriesParams{UserID: userID, Now: &now})
+}
+
 // Pending hands a channel everything that is waiting for it. Each delivery
-// handed out counts as one attempt.
-func Pending(ctx context.Context, d *deps.Deps, ch Channel) ([]View, error) {
+// handed out counts as one attempt. With onlyUnsent it is limited to
+// deliveries that were never handed out.
+func Pending(ctx context.Context, d *deps.Deps, ch Channel, onlyUnsent bool) ([]View, error) {
 	var views []View
 	err := db.Tx(ctx, d.Pool, func(q *sqlc.Queries) error {
 		var rows []pendingRow
@@ -154,7 +200,7 @@ func Pending(ctx context.Context, d *deps.Deps, ch Channel) ([]View, error) {
 				return err
 			}
 			provider = conn.Provider
-			found, err := q.ListPendingConnectionDeliveries(ctx, ch.ConnectionID)
+			found, err := q.ListPendingConnectionDeliveries(ctx, sqlc.ListPendingConnectionDeliveriesParams{ConnectionID: ch.ConnectionID, OnlyUnsent: onlyUnsent})
 			if err != nil {
 				return err
 			}
@@ -162,7 +208,7 @@ func Pending(ctx context.Context, d *deps.Deps, ch Channel) ([]View, error) {
 				rows = append(rows, pendingRow{f.Delivery, f.ReminderLog})
 			}
 		} else {
-			found, err := q.ListPendingTokenDeliveries(ctx, ch.TokenID)
+			found, err := q.ListPendingTokenDeliveries(ctx, sqlc.ListPendingTokenDeliveriesParams{TokenID: ch.TokenID, OnlyUnsent: onlyUnsent})
 			if err != nil {
 				return err
 			}

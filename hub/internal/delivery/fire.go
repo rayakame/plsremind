@@ -11,6 +11,7 @@ import (
 	"github.com/rayakame/plsremind/hub/internal/deps"
 )
 
+// batchSize is how many items one transaction handles.
 const batchSize = 200
 
 // RunOnce fires every reminder whose time has come and expires deliveries that
@@ -21,7 +22,7 @@ func RunOnce(ctx context.Context, d *deps.Deps) error {
 		if err != nil {
 			return err
 		}
-		if fired < batchSize {
+		if fired == 0 {
 			break
 		}
 	}
@@ -82,6 +83,7 @@ func fireBatch(ctx context.Context, d *deps.Deps) (int, error) {
 				Kind:          row.Kind,
 				OffsetSeconds: row.OffsetSeconds,
 				ScheduledFor:  row.ScheduledFor,
+				FireAt:        row.FireAt,
 				FiredAt:       now,
 				Outcome:       outcome,
 			})

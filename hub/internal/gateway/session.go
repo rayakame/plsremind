@@ -25,11 +25,15 @@ type Session struct {
 	token  string
 	cookie string
 
-	mu         sync.Mutex
-	conn       *conn
-	seq        int64
-	buffer     []sequenced
-	detachedAt time.Time
+	sendMu sync.Mutex
+
+	mu          sync.Mutex
+	conn        *conn
+	seq         int64
+	buffer      []sequenced
+	bufferBytes int
+	detachedAt  time.Time
+	createdAt   time.Time
 
 	box  *mailbox
 	stop chan struct{}
@@ -54,10 +58,20 @@ func (s *Session) wants(intent string) bool {
 	return false
 }
 
-// emit sends a dispatch. Sequenced ones get the next number and are kept for resuming.
+// maxBufferBytes bounds what one session keeps for resuming, whatever the frame count.
+const maxBufferBytes = 8 << 20
+
+// emit sends a dispatch. Numbered ones get the next number and are kept for resuming.
+//
+// Two locks are involved. sendMu keeps frames of one session in order on the
+// wire and may be held for as long as a slow client takes. mu guards the
+// session's state and is never held while writing, so that nothing else in the
+// hub ever waits for a client.
 func (s *Session) emit(event string, numbered bool, data any) {
+	s.sendMu.Lock()
+	defer s.sendMu.Unlock()
+
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	var seq *int64
 	if numbered {
 		s.seq++
@@ -67,12 +81,18 @@ func (s *Session) emit(event string, numbered bool, data any) {
 	frame := encode(OpDispatch, data, seq, &event)
 	if numbered {
 		s.buffer = append(s.buffer, sequenced{seq: s.seq, frame: frame})
-		if limit := s.hub.d.Gateway.BufferSize; len(s.buffer) > limit {
-			s.buffer = s.buffer[len(s.buffer)-limit:]
+		s.bufferBytes += len(frame)
+		limit := s.hub.d.Gateway.BufferSize
+		for len(s.buffer) > limit || (s.bufferBytes > maxBufferBytes && len(s.buffer) > 1) {
+			s.bufferBytes -= len(s.buffer[0].frame)
+			s.buffer = s.buffer[1:]
 		}
 	}
-	if s.conn != nil {
-		s.conn.send(frame)
+	c := s.conn
+	s.mu.Unlock()
+
+	if c != nil {
+		c.send(frame)
 	}
 }
 
