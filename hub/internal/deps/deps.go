@@ -24,6 +24,8 @@ type Deps struct {
 	RateConn *ratelimit.Limiter
 	RateAnon *ratelimit.Limiter
 
+	Gateway Gateway
+
 	// OAuthEndpoints replaces the built-in addresses of "github" and "discord", for tests.
 	OAuthEndpoints map[string]OAuthEndpoints
 }
@@ -42,4 +44,48 @@ func (d *Deps) Box() *secret.Box {
 
 func (d *Deps) Q() *sqlc.Queries {
 	return sqlc.New(d.Pool)
+}
+
+// Gateway holds the limits and timers of the WebSocket gateway.
+type Gateway struct {
+	HeartbeatInterval time.Duration
+	IdentifyTimeout   time.Duration
+	// SessionTTL is how long a session can be resumed after its connection dropped.
+	SessionTTL   time.Duration
+	WriteTimeout time.Duration
+	// BufferSize is how many events a session keeps for resuming.
+	BufferSize        int
+	MaxSessions       int
+	MaxClientMessages int
+	// SyncChunk is how many items one part of a user.sync carries.
+	SyncChunk int
+}
+
+// WithDefaults fills every unset field with its production value.
+func (g Gateway) WithDefaults() Gateway {
+	if g.HeartbeatInterval == 0 {
+		g.HeartbeatInterval = 45 * time.Second
+	}
+	if g.IdentifyTimeout == 0 {
+		g.IdentifyTimeout = 10 * time.Second
+	}
+	if g.SessionTTL == 0 {
+		g.SessionTTL = 5 * time.Minute
+	}
+	if g.WriteTimeout == 0 {
+		g.WriteTimeout = 10 * time.Second
+	}
+	if g.BufferSize == 0 {
+		g.BufferSize = 5000
+	}
+	if g.MaxSessions == 0 {
+		g.MaxSessions = 10
+	}
+	if g.MaxClientMessages == 0 {
+		g.MaxClientMessages = 60
+	}
+	if g.SyncChunk == 0 {
+		g.SyncChunk = 500
+	}
+	return g
 }

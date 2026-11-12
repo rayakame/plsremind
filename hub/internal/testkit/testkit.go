@@ -34,7 +34,9 @@ import (
 	"github.com/rayakame/plsremind/hub/internal/config"
 	"github.com/rayakame/plsremind/hub/internal/db"
 	"github.com/rayakame/plsremind/hub/internal/deps"
+	"github.com/rayakame/plsremind/hub/internal/gateway"
 	"github.com/rayakame/plsremind/hub/internal/httpapi"
+	"github.com/rayakame/plsremind/hub/internal/ratelimit"
 )
 
 type J = map[string]any
@@ -120,8 +122,12 @@ type Env struct {
 	Deps  *deps.Deps
 	Clock *FakeClock
 
-	admin *Client
-	dbURL string
+	// Hub is the WebSocket gateway, already running.
+	Hub *gateway.Hub
+
+	admin   *Client
+	dbURL   string
+	baseURL string
 }
 
 // New returns an environment with its own freshly migrated database.
@@ -144,19 +150,35 @@ func New(t *testing.T) *Env {
 		Now:  clock.Now,
 		HTTP: &http.Client{Timeout: 5 * time.Second},
 	}
-	return &Env{App: httpapi.New(d), Pool: pool, Deps: d, Clock: clock, dbURL: urlFor(name)}
+	// The gateway runs on real time. Short timers keep its tests fast.
+	d.Gateway = deps.Gateway{
+		HeartbeatInterval: 200 * time.Millisecond,
+		IdentifyTimeout:   300 * time.Millisecond,
+		SessionTTL:        500 * time.Millisecond,
+		WriteTimeout:      2 * time.Second,
+	}
+	// Every test client comes from 127.0.0.1; the production limit per address would get in the way.
+	d.RateAnon = ratelimit.New(100000, time.Minute, clock.Now)
+	server := httpapi.NewServer(d)
+	server.Gateway.Start(ctx)
+	t.Cleanup(server.Gateway.Shutdown)
+	return &Env{App: server.App, Hub: server.Gateway, Pool: pool, Deps: d, Clock: clock, dbURL: urlFor(name)}
 }
 
 // Listen serves the app on a real socket and returns its base URL.
 func (e *Env) Listen(t *testing.T) string {
 	t.Helper()
+	if e.baseURL != "" {
+		return e.baseURL
+	}
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
 	go func() {
 		_ = e.App.Listener(ln, fiber.ListenConfig{DisableStartupMessage: true})
 	}()
 	t.Cleanup(func() { _ = e.App.Shutdown() })
-	return "http://" + ln.Addr().String()
+	e.baseURL = "http://" + ln.Addr().String()
+	return e.baseURL
 }
 
 type reqConfig struct {

@@ -12,6 +12,7 @@ import (
 	"github.com/rayakame/plsremind/hub/internal/connection"
 	"github.com/rayakame/plsremind/hub/internal/delivery"
 	"github.com/rayakame/plsremind/hub/internal/deps"
+	"github.com/rayakame/plsremind/hub/internal/gateway"
 	"github.com/rayakame/plsremind/hub/internal/item"
 	"github.com/rayakame/plsremind/hub/internal/list"
 	"github.com/rayakame/plsremind/hub/internal/oauth"
@@ -36,7 +37,19 @@ func rejectNUL(c fiber.Ctx) error {
 
 const bodyLimit = 1 << 20
 
+// Server is the HTTP application together with the gateway it serves.
+type Server struct {
+	App     *fiber.App
+	Gateway *gateway.Hub
+}
+
+// New builds only the HTTP application, for callers that do not run the gateway.
 func New(d *deps.Deps) *fiber.App {
+	return NewServer(d).App
+}
+
+func NewServer(d *deps.Deps) *Server {
+	d.Gateway = d.Gateway.WithDefaults()
 	cfg := fiber.Config{
 		AppName:   "plsremind",
 		BodyLimit: bodyLimit,
@@ -99,8 +112,10 @@ func New(d *deps.Deps) *fiber.App {
 	reminder.Register(user, d)
 	connection.Register(api, user, admin, d)
 	delivery.Register(api, user, d)
+	hub := gateway.NewHub(d)
+	hub.Register(api)
 
 	app.Use("/api", func(fiber.Ctx) error { return fiber.ErrNotFound })
 	app.Get("/*", web.Handler())
-	return app
+	return &Server{App: app, Gateway: hub}
 }

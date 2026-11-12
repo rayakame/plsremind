@@ -1,6 +1,8 @@
 package httpapi
 
 import (
+	"strings"
+
 	"github.com/gofiber/fiber/v3"
 
 	"github.com/rayakame/plsremind/hub/internal/deps"
@@ -31,6 +33,8 @@ func info(d *deps.Deps) fiber.Handler {
 			"setup_required": users == 0,
 			"registration":   settings.Registration,
 			"login_methods":  loginMethods,
+			// http becomes ws and https becomes wss.
+			"gateway_url": "ws" + strings.TrimPrefix(d.Cfg.PublicURL, "http") + "/api/v1/gateway",
 		})
 	}
 }

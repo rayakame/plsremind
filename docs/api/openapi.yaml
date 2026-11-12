@@ -93,6 +93,8 @@ tags:
       A newer reminder for the same item replaces an open one, and completing or deleting the
       item withdraws it. While the user is in their quiet hours, reminders before a deadline
       and follow-ups are held back; the reminder at the due time and manual reminders are not.
+  - name: Gateway
+    description: The WebSocket gateway is described in `docs/gateway.md`.
 paths:
   /info:
     get:
@@ -1510,6 +1512,26 @@ paths:
                     $ref: "#/components/schemas/NextCursor"
         default:
           $ref: "#/components/responses/Error"
+  /gateway:
+    get:
+      tags: [Gateway]
+      operationId: connectGateway
+      summary: Open a gateway connection
+      description: |
+        A WebSocket endpoint. Authentication happens inside the connection with an Identify
+        message, not with headers. See `docs/gateway.md` for the protocol.
+      security: []
+      responses:
+        "101":
+          description: The connection was upgraded to WebSocket.
+        "426":
+          description: The request was not a WebSocket upgrade.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        default:
+          $ref: "#/components/responses/Error"
 components:
   securitySchemes:
     session:
@@ -1586,12 +1608,15 @@ components:
                 type: string
     Info:
       type: object
-      required: [name, version, setup_required, registration, login_methods]
+      required: [name, version, setup_required, registration, login_methods, gateway_url]
       properties:
         name:
           type: string
         version:
           type: string
+        gateway_url:
+          type: string
+          description: Where the WebSocket gateway of this instance listens.
         setup_required:
           type: boolean
           description: True until the first admin was created through `/setup`.

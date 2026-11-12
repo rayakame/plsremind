@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"context"
 	"net/http"
 	"strings"
 	"time"
@@ -80,19 +81,24 @@ func fromBearer(c fiber.Ctx, d *deps.Deps, header string) (Principal, error) {
 	if !found {
 		return Principal{}, apierr.Unauthorized()
 	}
+	return Authenticate(c.Context(), d, token)
+}
+
+// Authenticate resolves a personal or connection token to its principal.
+func Authenticate(ctx context.Context, d *deps.Deps, token string) (Principal, error) {
 	switch {
 	case strings.HasPrefix(token, secret.PrefixPersonal):
-		return fromPersonalToken(c, d, token)
+		return fromPersonalToken(ctx, d, token)
 	case strings.HasPrefix(token, secret.PrefixConnection):
-		return fromConnectionToken(c, d, token)
+		return fromConnectionToken(ctx, d, token)
 	default:
 		return Principal{}, apierr.Unauthorized()
 	}
 }
 
-func fromPersonalToken(c fiber.Ctx, d *deps.Deps, token string) (Principal, error) {
+func fromPersonalToken(ctx context.Context, d *deps.Deps, token string) (Principal, error) {
 	q := d.Q()
-	row, err := q.GetPersonalTokenUser(c.Context(), secret.Hash(token))
+	row, err := q.GetPersonalTokenUser(ctx, secret.Hash(token))
 	if db.IsNotFound(err) {
 		return Principal{}, apierr.Unauthorized()
 	}
@@ -104,16 +110,16 @@ func fromPersonalToken(c fiber.Ctx, d *deps.Deps, token string) (Principal, erro
 	}
 	now := d.Now()
 	if row.LastUsedAt == nil || now.Sub(*row.LastUsedAt) >= tokenTouchInterval {
-		if err := q.TouchPersonalToken(c.Context(), sqlc.TouchPersonalTokenParams{ID: row.TokenID, Now: &now}); err != nil {
+		if err := q.TouchPersonalToken(ctx, sqlc.TouchPersonalTokenParams{ID: row.TokenID, Now: &now}); err != nil {
 			return Principal{}, err
 		}
 	}
 	return Principal{Kind: KindPersonalToken, UserID: row.UserID, Role: row.Role, CredentialID: row.TokenID}, nil
 }
 
-func fromConnectionToken(c fiber.Ctx, d *deps.Deps, token string) (Principal, error) {
+func fromConnectionToken(ctx context.Context, d *deps.Deps, token string) (Principal, error) {
 	q := d.Q()
-	conn, err := q.GetConnectionByToken(c.Context(), secret.Hash(token))
+	conn, err := q.GetConnectionByToken(ctx, secret.Hash(token))
 	if db.IsNotFound(err) {
 		return Principal{}, apierr.Unauthorized()
 	}
@@ -122,21 +128,22 @@ func fromConnectionToken(c fiber.Ctx, d *deps.Deps, token string) (Principal, er
 	}
 	now := d.Now()
 	if conn.LastUsedAt == nil || now.Sub(*conn.LastUsedAt) >= tokenTouchInterval {
-		if err := q.TouchConnection(c.Context(), sqlc.TouchConnectionParams{ID: conn.ID, Now: &now}); err != nil {
+		if err := q.TouchConnection(ctx, sqlc.TouchConnectionParams{ID: conn.ID, Now: &now}); err != nil {
 			return Principal{}, err
 		}
 	}
 	return Principal{Kind: KindConnection, CredentialID: conn.ID, ConnectionProvider: conn.Provider, Intents: conn.AllowedIntents}, nil
 }
 
-func fromSession(c fiber.Ctx, d *deps.Deps) (Principal, bool, error) {
-	value := c.Cookies(SessionCookie)
+// SessionPrincipal resolves the value of a session cookie. It does not check
+// where the request came from; callers that accept writes do that themselves.
+func SessionPrincipal(ctx context.Context, d *deps.Deps, value string) (Principal, bool, error) {
 	if value == "" {
 		return Principal{}, false, nil
 	}
 	now := d.Now()
 	q := d.Q()
-	row, err := q.GetSessionUser(c.Context(), sqlc.GetSessionUserParams{TokenHash: secret.Hash(value), Now: now})
+	row, err := q.GetSessionUser(ctx, sqlc.GetSessionUserParams{TokenHash: secret.Hash(value), Now: now})
 	if db.IsNotFound(err) {
 		return Principal{}, false, nil
 	}
@@ -146,16 +153,24 @@ func fromSession(c fiber.Ctx, d *deps.Deps) (Principal, bool, error) {
 	if row.Disabled {
 		return Principal{}, false, errDisabled()
 	}
-	if isWrite(c.Method()) && c.Get(fiber.HeaderOrigin) != d.Cfg.PublicURL {
-		return Principal{}, false, errCSRF()
-	}
 	if now.Sub(row.LastUsedAt) >= sessionRefresh {
-		err := q.TouchSession(c.Context(), sqlc.TouchSessionParams{ID: row.SessionID, Now: now, ExpiresAt: now.Add(sessionLifetime)})
+		err := q.TouchSession(ctx, sqlc.TouchSessionParams{ID: row.SessionID, Now: now, ExpiresAt: now.Add(sessionLifetime)})
 		if err != nil {
 			return Principal{}, false, err
 		}
 	}
 	return Principal{Kind: KindSession, UserID: row.UserID, Role: row.Role, CredentialID: row.SessionID}, true, nil
+}
+
+func fromSession(c fiber.Ctx, d *deps.Deps) (Principal, bool, error) {
+	p, ok, err := SessionPrincipal(c.Context(), d, c.Cookies(SessionCookie))
+	if err != nil || !ok {
+		return Principal{}, false, err
+	}
+	if isWrite(c.Method()) && c.Get(fiber.HeaderOrigin) != d.Cfg.PublicURL {
+		return Principal{}, false, errCSRF()
+	}
+	return p, true, nil
 }
 
 // Require rejects anonymous requests.
