@@ -12,12 +12,13 @@ import (
 // mailbox collects what a session still has to do. Work for the same user is
 // merged, so a burst of changes turns into one look at the event log.
 type mailbox struct {
-	mu      sync.Mutex
-	start   bool
-	dirty   map[uuid.UUID]struct{}
-	recheck map[uuid.UUID]struct{}
-	all     bool
-	wake    chan struct{}
+	mu       sync.Mutex
+	start    bool
+	validate bool
+	dirty    map[uuid.UUID]struct{}
+	recheck  map[uuid.UUID]struct{}
+	all      bool
+	wake     chan struct{}
 }
 
 func newMailbox() *mailbox {
@@ -35,23 +36,24 @@ func (m *mailbox) post(fn func(m *mailbox)) {
 }
 
 type work struct {
-	start   bool
-	all     bool
-	dirty   []uuid.UUID
-	recheck []uuid.UUID
+	start    bool
+	validate bool
+	all      bool
+	dirty    []uuid.UUID
+	recheck  []uuid.UUID
 }
 
 func (m *mailbox) take() work {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	w := work{start: m.start, all: m.all}
+	w := work{start: m.start, all: m.all, validate: m.validate}
 	for id := range m.dirty {
 		w.dirty = append(w.dirty, id)
 	}
 	for id := range m.recheck {
 		w.recheck = append(w.recheck, id)
 	}
-	m.start, m.all = false, false
+	m.start, m.all, m.validate = false, false, false
 	m.dirty, m.recheck = map[uuid.UUID]struct{}{}, map[uuid.UUID]struct{}{}
 	return w
 }
@@ -82,6 +84,12 @@ func (s *Session) run() {
 }
 
 func (s *Session) do(ctx context.Context, w work) error {
+	if w.validate {
+		if code := s.revalidate(ctx); code != 0 {
+			s.hub.drop(s, code, "access withdrawn")
+			return nil
+		}
+	}
 	if w.start {
 		for _, userID := range s.initial {
 			if err := s.syncUser(ctx, userID); err != nil {
@@ -93,6 +101,11 @@ func (s *Session) do(ctx context.Context, w work) error {
 	if w.all {
 		for userID := range s.cursors {
 			w.dirty = append(w.dirty, userID)
+		}
+	}
+	for _, userID := range w.recheck {
+		if err := s.recheck(ctx, userID); err != nil {
+			return err
 		}
 	}
 	for _, userID := range w.dirty {

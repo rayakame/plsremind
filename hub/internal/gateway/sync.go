@@ -10,6 +10,7 @@ import (
 
 	"github.com/rayakame/plsremind/hub/internal/account"
 	"github.com/rayakame/plsremind/hub/internal/auth"
+	"github.com/rayakame/plsremind/hub/internal/db"
 	"github.com/rayakame/plsremind/hub/internal/db/sqlc"
 	"github.com/rayakame/plsremind/hub/internal/item"
 	"github.com/rayakame/plsremind/hub/internal/list"
@@ -33,13 +34,15 @@ type chunk struct {
 	Count int `json:"count"`
 }
 
+// userSync leaves out the parts the session did not ask for. The fields are
+// untyped so that an empty list is still sent: "no items" is state too.
 type userSync struct {
-	UserID uuid.UUID   `json:"user_id"`
-	Chunk  chunk       `json:"chunk"`
-	User   any         `json:"user,omitempty"`
-	Lists  []list.List `json:"lists,omitempty"`
-	Items  []item.Item `json:"items,omitempty"`
-	Plans  any         `json:"plans,omitempty"`
+	UserID uuid.UUID `json:"user_id"`
+	Chunk  chunk     `json:"chunk"`
+	User   any       `json:"user,omitempty"`
+	Lists  any       `json:"lists,omitempty"`
+	Items  any       `json:"items,omitempty"`
+	Plans  any       `json:"plans,omitempty"`
 }
 
 // envelope wraps every change event.
@@ -54,9 +57,95 @@ type actor struct {
 	ID   uuid.UUID `json:"id"`
 }
 
+// connectionUser is a user as a connection sees them: enough to address them
+// at the right time, and whom to address at the connection's provider.
+type connectionUser struct {
+	ID          uuid.UUID           `json:"id"`
+	DisplayName string              `json:"display_name"`
+	Timezone    string              `json:"timezone"`
+	QuietHours  *account.QuietHours `json:"quiet_hours"`
+	ExternalIDs []string            `json:"external_ids"`
+	Remind      bool                `json:"remind"`
+}
+
 // userView renders a user the way this session may see them.
 func (s *Session) userView(ctx context.Context, q *sqlc.Queries, user sqlc.User) (any, error) {
-	return account.View(user), nil
+	if s.principal.Kind != auth.KindConnection {
+		return account.View(user), nil
+	}
+	externalIDs, err := q.ListExternalIDs(ctx, sqlc.ListExternalIDsParams{UserID: user.ID, Provider: s.principal.ConnectionProvider})
+	if err != nil {
+		return nil, err
+	}
+	if externalIDs == nil {
+		externalIDs = []string{}
+	}
+	remind, err := q.GetGrantRemind(ctx, sqlc.GetGrantRemindParams{UserID: user.ID, ConnectionID: s.principal.CredentialID})
+	if err != nil {
+		return nil, err
+	}
+	return connectionUser{
+		ID:          user.ID,
+		DisplayName: user.DisplayName,
+		Timezone:    user.Timezone,
+		QuietHours:  account.ViewQuietHours(user),
+		ExternalIDs: externalIDs,
+		Remind:      remind,
+	}, nil
+}
+
+// recheck looks at whether the session still follows a user after their access
+// or their grant changed, and tells the client what that means for it.
+func (s *Session) recheck(ctx context.Context, userID uuid.UUID) error {
+	if s.principal.Kind != auth.KindConnection || !s.keepsState() {
+		return nil
+	}
+	q := s.hub.d.Q()
+	user, err := q.GetGrantedUser(ctx, sqlc.GetGrantedUserParams{ConnectionID: s.principal.CredentialID, UserID: userID})
+	covered := err == nil
+	if err != nil && !db.IsNotFound(err) {
+		return err
+	}
+	_, following := s.cursors[userID]
+	switch {
+	case covered && !following:
+		return s.syncUser(ctx, userID)
+	case !covered && following:
+		delete(s.cursors, userID)
+		s.hub.uncover(s, userID)
+		s.emit("user.gone", true, map[string]uuid.UUID{"user_id": userID})
+	case covered && s.wants("users"):
+		view, err := s.userView(ctx, q, user)
+		if err != nil {
+			return err
+		}
+		s.emit("user.updated", true, envelope{UserID: userID, Data: view})
+	}
+	return nil
+}
+
+// revalidate checks that whoever identified may still be here.
+func (s *Session) revalidate(ctx context.Context) (code int) {
+	var p auth.Principal
+	var err error
+	if s.token != "" {
+		p, err = auth.Authenticate(ctx, s.hub.d, s.token)
+	} else {
+		var found bool
+		p, found, err = auth.SessionPrincipal(ctx, s.hub.d, s.cookie)
+		if err == nil && !found {
+			return CloseAuthFailed
+		}
+	}
+	if err != nil || p.CredentialID != s.principal.CredentialID {
+		return CloseAuthFailed
+	}
+	for _, intent := range s.intents {
+		if !auth.HasIntent(p, intent) {
+			return CloseDisallowedIntents
+		}
+	}
+	return 0
 }
 
 // syncUser sends the user's state and from then on follows their event log.
@@ -91,10 +180,11 @@ func (s *Session) syncUser(ctx context.Context, userID uuid.UUID) error {
 		if err != nil {
 			return err
 		}
-		first.Lists = make([]list.List, 0, len(rows))
+		lists := make([]list.List, 0, len(rows))
 		for _, row := range rows {
-			first.Lists = append(first.Lists, list.View(row))
+			lists = append(lists, list.View(row))
 		}
+		first.Lists = lists
 	}
 	if s.wants("plans") {
 		if first.Plans, err = plan.Views(ctx, q, userID); err != nil {
@@ -120,10 +210,11 @@ func (s *Session) syncUser(ctx context.Context, userID uuid.UUID) error {
 		}
 		part.Chunk = chunk{Index: index, Count: count}
 		if s.wants("items") {
-			part.Items = items[min(index*size, len(items)):min((index+1)*size, len(items))]
-			if part.Items == nil {
-				part.Items = []item.Item{}
+			slice := items[min(index*size, len(items)):min((index+1)*size, len(items))]
+			if slice == nil {
+				slice = []item.Item{}
 			}
+			part.Items = slice
 		}
 		s.emit("user.sync", true, part)
 	}

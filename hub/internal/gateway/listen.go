@@ -8,6 +8,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/rayakame/plsremind/hub/internal/auth"
 	"github.com/rayakame/plsremind/hub/internal/signal"
 )
 
@@ -73,6 +74,47 @@ func (h *Hub) handle(s signal.Signal) {
 				sess.box.post(func(m *mailbox) { m.dirty[*s.UserID] = struct{}{} })
 			})
 		}
+	case signal.Grant:
+		if s.UserID != nil && s.ConnectionID != nil {
+			h.each(func(sess *Session) bool { return sess.principal.CredentialID == *s.ConnectionID }, func(sess *Session) {
+				sess.box.post(func(m *mailbox) { m.recheck[*s.UserID] = struct{}{} })
+			})
+		}
+	case signal.User:
+		if s.UserID == nil {
+			return
+		}
+		// The user's own sessions may have lost their access; connections may have
+		// gained or lost the user.
+		h.each(func(*Session) bool { return true }, func(sess *Session) {
+			switch {
+			case sess.principal.Kind == auth.KindConnection:
+				sess.box.post(func(m *mailbox) { m.recheck[*s.UserID] = struct{}{} })
+			case sess.principal.UserID == *s.UserID:
+				sess.box.post(func(m *mailbox) { m.validate = true })
+			}
+		})
+	case signal.Connection:
+		if s.ConnectionID != nil {
+			h.each(func(sess *Session) bool { return sess.principal.CredentialID == *s.ConnectionID }, func(sess *Session) {
+				sess.box.post(func(m *mailbox) { m.validate = true })
+			})
+		}
+	}
+}
+
+// each calls fn for every session that matches, outside the hub's lock.
+func (h *Hub) each(match func(*Session) bool, fn func(*Session)) {
+	h.mu.Lock()
+	sessions := make([]*Session, 0, len(h.sessions))
+	for _, s := range h.sessions {
+		if match(s) {
+			sessions = append(sessions, s)
+		}
+	}
+	h.mu.Unlock()
+	for _, s := range sessions {
+		fn(s)
 	}
 }
 

@@ -118,6 +118,16 @@ func (h *Hub) drop(s *Session, code int, reason string) {
 	}
 }
 
+// uncover records that a session no longer follows a user.
+func (h *Hub) uncover(s *Session, userID uuid.UUID) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	delete(h.byUser[userID], s)
+	if len(h.byUser[userID]) == 0 {
+		delete(h.byUser, userID)
+	}
+}
+
 // cover records that a session follows a user.
 func (h *Hub) cover(s *Session, userID uuid.UUID) {
 	h.mu.Lock()
@@ -209,6 +219,11 @@ func (h *Hub) ready(ctx context.Context, s *Session) (ready, error) {
 			return ready{}, err
 		}
 		out.Principal = readyPrincipal{Kind: "connection", Connection: &readyConnection{ID: conn.ID.String(), Name: conn.Name, Provider: conn.Provider}}
+		if s.keepsState() {
+			if s.initial, err = h.d.Q().ListGrantedUsers(ctx, conn.ID); err != nil {
+				return ready{}, err
+			}
+		}
 	default:
 		kind := "session"
 		if s.principal.Kind == auth.KindPersonalToken {

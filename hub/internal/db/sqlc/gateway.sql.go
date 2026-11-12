@@ -32,6 +32,24 @@ func (q *Queries) GetEventSeq(ctx context.Context, id uuid.UUID) (int64, error) 
 	return event_seq, err
 }
 
+const getGrantRemind = `-- name: GetGrantRemind :one
+SELECT COALESCE(
+    (SELECT g.remind FROM connection_grants g WHERE g.user_id = $1 AND g.connection_id = $2),
+    true)::boolean
+`
+
+type GetGrantRemindParams struct {
+	UserID       uuid.UUID
+	ConnectionID uuid.UUID
+}
+
+func (q *Queries) GetGrantRemind(ctx context.Context, arg GetGrantRemindParams) (bool, error) {
+	row := q.db.QueryRow(ctx, getGrantRemind, arg.UserID, arg.ConnectionID)
+	var column_1 bool
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
 const listEventsAfter = `-- name: ListEventsAfter :many
 SELECT user_id, seq, type, payload, actor_kind, actor_id, created_at FROM events WHERE user_id = $1 AND seq > $2 ORDER BY seq LIMIT $3
 `
@@ -63,6 +81,37 @@ func (q *Queries) ListEventsAfter(ctx context.Context, arg ListEventsAfterParams
 			return nil, err
 		}
 		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listGrantedUsers = `-- name: ListGrantedUsers :many
+SELECT u.id
+FROM users u
+JOIN connections c ON c.id = $1
+WHERE NOT u.disabled
+  AND COALESCE(
+        (SELECT g.enabled FROM connection_grants g WHERE g.user_id = u.id AND g.connection_id = c.id),
+        EXISTS (SELECT 1 FROM identities i WHERE i.user_id = u.id AND i.provider = c.provider))
+ORDER BY u.id
+`
+
+func (q *Queries) ListGrantedUsers(ctx context.Context, connectionID uuid.UUID) ([]uuid.UUID, error) {
+	rows, err := q.db.Query(ctx, listGrantedUsers, connectionID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []uuid.UUID
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
