@@ -164,6 +164,8 @@ func NewWith(t *testing.T, configure func(d *Deps)) *Env {
 		IdentifyTimeout:   300 * time.Millisecond,
 		SessionTTL:        500 * time.Millisecond,
 		WriteTimeout:      2 * time.Second,
+		// Test clients send a heartbeat every 100 ms, far more than a real client may.
+		MaxClientMessages: 100000,
 	}
 	// Every test client comes from 127.0.0.1; the production limit per address would get in the way.
 	d.RateAnon = api.NewLimiter(100000, time.Minute, clock.Now)
