@@ -9,16 +9,17 @@ import (
 	"github.com/gofiber/fiber/v3"
 	"github.com/google/uuid"
 
-	"github.com/rayakame/plsremind/hub/internal/apierr"
-	"github.com/rayakame/plsremind/hub/internal/db"
-	"github.com/rayakame/plsremind/hub/internal/db/sqlc"
-	"github.com/rayakame/plsremind/hub/internal/deps"
-	"github.com/rayakame/plsremind/hub/internal/httpx"
-	"github.com/rayakame/plsremind/hub/internal/secret"
+	"github.com/rayakame/plsremind/hub/internal/api"
+	"github.com/rayakame/plsremind/hub/internal/auth"
+	"github.com/rayakame/plsremind/hub/internal/core"
+	"github.com/rayakame/plsremind/hub/internal/delivery"
+	"github.com/rayakame/plsremind/hub/internal/events"
+	"github.com/rayakame/plsremind/hub/internal/store"
+	"github.com/rayakame/plsremind/hub/internal/store/sqlc"
 )
 
 func errLastAdmin() error {
-	return apierr.Conflict("last_admin", "The instance needs at least one active admin.")
+	return api.Conflict("last_admin", "The instance needs at least one active admin.")
 }
 
 func isActiveAdmin(u sqlc.User) bool {
@@ -52,22 +53,17 @@ func guardLastAdmin(ctx context.Context, q *sqlc.Queries, user sqlc.User) error 
 
 func getUser(ctx context.Context, q *sqlc.Queries, id uuid.UUID) (sqlc.User, error) {
 	user, err := q.GetUser(ctx, id)
-	if db.IsNotFound(err) {
-		return sqlc.User{}, apierr.NotFound()
+	if store.IsNotFound(err) {
+		return sqlc.User{}, api.NotFound()
 	}
 	return user, err
 }
 
-// Revoker withdraws the hub's grants at login providers.
-type Revoker interface {
-	RevokeAll(ctx context.Context, identities []sqlc.Identity)
-}
-
 // DeleteUser removes a user and everything that belongs to them, then revokes
 // the tokens the hub held for their linked accounts.
-func DeleteUser(ctx context.Context, d *deps.Deps, revoker Revoker, id uuid.UUID) error {
+func DeleteUser(ctx context.Context, d *core.Deps, svc *OAuth, id uuid.UUID) error {
 	var identities []sqlc.Identity
-	err := db.Tx(ctx, d.Pool, func(q *sqlc.Queries) error {
+	remove := func(q *sqlc.Queries) error {
 		user, err := lockedUser(ctx, q, id)
 		if err != nil {
 			return err
@@ -79,13 +75,23 @@ func DeleteUser(ctx context.Context, d *deps.Deps, revoker Revoker, id uuid.UUID
 		if err != nil {
 			return err
 		}
-		_, err = q.DeleteUser(ctx, id)
-		return err
-	})
+		if _, err = q.DeleteUser(ctx, id); err != nil {
+			return err
+		}
+		return events.NotifyUser(ctx, q, events.SignalUser, id)
+	}
+	// Deleting a user touches rows the reminder ticker may hold at that moment.
+	// PostgreSQL then stops one of the two; trying again is all it takes.
+	var err error
+	for attempt := 0; attempt < 3; attempt++ {
+		if err = store.Tx(ctx, d.Pool, remove); !store.IsDeadlock(err) {
+			break
+		}
+	}
 	if err != nil {
 		return err
 	}
-	revoker.RevokeAll(ctx, identities)
+	svc.RevokeAll(ctx, identities)
 	return nil
 }
 
@@ -98,7 +104,7 @@ func adminView(u sqlc.User) AdminUser {
 	return AdminUser{User: View(u), Disabled: u.Disabled}
 }
 
-func getSettings(d *deps.Deps) fiber.Handler {
+func getSettings(d *core.Deps) fiber.Handler {
 	return func(c fiber.Ctx) error {
 		settings, err := d.Q().GetSettings(c.Context())
 		if err != nil {
@@ -108,17 +114,17 @@ func getSettings(d *deps.Deps) fiber.Handler {
 	}
 }
 
-func patchSettings(d *deps.Deps) fiber.Handler {
+func patchSettings(d *core.Deps) fiber.Handler {
 	return func(c fiber.Ctx) error {
 		var in struct {
 			Name         *string `json:"name"`
 			Registration *string `json:"registration"`
 		}
-		if err := httpx.Body(c, &in); err != nil {
+		if err := api.Body(c, &in); err != nil {
 			return err
 		}
 		var out sqlc.UpdateSettingsRow
-		err := db.Tx(c.Context(), d.Pool, func(q *sqlc.Queries) error {
+		err := store.Tx(c.Context(), d.Pool, func(q *sqlc.Queries) error {
 			current, err := q.GetSettings(c.Context())
 			if err != nil {
 				return err
@@ -138,7 +144,7 @@ func patchSettings(d *deps.Deps) fiber.Handler {
 				}
 			}
 			if len(fields) > 0 {
-				return apierr.Validation(fields)
+				return api.Validation(fields)
 			}
 			out, err = q.UpdateSettings(c.Context(), params)
 			return err
@@ -150,15 +156,15 @@ func patchSettings(d *deps.Deps) fiber.Handler {
 	}
 }
 
-func listUsers(d *deps.Deps) fiber.Handler {
+func listUsers(d *core.Deps) fiber.Handler {
 	return func(c fiber.Ctx) error {
-		page, err := httpx.ParsePage(c)
+		page, err := api.ParsePage(c)
 		if err != nil {
 			return err
 		}
 		var after uuid.UUID
 		if page.Cursor != "" {
-			if err := httpx.DecodeCursor(page.Cursor, &after); err != nil {
+			if err := api.DecodeCursor(page.Cursor, &after); err != nil {
 				return err
 			}
 		}
@@ -170,13 +176,13 @@ func listUsers(d *deps.Deps) fiber.Handler {
 		for _, row := range rows {
 			users = append(users, adminView(row))
 		}
-		return c.JSON(httpx.NewList(users, page.Limit, func(last AdminUser) any { return last.ID }))
+		return c.JSON(api.NewList(users, page.Limit, func(last AdminUser) any { return last.ID }))
 	}
 }
 
-func patchUserAccess(d *deps.Deps) fiber.Handler {
+func patchUserAccess(d *core.Deps) fiber.Handler {
 	return func(c fiber.Ctx) error {
-		id, err := httpx.ParamUUID(c, "id")
+		id, err := api.ParamUUID(c, "id")
 		if err != nil {
 			return err
 		}
@@ -184,14 +190,14 @@ func patchUserAccess(d *deps.Deps) fiber.Handler {
 			Role     *string `json:"role"`
 			Disabled *bool   `json:"disabled"`
 		}
-		if err := httpx.Body(c, &in); err != nil {
+		if err := api.Body(c, &in); err != nil {
 			return err
 		}
 		if in.Role != nil && *in.Role != "user" && *in.Role != "admin" {
-			return apierr.Field("role", `Must be "user" or "admin".`)
+			return api.Field("role", `Must be "user" or "admin".`)
 		}
 		var updated sqlc.User
-		err = db.Tx(c.Context(), d.Pool, func(q *sqlc.Queries) error {
+		err = store.Tx(c.Context(), d.Pool, func(q *sqlc.Queries) error {
 			user, err := lockedUser(c.Context(), q, id)
 			if err != nil {
 				return err
@@ -214,7 +220,15 @@ func patchUserAccess(d *deps.Deps) fiber.Handler {
 				}
 			}
 			updated, err = q.UpdateUserAccess(c.Context(), params)
-			return err
+			if err != nil {
+				return err
+			}
+			// The user's own clients show the role, so they are told like about any other profile change.
+			admin, _ := auth.From(c)
+			if err := events.Append(c.Context(), q, d.Now(), id, auth.ActorFrom(admin), "user.updated", View(updated)); err != nil {
+				return err
+			}
+			return events.NotifyUser(c.Context(), q, events.SignalUser, id)
 		})
 		if err != nil {
 			return err
@@ -223,34 +237,34 @@ func patchUserAccess(d *deps.Deps) fiber.Handler {
 	}
 }
 
-func resetPassword(d *deps.Deps) fiber.Handler {
+func resetPassword(d *core.Deps) fiber.Handler {
 	return func(c fiber.Ctx) error {
-		id, err := httpx.ParamUUID(c, "id")
+		id, err := api.ParamUUID(c, "id")
 		if err != nil {
 			return err
 		}
 		var in struct {
 			NewPassword string `json:"new_password"`
 		}
-		if err := httpx.Body(c, &in); err != nil {
+		if err := api.Body(c, &in); err != nil {
 			return err
 		}
 		fields := map[string]string{}
 		checkPassword(fields, "new_password", in.NewPassword)
 		if len(fields) > 0 {
-			return apierr.Validation(fields)
+			return api.Validation(fields)
 		}
-		hash, err := secret.HashPassword(in.NewPassword)
+		hash, err := core.HashPassword(in.NewPassword)
 		if err != nil {
 			return err
 		}
-		err = db.Tx(c.Context(), d.Pool, func(q *sqlc.Queries) error {
+		err = store.Tx(c.Context(), d.Pool, func(q *sqlc.Queries) error {
 			if _, err := getUser(c.Context(), q, id); err != nil {
 				return err
 			}
 			identity, err := q.GetPasswordIdentity(c.Context(), id)
-			if db.IsNotFound(err) {
-				return apierr.Conflict("no_password_identity", "This user has no password to reset.")
+			if store.IsNotFound(err) {
+				return api.Conflict("no_password_identity", "This user has no password to reset.")
 			}
 			if err != nil {
 				return err
@@ -258,10 +272,16 @@ func resetPassword(d *deps.Deps) fiber.Handler {
 			if err := q.UpdatePasswordHash(c.Context(), sqlc.UpdatePasswordHashParams{ID: identity.ID, PasswordHash: &hash}); err != nil {
 				return err
 			}
+			if err := delivery.CancelForUserTokens(c.Context(), q, d.Now(), id); err != nil {
+				return err
+			}
 			if err := q.DeleteUserPersonalTokens(c.Context(), id); err != nil {
 				return err
 			}
-			return q.DeleteUserSessions(c.Context(), id)
+			if err := q.DeleteUserSessions(c.Context(), id); err != nil {
+				return err
+			}
+			return events.NotifyUser(c.Context(), q, events.SignalUser, id)
 		})
 		if err != nil {
 			return err
@@ -270,13 +290,13 @@ func resetPassword(d *deps.Deps) fiber.Handler {
 	}
 }
 
-func adminDeleteUser(d *deps.Deps, revoker Revoker) fiber.Handler {
+func adminDeleteUser(d *core.Deps, svc *OAuth) fiber.Handler {
 	return func(c fiber.Ctx) error {
-		id, err := httpx.ParamUUID(c, "id")
+		id, err := api.ParamUUID(c, "id")
 		if err != nil {
 			return err
 		}
-		if err := DeleteUser(c.Context(), d, revoker, id); err != nil {
+		if err := DeleteUser(c.Context(), d, svc, id); err != nil {
 			return err
 		}
 		return c.SendStatus(http.StatusNoContent)

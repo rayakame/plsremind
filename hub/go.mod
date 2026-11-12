@@ -4,7 +4,9 @@ go 1.27.3
 
 require (
 	github.com/coreos/go-oidc/v3 v3.21.0
+	github.com/fasthttp/websocket v1.5.12
 	github.com/go-jose/go-jose/v4 v4.1.9
+	github.com/gofiber/contrib/v3/websocket v1.2.13
 	github.com/gofiber/fiber/v3 v3.7.0
 	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v5 v5.12.0
@@ -72,6 +74,7 @@ require (
 	github.com/pb33f/ordered-map/v2 v2.3.2 // indirect
 	github.com/philhofer/fwd v1.2.1 // indirect
 	github.com/power-devops/perfstat v0.0.0-20240221224432-82ca36839d55 // indirect
+	github.com/savsgio/gotils v0.0.0-20250924091648-bce9a52d7761 // indirect
 	github.com/sethvargo/go-retry v0.5.0 // indirect
 	github.com/shirou/gopsutil/v4 v4.26.6 // indirect
 	github.com/sirupsen/logrus v1.10.2 // indirect

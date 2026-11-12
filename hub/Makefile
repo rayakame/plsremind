@@ -1,10 +1,13 @@
 REDOCLY := npx --yes @redocly/cli@2.76.0
 SPEC := ../docs/api/openapi.yaml
 
-.PHONY: test generate lint build docs
+.PHONY: test test-race generate lint build docs
 
 test:
 	go test ./...
+
+test-race:
+	go test -race ./...
 
 generate:
 	sqlc generate

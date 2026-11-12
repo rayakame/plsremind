@@ -31,10 +31,11 @@ import (
 	"github.com/testcontainers/testcontainers-go/modules/postgres"
 	"github.com/tidwall/gjson"
 
-	"github.com/rayakame/plsremind/hub/internal/config"
-	"github.com/rayakame/plsremind/hub/internal/db"
-	"github.com/rayakame/plsremind/hub/internal/deps"
-	"github.com/rayakame/plsremind/hub/internal/httpapi"
+	"github.com/rayakame/plsremind/hub/internal/api"
+	"github.com/rayakame/plsremind/hub/internal/core"
+	"github.com/rayakame/plsremind/hub/internal/gateway"
+	"github.com/rayakame/plsremind/hub/internal/server"
+	"github.com/rayakame/plsremind/hub/internal/store"
 )
 
 type J = map[string]any
@@ -75,7 +76,7 @@ func Main(m *testing.M) {
 	if err := exec(ctx, "CREATE DATABASE "+templateName); err != nil {
 		log.Fatalf("create template: %v", err)
 	}
-	if err := db.Migrate(ctx, urlFor(templateName)); err != nil {
+	if err := store.Migrate(ctx, urlFor(templateName)); err != nil {
 		log.Fatalf("migrate template: %v", err)
 	}
 	code := m.Run()
@@ -117,19 +118,33 @@ func (c *FakeClock) Advance(d time.Duration) {
 type Env struct {
 	App   *fiber.App
 	Pool  *pgxpool.Pool
-	Deps  *deps.Deps
+	Deps  *core.Deps
 	Clock *FakeClock
 
-	admin *Client
+	// Hub is the WebSocket gateway, already running.
+	Hub *gateway.Hub
+
+	admin   *Client
+	dbURL   string
+	baseURL string
 }
+
+// Deps is the hub's dependency set, for tests that change it before the server is built.
+type Deps = core.Deps
 
 // New returns an environment with its own freshly migrated database.
 func New(t *testing.T) *Env {
 	t.Helper()
+	return NewWith(t, nil)
+}
+
+// NewWith is New with a chance to change settings that are read when the server is built.
+func NewWith(t *testing.T, configure func(d *Deps)) *Env {
+	t.Helper()
 	ctx := context.Background()
 	name := fmt.Sprintf("t_%d_%d", os.Getpid(), dbCounter.Add(1))
 	require.NoError(t, exec(ctx, fmt.Sprintf("CREATE DATABASE %s TEMPLATE %s", name, templateName)))
-	pool, err := db.Open(ctx, urlFor(name))
+	pool, err := store.Open(ctx, urlFor(name))
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		pool.Close()
@@ -137,25 +152,47 @@ func New(t *testing.T) *Env {
 	})
 
 	clock := &FakeClock{now: time.Date(2026, 11, 11, 12, 0, 0, 0, time.UTC)}
-	d := &deps.Deps{
-		Cfg:  config.Config{PublicURL: PublicURL, SecretKey: [32]byte{1, 2, 3}},
+	d := &core.Deps{
+		Cfg:  core.Config{PublicURL: PublicURL, SecretKey: [32]byte{1, 2, 3}},
 		Pool: pool,
 		Now:  clock.Now,
 		HTTP: &http.Client{Timeout: 5 * time.Second},
 	}
-	return &Env{App: httpapi.New(d), Pool: pool, Deps: d, Clock: clock}
+	// The gateway runs on real time. Short timers keep its tests fast.
+	d.Gateway = core.GatewayConfig{
+		HeartbeatInterval: 400 * time.Millisecond,
+		IdentifyTimeout:   300 * time.Millisecond,
+		SessionTTL:        5 * time.Second,
+		WriteTimeout:      2 * time.Second,
+		// Test clients send a heartbeat every 100 ms, far more than a real client may.
+		// That leaves half a second of slack before a slow machine costs them the connection.
+		MaxClientMessages: 100000,
+	}
+	// Every test client comes from 127.0.0.1; the production limit per address would get in the way.
+	d.RateAnon = api.NewLimiter(100000, time.Minute, clock.Now)
+	if configure != nil {
+		configure(d)
+	}
+	srv := server.New(d)
+	srv.Gateway.Start(ctx)
+	t.Cleanup(srv.Gateway.Shutdown)
+	return &Env{App: srv.App, Hub: srv.Gateway, Pool: pool, Deps: d, Clock: clock, dbURL: urlFor(name)}
 }
 
 // Listen serves the app on a real socket and returns its base URL.
 func (e *Env) Listen(t *testing.T) string {
 	t.Helper()
+	if e.baseURL != "" {
+		return e.baseURL
+	}
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
 	go func() {
 		_ = e.App.Listener(ln, fiber.ListenConfig{DisableStartupMessage: true})
 	}()
 	t.Cleanup(func() { _ = e.App.Shutdown() })
-	return "http://" + ln.Addr().String()
+	e.baseURL = "http://" + ln.Addr().String()
+	return e.baseURL
 }
 
 type reqConfig struct {

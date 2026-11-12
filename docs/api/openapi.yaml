@@ -79,6 +79,22 @@ tags:
       connection's provider, and the user can switch that off. It reaches the user's lists,
       items, subitems and manual reminders and can read the profile and the reminder plans.
       It cannot touch anything else. Users it may not act for look like they do not exist.
+  - name: Deliveries
+    description: |
+      When a reminder's time comes, the hub creates one delivery for each way the user is
+      reminded through: every connection that reminds them and every personal token marked
+      with `remind`. A delivery stays open until that channel reports the outcome here.
+
+      Report `delivered` only once the reminder has actually reached the person, and `failed`
+      with a reason if it cannot. The hub never assumes either. An open delivery is handed out
+      again every time the channel connects to the gateway or asks this API, with a growing
+      `attempt`, and expires 24 hours after it was created.
+
+      A newer reminder for the same item replaces an open one, and completing or deleting the
+      item withdraws it. While the user is in their quiet hours, reminders before a deadline
+      and follow-ups are held back; the reminder at the due time and manual reminders are not.
+  - name: Gateway
+    description: The WebSocket gateway is described in `docs/gateway.md`.
 paths:
   /info:
     get:
@@ -203,7 +219,10 @@ paths:
                   description: IANA time zone name.
                   examples: [Europe/Berlin]
                 quiet_hours:
-                  $ref: "#/components/schemas/QuietHours"
+                  description: Send null to turn quiet hours off.
+                  oneOf:
+                    - type: "null"
+                    - type: object
       responses:
         "200":
           description: The updated user.
@@ -522,6 +541,8 @@ paths:
                 name:
                   type: string
                   description: 1 to 64 characters, for you to recognise the token later.
+                remind:
+                  type: boolean
       responses:
         "201":
           description: The token. `token` is only shown this once.
@@ -535,6 +556,32 @@ paths:
     parameters:
       - $ref: "#/components/parameters/User"
       - $ref: "#/components/parameters/Id"
+    patch:
+      tags: [Account]
+      operationId: updateToken
+      summary: Rename a personal token or make it a way to be reminded
+      security:
+        - session: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                remind:
+                  type: boolean
+      responses:
+        "200":
+          description: The token, without its secret value.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PersonalToken"
+        default:
+          $ref: "#/components/responses/Error"
     delete:
       tags: [Account]
       operationId: deleteToken
@@ -1061,7 +1108,8 @@ paths:
     put:
       tags: [Connections]
       operationId: setConnectionGrant
-      summary: Allow or forbid a connection to act for the user
+      summary: Allow or forbid a connection to act for the user, or to remind them
+      description: Send `enabled`, `remind` or both. Turning reminders off leaves the connection's access as it is.
       requestBody:
         required: true
         content:
@@ -1070,6 +1118,8 @@ paths:
               type: object
               properties:
                 enabled:
+                  type: boolean
+                remind:
                   type: boolean
       responses:
         "200":
@@ -1120,6 +1170,11 @@ paths:
                 provider:
                   type: string
                   description: The provider whose accounts the connection works with, for example `discord`.
+                allowed_intents:
+                  type: array
+                  description: Defaults to all intents.
+                  items:
+                    type: string
       responses:
         "201":
           description: The connection. `token` is only shown this once.
@@ -1151,6 +1206,10 @@ paths:
                   type: string
                 enabled:
                   type: boolean
+                allowed_intents:
+                  type: array
+                  items:
+                    type: string
       responses:
         "200":
           description: The updated connection.
@@ -1354,6 +1413,125 @@ paths:
           description: The provider is gone.
         default:
           $ref: "#/components/responses/Error"
+  /deliveries:
+    get:
+      tags: [Deliveries]
+      operationId: listDeliveries
+      summary: Fetch the deliveries waiting for the caller
+      description: |
+        For connection tokens that may have `deliveries` and personal tokens marked with
+        `remind`. Returns the same payload the gateway sends as `delivery.created`, so an
+        adapter can work by polling alone. Every fetch counts as an attempt.
+      security:
+        - bearer: []
+      responses:
+        "200":
+          description: The open deliveries of this channel.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Delivery"
+        default:
+          $ref: "#/components/responses/Error"
+  /deliveries/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    put:
+      tags: [Deliveries]
+      operationId: acknowledgeDelivery
+      summary: Report the outcome of a delivery
+      description: |
+        Only the channel the delivery belongs to can report on it. Reporting the same outcome
+        twice is fine; reporting a different outcome for a closed delivery answers `409` with
+        the code `delivery_closed`.
+      security:
+        - bearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                status:
+                  type: string
+                  description: "`delivered` or `failed`."
+                reason:
+                  type: string
+                  description: Required for `failed`, at most 500 characters. Shown to the user.
+      responses:
+        "200":
+          description: The delivery's state.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [id, status, reason]
+                properties:
+                  id:
+                    type: string
+                    format: uuid
+                  status:
+                    $ref: "#/components/schemas/DeliveryStatus"
+                  reason:
+                    type: string
+        default:
+          $ref: "#/components/responses/Error"
+  /users/{user}/reminder-log:
+    parameters:
+      - $ref: "#/components/parameters/User"
+    get:
+      tags: [Deliveries]
+      operationId: listReminderLog
+      summary: List the reminders the hub has fired for a user
+      description: Newest first. Entries are kept for 30 days and disappear with their item.
+      parameters:
+        - name: item_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Cursor"
+      responses:
+        "200":
+          description: One page of the log.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, next_cursor]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/ReminderLogEntry"
+                  next_cursor:
+                    $ref: "#/components/schemas/NextCursor"
+        default:
+          $ref: "#/components/responses/Error"
+  /gateway:
+    get:
+      tags: [Gateway]
+      operationId: connectGateway
+      summary: Open a gateway connection
+      description: |
+        A WebSocket endpoint. Authentication happens inside the connection with an Identify
+        message, not with headers. See `docs/gateway.md` for the protocol.
+      security: []
+      responses:
+        "101":
+          description: The connection was upgraded to WebSocket.
+        "426":
+          description: The request was not a WebSocket upgrade.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        default:
+          $ref: "#/components/responses/Error"
 components:
   securitySchemes:
     session:
@@ -1430,12 +1608,15 @@ components:
                 type: string
     Info:
       type: object
-      required: [name, version, setup_required, registration, login_methods]
+      required: [name, version, setup_required, registration, login_methods, gateway_url]
       properties:
         name:
           type: string
         version:
           type: string
+        gateway_url:
+          type: string
+          description: Where the WebSocket gateway of this instance listens.
         setup_required:
           type: boolean
           description: True until the first admin was created through `/setup`.
@@ -1455,10 +1636,18 @@ components:
                 enum: [password, github, discord, oidc]
               name:
                 type: string
+    OptionalQuietHours:
+      description: Null while quiet hours are off, which is the default.
+      oneOf:
+        - type: "null"
+        - $ref: "#/components/schemas/QuietHours"
     QuietHours:
       type: object
       required: [start, end]
-      description: Reminders that fall into this window are delivered when it ends.
+      description: |
+        A daily window in the user's time zone, which may span midnight. Reminders before a
+        deadline and follow-ups that fall into it wait until it ends. The reminder at the due
+        time and reminders the user set by hand are never delayed.
       properties:
         start:
           type: string
@@ -1481,7 +1670,7 @@ components:
         timezone:
           type: string
         quiet_hours:
-          $ref: "#/components/schemas/QuietHours"
+          $ref: "#/components/schemas/OptionalQuietHours"
         created_at:
           type: string
           format: date-time
@@ -1497,7 +1686,7 @@ components:
         timezone:
           type: string
         quiet_hours:
-          $ref: "#/components/schemas/QuietHours"
+          $ref: "#/components/schemas/OptionalQuietHours"
     NewPasswordAccount:
       type: object
       required: [username, password]
@@ -1580,13 +1769,16 @@ components:
               type: boolean
     PersonalToken:
       type: object
-      required: [id, name, created_at, last_used_at]
+      required: [id, name, remind, created_at, last_used_at]
       properties:
         id:
           type: string
           format: uuid
         name:
           type: string
+        remind:
+          type: boolean
+          description: Whether the hub holds reminders for this token to pick up. Off by default.
         token:
           type: string
           description: Only present in the response that creates the token.
@@ -1697,7 +1889,7 @@ components:
             - type: object
     Item:
       type: object
-      required: [id, list_id, title, note, priority, due_at, due_date, all_day, status, completed_at, reminder_override, subitems, created_at, updated_at]
+      required: [id, list_id, title, note, priority, due_at, due_date, all_day, status, completed_at, reminder_override, subitems, reminders, created_at, updated_at]
       properties:
         id:
           type: string
@@ -1735,6 +1927,11 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/Subitem"
+        reminders:
+          type: array
+          description: The reminders the user set on the item by hand, earliest first.
+          items:
+            $ref: "#/components/schemas/ManualReminder"
         created_at:
           type: string
           format: date-time
@@ -1781,7 +1978,7 @@ components:
           format: date-time
     Connection:
       type: object
-      required: [id, name, description, provider, enabled, created_at, last_used_at]
+      required: [id, name, description, provider, enabled, allowed_intents, created_at, last_used_at]
       properties:
         id:
           type: string
@@ -1794,6 +1991,8 @@ components:
           type: string
         enabled:
           type: boolean
+        allowed_intents:
+          $ref: "#/components/schemas/Intents"
         token:
           type: string
           description: Only present right after creating the connection or replacing its token.
@@ -1805,7 +2004,7 @@ components:
           format: date-time
     UserConnection:
       type: object
-      required: [id, name, description, provider, linked, enabled]
+      required: [id, name, description, provider, linked, enabled, remind, intents]
       properties:
         id:
           type: string
@@ -1822,6 +2021,11 @@ components:
         enabled:
           type: boolean
           description: Whether the connection may act for the user right now.
+        remind:
+          type: boolean
+          description: Whether the user is reminded through this connection. On unless the user turns it off.
+        intents:
+          $ref: "#/components/schemas/Intents"
     LoginProvider:
       type: object
       required: [key, type, name, login_enabled, link_enabled, client_id, has_client_secret, issuer_url]
@@ -1844,3 +2048,125 @@ components:
           type: boolean
         issuer_url:
           type: string
+    Intents:
+      type: array
+      description: |
+        The kinds of data a client can have: `users` (profile), `lists`, `items` (with subitems
+        and manual reminders), `plans` (reminder plans) and `deliveries` (reminders to play out).
+        For a connection the admin decides which of them it may have, and that limit applies to
+        the gateway and to this API alike.
+      items:
+        type: string
+        enum: [users, lists, items, plans, deliveries]
+    DeliveryStatus:
+      type: string
+      enum: [pending, delivered, failed, superseded, cancelled, expired]
+    ReminderKind:
+      type: string
+      description: |
+        `before`: ahead of a deadline, from the reminder plan. `due`: at the due time.
+        `follow_up`: nagging after a missed deadline. `manual`: set by the user on an item.
+      enum: [before, due, follow_up, manual]
+    Delivery:
+      type: object
+      description: One reminder for one channel, with everything needed to remind without further requests.
+      required: [id, attempt, late, reminder, item, user]
+      properties:
+        id:
+          type: string
+          format: uuid
+        attempt:
+          type: integer
+          description: How many times this delivery has been handed out, starting at 1.
+        late:
+          type: boolean
+          description: True when the reminder goes out more than a minute after it should have. A reminder that quiet hours moved to their end is on time; one that had fired before they began and waited is late.
+        reminder:
+          type: object
+          required: [id, kind, scheduled_for]
+          properties:
+            id:
+              type: string
+              format: uuid
+            kind:
+              $ref: "#/components/schemas/ReminderKind"
+            offset:
+              $ref: "#/components/schemas/Duration"
+            scheduled_for:
+              type: string
+              format: date-time
+              description: The moment the reminder was meant for.
+        item:
+          $ref: "#/components/schemas/Item"
+        user:
+          type: object
+          required: [id, display_name, timezone]
+          properties:
+            id:
+              type: string
+              format: uuid
+            display_name:
+              type: string
+            timezone:
+              type: string
+            external_ids:
+              type: array
+              description: |
+                For connections: the user's account IDs at the connection's provider, so the
+                connection knows whom to address.
+              items:
+                type: string
+    ReminderLogEntry:
+      type: object
+      required: [id, item_id, kind, scheduled_for, fired_at, outcome, deliveries]
+      properties:
+        id:
+          type: string
+          format: uuid
+        item_id:
+          type: string
+          format: uuid
+        kind:
+          $ref: "#/components/schemas/ReminderKind"
+        offset:
+          $ref: "#/components/schemas/Duration"
+        scheduled_for:
+          type: string
+          format: date-time
+        fired_at:
+          type: string
+          format: date-time
+        outcome:
+          type: string
+          description: |
+            `fired`: deliveries were created. `superseded`: skipped because a newer reminder for
+            the item was due at the same time. `missed`: the hub was not running and the
+            reminder was more than 24 hours old when it came back.
+          enum: [fired, missed, superseded]
+        deliveries:
+          type: array
+          items:
+            type: object
+            required: [id, channel, status, reason, attempts]
+            properties:
+              id:
+                type: string
+                format: uuid
+              channel:
+                type: object
+                required: [kind, id, name]
+                properties:
+                  kind:
+                    type: string
+                    enum: [connection, token]
+                  id:
+                    type: string
+                    format: uuid
+                  name:
+                    type: string
+              status:
+                $ref: "#/components/schemas/DeliveryStatus"
+              reason:
+                type: string
+              attempts:
+                type: integer

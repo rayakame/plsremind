@@ -5,7 +5,7 @@ RUN go mod download
 COPY . .
 ARG VERSION=dev
 RUN CGO_ENABLED=0 go build -trimpath \
-    -ldflags "-s -w -X github.com/rayakame/plsremind/hub/internal/httpapi.Version=${VERSION}" \
+    -ldflags "-s -w -X github.com/rayakame/plsremind/hub/internal/server.Version=${VERSION}" \
     -o /out/plsremind ./cmd/plsremind
 
 FROM gcr.io/distroless/static-debian12:nonroot

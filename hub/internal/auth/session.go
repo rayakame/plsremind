@@ -7,9 +7,9 @@ import (
 	"github.com/gofiber/fiber/v3"
 	"github.com/google/uuid"
 
-	"github.com/rayakame/plsremind/hub/internal/db/sqlc"
-	"github.com/rayakame/plsremind/hub/internal/deps"
-	"github.com/rayakame/plsremind/hub/internal/secret"
+	"github.com/rayakame/plsremind/hub/internal/core"
+	"github.com/rayakame/plsremind/hub/internal/events"
+	"github.com/rayakame/plsremind/hub/internal/store/sqlc"
 )
 
 const (
@@ -18,7 +18,7 @@ const (
 	sessionRefresh  = time.Hour
 )
 
-func sessionCookie(d *deps.Deps, value string, expires time.Time) *fiber.Cookie {
+func sessionCookie(d *core.Deps, value string, expires time.Time) *fiber.Cookie {
 	return &fiber.Cookie{
 		Name:     SessionCookie,
 		Value:    value,
@@ -31,9 +31,9 @@ func sessionCookie(d *deps.Deps, value string, expires time.Time) *fiber.Cookie 
 }
 
 // StartSession creates a session for the user and sets its cookie.
-func StartSession(c fiber.Ctx, d *deps.Deps, q *sqlc.Queries, userID uuid.UUID) error {
+func StartSession(c fiber.Ctx, d *core.Deps, q *sqlc.Queries, userID uuid.UUID) error {
 	now := d.Now()
-	plain, hash := secret.NewToken(secret.PrefixSession)
+	plain, hash := core.NewToken(core.PrefixSession)
 	expires := now.Add(sessionLifetime)
 	err := q.CreateSession(c.Context(), sqlc.CreateSessionParams{
 		ID:        uuid.Must(uuid.NewV7()),
@@ -50,10 +50,17 @@ func StartSession(c fiber.Ctx, d *deps.Deps, q *sqlc.Queries, userID uuid.UUID) 
 }
 
 // EndSession deletes the current session, if any, and clears the cookie.
-func EndSession(c fiber.Ctx, d *deps.Deps) error {
+func EndSession(c fiber.Ctx, d *core.Deps) error {
 	if value := c.Cookies(SessionCookie); value != "" {
-		if err := d.Q().DeleteSessionByHash(c.Context(), secret.Hash(value)); err != nil {
+		q := d.Q()
+		if err := q.DeleteSessionByHash(c.Context(), core.HashToken(value)); err != nil {
 			return err
+		}
+		// A gateway connection opened with this session must not outlive it.
+		if p, ok := From(c); ok && p.Kind == KindSession {
+			if err := events.NotifyUser(c.Context(), q, events.SignalUser, p.UserID); err != nil {
+				return err
+			}
 		}
 	}
 	c.Cookie(sessionCookie(d, "", time.Unix(0, 0)))

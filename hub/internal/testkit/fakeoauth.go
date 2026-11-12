@@ -19,7 +19,7 @@ import (
 	"github.com/go-jose/go-jose/v4/jwt"
 	"github.com/stretchr/testify/require"
 
-	"github.com/rayakame/plsremind/hub/internal/deps"
+	"github.com/rayakame/plsremind/hub/internal/core"
 )
 
 type OAuthUser struct {
@@ -29,7 +29,7 @@ type OAuthUser struct {
 
 // FakeOAuth stands in for GitHub, Discord or an OIDC provider.
 type FakeOAuth struct {
-	Endpoints deps.OAuthEndpoints
+	Endpoints core.OAuthEndpoints
 	IssuerURL string
 	User      OAuthUser
 	// FailWith breaks one step: "token" or "user".
@@ -81,7 +81,7 @@ func NewFakeOAuth(t *testing.T, kind string) *FakeOAuth {
 
 	base := f.server.URL
 	f.IssuerURL = base
-	f.Endpoints = deps.OAuthEndpoints{
+	f.Endpoints = core.OAuthEndpoints{
 		AuthURL:   base + "/authorize",
 		TokenURL:  base + "/token",
 		UserURL:   base + "/user",
