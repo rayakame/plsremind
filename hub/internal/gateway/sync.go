@@ -11,11 +11,10 @@ import (
 
 	"github.com/rayakame/plsremind/hub/internal/account"
 	"github.com/rayakame/plsremind/hub/internal/auth"
-	"github.com/rayakame/plsremind/hub/internal/db"
-	"github.com/rayakame/plsremind/hub/internal/db/sqlc"
-	"github.com/rayakame/plsremind/hub/internal/item"
-	"github.com/rayakame/plsremind/hub/internal/list"
-	"github.com/rayakame/plsremind/hub/internal/plan"
+	"github.com/rayakame/plsremind/hub/internal/reminder"
+	"github.com/rayakame/plsremind/hub/internal/store"
+	"github.com/rayakame/plsremind/hub/internal/store/sqlc"
+	"github.com/rayakame/plsremind/hub/internal/todo"
 )
 
 // stateIntents are the intents that make a session keep state about users.
@@ -104,7 +103,7 @@ func (s *Session) recheck(ctx context.Context, userID uuid.UUID) error {
 	q := s.hub.d.Q()
 	user, err := q.GetGrantedUser(ctx, sqlc.GetGrantedUserParams{ConnectionID: s.principal.CredentialID, UserID: userID})
 	covered := err == nil
-	if err != nil && !db.IsNotFound(err) {
+	if err != nil && !store.IsNotFound(err) {
 		return err
 	}
 	_, following := s.cursors[userID]
@@ -190,7 +189,7 @@ func (s *Session) syncUser(ctx context.Context, userID uuid.UUID) error {
 		// Checked inside the snapshot: a grant withdrawn a moment ago must not be
 		// answered with the user's whole state.
 		_, err := q.GetGrantedUser(ctx, sqlc.GetGrantedUserParams{ConnectionID: s.principal.CredentialID, UserID: userID})
-		if db.IsNotFound(err) {
+		if store.IsNotFound(err) {
 			return nil
 		}
 		if err != nil {
@@ -198,7 +197,7 @@ func (s *Session) syncUser(ctx context.Context, userID uuid.UUID) error {
 		}
 	}
 	seq, err := q.GetEventSeq(ctx, userID)
-	if db.IsNotFound(err) {
+	if store.IsNotFound(err) {
 		return nil
 	}
 	if err != nil {
@@ -219,20 +218,20 @@ func (s *Session) syncUser(ctx context.Context, userID uuid.UUID) error {
 		if err != nil {
 			return err
 		}
-		lists := make([]list.List, 0, len(rows))
+		lists := make([]todo.List, 0, len(rows))
 		for _, row := range rows {
-			lists = append(lists, list.View(row))
+			lists = append(lists, todo.ViewList(row))
 		}
 		first.Lists = lists
 	}
 	if s.wants("plans") {
-		if first.Plans, err = plan.Views(ctx, q, userID); err != nil {
+		if first.Plans, err = reminder.PlanViews(ctx, q, userID); err != nil {
 			return err
 		}
 	}
-	var items []item.Item
+	var items []todo.Item
 	if s.wants("items") {
-		if items, err = item.Open(ctx, q, userID); err != nil {
+		if items, err = todo.OpenItems(ctx, q, userID); err != nil {
 			return err
 		}
 	}
@@ -251,7 +250,7 @@ func (s *Session) syncUser(ctx context.Context, userID uuid.UUID) error {
 		if s.wants("items") {
 			slice := items[min(index*size, len(items)):min((index+1)*size, len(items))]
 			if slice == nil {
-				slice = []item.Item{}
+				slice = []todo.Item{}
 			}
 			part.Items = slice
 		}

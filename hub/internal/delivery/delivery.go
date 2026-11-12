@@ -9,8 +9,8 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/rayakame/plsremind/hub/internal/db/sqlc"
-	"github.com/rayakame/plsremind/hub/internal/signal"
+	"github.com/rayakame/plsremind/hub/internal/events"
+	"github.com/rayakame/plsremind/hub/internal/store/sqlc"
 )
 
 // Lifetime is how long a delivery waits to be confirmed.
@@ -44,38 +44,11 @@ func Channels(ctx context.Context, q *sqlc.Queries, userID uuid.UUID) ([]Channel
 
 func announceNew(ctx context.Context, q *sqlc.Queries, ids []uuid.UUID) error {
 	for _, id := range ids {
-		if err := signal.Send(ctx, q, signal.Signal{Type: signal.Delivery, DeliveryID: &id}); err != nil {
+		if err := events.SendSignal(ctx, q, events.Signal{Type: events.SignalDelivery, DeliveryID: &id}); err != nil {
 			return err
 		}
 	}
 	return nil
-}
-
-// announceClosed tells the gateway which deliveries were closed without being confirmed.
-func announceClosed(ctx context.Context, q *sqlc.Queries, rows []sqlc.Delivery) error {
-	for _, row := range rows {
-		err := signal.Send(ctx, q, signal.Signal{
-			Type:         signal.Closed,
-			DeliveryID:   &row.ID,
-			UserID:       &row.UserID,
-			ConnectionID: row.ConnectionID,
-			TokenID:      row.TokenID,
-			Status:       row.Status,
-		})
-		if err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// CancelForItem closes the open deliveries of an item that was completed or is about to be deleted.
-func CancelForItem(ctx context.Context, q *sqlc.Queries, now time.Time, itemID uuid.UUID) error {
-	rows, err := q.CancelItemDeliveries(ctx, sqlc.CancelItemDeliveriesParams{ItemID: itemID, Now: &now})
-	if err != nil {
-		return err
-	}
-	return announceClosed(ctx, q, rows)
 }
 
 // CancelForConnection closes the open deliveries of a connection, for one user or for all (userID nil).
@@ -84,7 +57,7 @@ func CancelForConnection(ctx context.Context, q *sqlc.Queries, now time.Time, co
 	if err != nil {
 		return err
 	}
-	return announceClosed(ctx, q, rows)
+	return events.DeliveriesClosed(ctx, q, rows)
 }
 
 // CancelForToken closes the open deliveries of a personal token.
@@ -93,7 +66,7 @@ func CancelForToken(ctx context.Context, q *sqlc.Queries, now time.Time, tokenID
 	if err != nil {
 		return err
 	}
-	return announceClosed(ctx, q, rows)
+	return events.DeliveriesClosed(ctx, q, rows)
 }
 
 // SyncConnection cancels what is open for a user on a connection that no longer reminds them.

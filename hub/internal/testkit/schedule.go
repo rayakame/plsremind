@@ -7,7 +7,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/rayakame/plsremind/hub/internal/duration"
+	"github.com/rayakame/plsremind/hub/internal/api"
 )
 
 type Scheduled struct {
@@ -31,7 +31,7 @@ func (e *Env) Schedule(t *testing.T, itemID string) []Scheduled {
 		var offset *int32
 		require.NoError(t, rows.Scan(&s.Kind, &offset, &s.FireAt, &s.For))
 		if offset != nil {
-			s.Offset = duration.Format(time.Duration(*offset) * time.Second)
+			s.Offset = api.FormatDuration(time.Duration(*offset) * time.Second)
 		}
 		out = append(out, s)
 	}

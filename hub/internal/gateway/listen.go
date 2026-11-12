@@ -9,9 +9,9 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/rayakame/plsremind/hub/internal/auth"
-	"github.com/rayakame/plsremind/hub/internal/db"
 	"github.com/rayakame/plsremind/hub/internal/delivery"
-	"github.com/rayakame/plsremind/hub/internal/signal"
+	"github.com/rayakame/plsremind/hub/internal/events"
+	"github.com/rayakame/plsremind/hub/internal/store"
 )
 
 // listen receives the hub's signals from PostgreSQL for as long as ctx lives.
@@ -39,7 +39,7 @@ func (h *Hub) listenOnce(ctx context.Context) error {
 	}
 	// The connection may be mid-wait when we leave; closing it is cleaner than handing it back.
 	defer func() { _ = conn.Conn().Close(context.Background()); conn.Release() }()
-	if _, err := conn.Exec(ctx, "LISTEN "+signal.Channel); err != nil {
+	if _, err := conn.Exec(ctx, "LISTEN "+events.NotifyChannel); err != nil {
 		return err
 	}
 	h.everything()
@@ -50,7 +50,7 @@ func (h *Hub) listenOnce(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		var s signal.Signal
+		var s events.Signal
 		if err := json.Unmarshal([]byte(n.Payload), &s); err != nil {
 			slog.Error("gateway got a malformed signal", "payload", n.Payload)
 			continue
@@ -67,21 +67,21 @@ func (h *Hub) everything() {
 	})
 }
 
-func (h *Hub) handle(s signal.Signal) {
+func (h *Hub) handle(s events.Signal) {
 	switch s.Type {
-	case signal.Event:
+	case events.SignalEvent:
 		if s.UserID != nil {
 			h.eachCovering(*s.UserID, func(sess *Session) {
 				sess.box.post(func(m *mailbox) { m.dirty[*s.UserID] = struct{}{} })
 			})
 		}
-	case signal.Grant:
+	case events.SignalGrant:
 		if s.UserID != nil && s.ConnectionID != nil {
 			h.each(func(sess *Session) bool { return sess.principal.CredentialID == *s.ConnectionID }, func(sess *Session) {
 				sess.box.post(func(m *mailbox) { m.recheck[*s.UserID] = struct{}{} })
 			})
 		}
-	case signal.User:
+	case events.SignalUser:
 		if s.UserID == nil {
 			return
 		}
@@ -95,11 +95,11 @@ func (h *Hub) handle(s signal.Signal) {
 				sess.box.post(func(m *mailbox) { m.validate = true })
 			}
 		})
-	case signal.Delivery:
+	case events.SignalDelivery:
 		if s.DeliveryID != nil {
 			h.enqueue(outgoing{id: *s.DeliveryID})
 		}
-	case signal.Closed:
+	case events.SignalClosed:
 		// Acknowledged deliveries need no announcement: whoever confirmed them knows.
 		if s.DeliveryID == nil || s.UserID == nil || (s.Status != "superseded" && s.Status != "cancelled" && s.Status != "expired") {
 			return
@@ -113,7 +113,7 @@ func (h *Hub) handle(s signal.Signal) {
 		}
 		// Through the same queue as new deliveries, so that "closed" cannot arrive before "created".
 		h.enqueue(outgoing{id: *s.DeliveryID, closed: true, channel: *channel, userID: *s.UserID, status: s.Status})
-	case signal.Connection:
+	case events.SignalConnection:
 		if s.ConnectionID != nil {
 			h.each(func(sess *Session) bool { return sess.principal.CredentialID == *s.ConnectionID }, func(sess *Session) {
 				sess.box.post(func(m *mailbox) { m.validate = true })
@@ -197,7 +197,7 @@ func (h *Hub) deliver(ctx context.Context) {
 func (h *Hub) deliverOne(ctx context.Context, id uuid.UUID) error {
 	q := h.d.Q()
 	row, err := q.GetDeliveryChannel(ctx, id)
-	if db.IsNotFound(err) {
+	if store.IsNotFound(err) {
 		return nil
 	}
 	if err != nil {

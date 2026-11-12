@@ -11,17 +11,17 @@ import (
 	"github.com/gofiber/contrib/v3/websocket"
 	"github.com/gofiber/fiber/v3"
 
-	"github.com/rayakame/plsremind/hub/internal/apierr"
+	"github.com/rayakame/plsremind/hub/internal/api"
 	"github.com/rayakame/plsremind/hub/internal/auth"
 )
 
 // maxFrame is plenty for the three small messages a client may send.
 const maxFrame = 4096
 
-func (h *Hub) Register(api fiber.Router) {
-	api.Get("/gateway", func(c fiber.Ctx) error {
+func (h *Hub) Register(root fiber.Router) {
+	root.Get("/gateway", func(c fiber.Ctx) error {
 		if !websocket.IsWebSocketUpgrade(c) {
-			return apierr.New(http.StatusUpgradeRequired, "upgrade_required", "This address only speaks WebSocket.")
+			return api.NewError(http.StatusUpgradeRequired, "upgrade_required", "This address only speaks WebSocket.")
 		}
 		return c.Next()
 	}, websocket.New(h.serve))

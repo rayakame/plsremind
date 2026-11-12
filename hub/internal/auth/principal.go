@@ -1,3 +1,4 @@
+// Package auth finds out who makes a request and what they may reach.
 package auth
 
 import (
@@ -5,6 +6,8 @@ import (
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/google/uuid"
+
+	"github.com/rayakame/plsremind/hub/internal/events"
 )
 
 type Kind int
@@ -68,4 +71,16 @@ func From(c fiber.Ctx) (Principal, bool) {
 func Target(c fiber.Ctx) uuid.UUID {
 	id, _ := c.Locals(targetKey).(uuid.UUID)
 	return id
+}
+
+// ActorFrom names the credential behind a change for the event log.
+func ActorFrom(p Principal) events.Actor {
+	kind := "session"
+	switch p.Kind {
+	case KindPersonalToken:
+		kind = "personal_token"
+	case KindConnection:
+		kind = "connection"
+	}
+	return events.Actor{Kind: kind, ID: p.CredentialID}
 }

@@ -7,7 +7,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 
-	"github.com/rayakame/plsremind/hub/internal/db/sqlc"
+	"github.com/rayakame/plsremind/hub/internal/store/sqlc"
 )
 
 type QuietHours struct {

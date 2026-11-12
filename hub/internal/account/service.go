@@ -9,10 +9,10 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/rayakame/plsremind/hub/internal/apierr"
-	"github.com/rayakame/plsremind/hub/internal/db"
-	"github.com/rayakame/plsremind/hub/internal/db/sqlc"
-	"github.com/rayakame/plsremind/hub/internal/secret"
+	"github.com/rayakame/plsremind/hub/internal/api"
+	"github.com/rayakame/plsremind/hub/internal/core"
+	"github.com/rayakame/plsremind/hub/internal/store"
+	"github.com/rayakame/plsremind/hub/internal/store/sqlc"
 )
 
 const PasswordProvider = "password"
@@ -55,7 +55,7 @@ func CreateUser(ctx context.Context, q *sqlc.Queries, now time.Time, p NewUser) 
 
 // AddPassword gives the user a username and password to log in with.
 func AddPassword(ctx context.Context, q *sqlc.Queries, now time.Time, userID uuid.UUID, username, password string) error {
-	hash, err := secret.HashPassword(password)
+	hash, err := core.HashPassword(password)
 	if err != nil {
 		return err
 	}
@@ -69,10 +69,10 @@ func AddPassword(ctx context.Context, q *sqlc.Queries, now time.Time, userID uui
 		CreatedAt:    now,
 	})
 	switch {
-	case db.ViolatedConstraint(err) == "identities_one_password_idx":
-		return apierr.Conflict("password_exists", "This account already has a password.")
-	case db.IsUniqueViolation(err):
-		return apierr.Conflict("username_taken", "This username is already in use.")
+	case store.ViolatedConstraint(err) == "identities_one_password_idx":
+		return api.Conflict("password_exists", "This account already has a password.")
+	case store.IsUniqueViolation(err):
+		return api.Conflict("username_taken", "This username is already in use.")
 	}
 	return err
 }
@@ -102,10 +102,10 @@ func checkDisplayName(fields map[string]string, name string) {
 // ValidateTimezone accepts IANA time zone names.
 func ValidateTimezone(tz string) error {
 	if tz == "" || tz == "Local" {
-		return apierr.Field("timezone", "Must be an IANA time zone name such as Europe/Berlin.")
+		return api.Field("timezone", "Must be an IANA time zone name such as Europe/Berlin.")
 	}
 	if _, err := time.LoadLocation(tz); err != nil {
-		return apierr.Field("timezone", "Must be an IANA time zone name such as Europe/Berlin.")
+		return api.Field("timezone", "Must be an IANA time zone name such as Europe/Berlin.")
 	}
 	return nil
 }
@@ -123,20 +123,20 @@ func checkTimezone(ctx context.Context, q *sqlc.Queries, fields map[string]strin
 }
 
 // dummyHash keeps login timing the same for unknown usernames.
-var dummyHash, _ = secret.HashPassword("plsremind-dummy-password")
+var dummyHash, _ = core.HashPassword("plsremind-dummy-password")
 
 // Authenticate returns the user for a username and password, or invalid_credentials.
 func Authenticate(ctx context.Context, q *sqlc.Queries, username, password string) (sqlc.User, error) {
-	invalid := apierr.New(401, "invalid_credentials", "Wrong username or password.")
+	invalid := api.NewError(401, "invalid_credentials", "Wrong username or password.")
 	identity, err := q.GetIdentity(ctx, sqlc.GetIdentityParams{Provider: PasswordProvider, ExternalID: NormalizeUsername(username)})
-	if db.IsNotFound(err) {
-		secret.VerifyPassword(dummyHash, password)
+	if store.IsNotFound(err) {
+		core.VerifyPassword(dummyHash, password)
 		return sqlc.User{}, invalid
 	}
 	if err != nil {
 		return sqlc.User{}, err
 	}
-	if identity.PasswordHash == nil || !secret.VerifyPassword(*identity.PasswordHash, password) {
+	if identity.PasswordHash == nil || !core.VerifyPassword(*identity.PasswordHash, password) {
 		return sqlc.User{}, invalid
 	}
 	return q.GetUser(ctx, identity.UserID)

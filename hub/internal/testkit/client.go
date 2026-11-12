@@ -79,3 +79,12 @@ func (e *Env) GiveIdentity(t *testing.T, userID, provider, externalID string) {
 		uuid.Must(uuid.NewV7()), userID, provider, externalID, e.Clock.Now())
 	require.NoError(t, err)
 }
+
+// Strings collects the values a gjson path matches in a response.
+func Strings(r *Resp, path string) []string {
+	var out []string
+	for _, v := range r.Get(path).Array() {
+		out = append(out, v.String())
+	}
+	return out
+}

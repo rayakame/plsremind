@@ -6,9 +6,10 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/rayakame/plsremind/hub/internal/db"
-	"github.com/rayakame/plsremind/hub/internal/db/sqlc"
-	"github.com/rayakame/plsremind/hub/internal/deps"
+	"github.com/rayakame/plsremind/hub/internal/core"
+	"github.com/rayakame/plsremind/hub/internal/events"
+	"github.com/rayakame/plsremind/hub/internal/store"
+	"github.com/rayakame/plsremind/hub/internal/store/sqlc"
 )
 
 // batchSize is how many items one transaction handles.
@@ -16,7 +17,7 @@ const batchSize = 200
 
 // RunOnce fires every reminder whose time has come and expires deliveries that
 // waited too long. The ticker calls it every few seconds.
-func RunOnce(ctx context.Context, d *deps.Deps) error {
+func RunOnce(ctx context.Context, d *core.Deps) error {
 	for {
 		fired, err := fireBatch(ctx, d)
 		if err != nil {
@@ -26,13 +27,13 @@ func RunOnce(ctx context.Context, d *deps.Deps) error {
 			break
 		}
 	}
-	return db.Tx(ctx, d.Pool, func(q *sqlc.Queries) error {
+	return store.Tx(ctx, d.Pool, func(q *sqlc.Queries) error {
 		now := d.Now()
 		expired, err := q.ExpireDeliveries(ctx, &now)
 		if err != nil {
 			return err
 		}
-		if err := announceClosed(ctx, q, expired); err != nil {
+		if err := events.DeliveriesClosed(ctx, q, expired); err != nil {
 			return err
 		}
 		// Deliveries that waited for quiet hours to end go out now.
@@ -47,9 +48,9 @@ func RunOnce(ctx context.Context, d *deps.Deps) error {
 // fireBatch handles one batch of due rows in one transaction. The row locks
 // make sure a reminder fires once even if two tickers run at the same time,
 // and a crash before the commit leaves the rows for the next run.
-func fireBatch(ctx context.Context, d *deps.Deps) (int, error) {
+func fireBatch(ctx context.Context, d *core.Deps) (int, error) {
 	count := 0
-	err := db.Tx(ctx, d.Pool, func(q *sqlc.Queries) error {
+	err := store.Tx(ctx, d.Pool, func(q *sqlc.Queries) error {
 		now := d.Now()
 		due, err := q.LockDueReminders(ctx, sqlc.LockDueRemindersParams{Now: now, Batch: batchSize})
 		if err != nil {
@@ -119,7 +120,7 @@ func deliver(ctx context.Context, q *sqlc.Queries, now time.Time, row sqlc.Sched
 		if err != nil {
 			return err
 		}
-		if err := announceClosed(ctx, q, replaced); err != nil {
+		if err := events.DeliveriesClosed(ctx, q, replaced); err != nil {
 			return err
 		}
 		id := uuid.Must(uuid.NewV7())

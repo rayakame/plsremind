@@ -1,3 +1,5 @@
+// Package account manages users: sign-up, login with a password or through GitHub,
+// Discord and OIDC providers, profiles and what an admin may do with them.
 package account
 
 import (
@@ -10,30 +12,28 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 
-	"github.com/rayakame/plsremind/hub/internal/apierr"
+	"github.com/rayakame/plsremind/hub/internal/api"
 	"github.com/rayakame/plsremind/hub/internal/auth"
-	"github.com/rayakame/plsremind/hub/internal/db"
-	"github.com/rayakame/plsremind/hub/internal/db/sqlc"
+	"github.com/rayakame/plsremind/hub/internal/core"
 	"github.com/rayakame/plsremind/hub/internal/delivery"
-	"github.com/rayakame/plsremind/hub/internal/deps"
-	"github.com/rayakame/plsremind/hub/internal/eventlog"
-	"github.com/rayakame/plsremind/hub/internal/httpx"
-	"github.com/rayakame/plsremind/hub/internal/item"
-	"github.com/rayakame/plsremind/hub/internal/schedule"
-	"github.com/rayakame/plsremind/hub/internal/secret"
-	"github.com/rayakame/plsremind/hub/internal/signal"
+	"github.com/rayakame/plsremind/hub/internal/events"
+	"github.com/rayakame/plsremind/hub/internal/reminder"
+	"github.com/rayakame/plsremind/hub/internal/store"
+	"github.com/rayakame/plsremind/hub/internal/store/sqlc"
+	"github.com/rayakame/plsremind/hub/internal/todo"
 )
 
 // Register mounts the public account routes on api and the profile routes on user.
-func Register(api, user, admin fiber.Router, d *deps.Deps, revoker Revoker) {
-	api.Post("/setup", setup(d))
-	api.Post("/auth/register", register(d))
-	api.Post("/auth/login", login(d))
-	api.Post("/auth/logout", logout(d))
+func Register(root, user, admin fiber.Router, d *core.Deps) {
+	svc := newOAuth(d)
+	root.Post("/setup", setup(d))
+	root.Post("/auth/register", register(d))
+	root.Post("/auth/login", login(d))
+	root.Post("/auth/logout", logout(d))
 
 	user.Get("", getProfile(d))
 	user.Patch("", patchProfile(d))
-	user.Delete("", auth.RequireSession(), deleteProfile(d, revoker))
+	user.Delete("", auth.RequireSession(), deleteProfile(d, svc))
 	user.Get("/identities", listIdentities(d))
 	user.Put("/password", auth.RequireSession(), setPassword(d))
 
@@ -44,12 +44,14 @@ func Register(api, user, admin fiber.Router, d *deps.Deps, revoker Revoker) {
 	admin.Delete("/invites/:id", deleteInvite(d))
 	admin.Get("/users", listUsers(d))
 	admin.Patch("/users/:id", patchUserAccess(d))
-	admin.Delete("/users/:id", adminDeleteUser(d, revoker))
+	admin.Delete("/users/:id", adminDeleteUser(d, svc))
 	admin.Put("/users/:id/password", resetPassword(d))
+
+	registerOAuth(root, user, admin, d, svc)
 }
 
 func errLoginDisabled() error {
-	return apierr.New(http.StatusForbidden, "login_disabled", "Password login is turned off on this instance.")
+	return api.NewError(http.StatusForbidden, "login_disabled", "Password login is turned off on this instance.")
 }
 
 type credentials struct {
@@ -75,22 +77,22 @@ func (in *credentials) normalize(ctx context.Context, q *sqlc.Queries) error {
 	checkDisplayName(fields, in.DisplayName)
 	checkTimezone(ctx, q, fields, in.Timezone)
 	if len(fields) > 0 {
-		return apierr.Validation(fields)
+		return api.Validation(fields)
 	}
 	return nil
 }
 
-func setup(d *deps.Deps) fiber.Handler {
+func setup(d *core.Deps) fiber.Handler {
 	return func(c fiber.Ctx) error {
 		var in credentials
-		if err := httpx.Body(c, &in); err != nil {
+		if err := api.Body(c, &in); err != nil {
 			return err
 		}
 		if err := in.normalize(c.Context(), d.Q()); err != nil {
 			return err
 		}
 		var user sqlc.User
-		err := db.Tx(c.Context(), d.Pool, func(q *sqlc.Queries) error {
+		err := store.Tx(c.Context(), d.Pool, func(q *sqlc.Queries) error {
 			if err := q.SetupLock(c.Context()); err != nil {
 				return err
 			}
@@ -99,7 +101,7 @@ func setup(d *deps.Deps) fiber.Handler {
 				return err
 			}
 			if count > 0 {
-				return apierr.Conflict("already_set_up", "This instance is already set up.")
+				return api.Conflict("already_set_up", "This instance is already set up.")
 			}
 			now := d.Now()
 			user, err = CreateUser(c.Context(), q, now, NewUser{DisplayName: in.DisplayName, Timezone: in.Timezone, Role: "admin"})
@@ -118,10 +120,10 @@ func setup(d *deps.Deps) fiber.Handler {
 	}
 }
 
-func login(d *deps.Deps) fiber.Handler {
+func login(d *core.Deps) fiber.Handler {
 	return func(c fiber.Ctx) error {
 		var in credentials
-		if err := httpx.Body(c, &in); err != nil {
+		if err := api.Body(c, &in); err != nil {
 			return err
 		}
 		q := d.Q()
@@ -137,7 +139,7 @@ func login(d *deps.Deps) fiber.Handler {
 			return err
 		}
 		if user.Disabled {
-			return apierr.New(http.StatusForbidden, "account_disabled", "This account is disabled.")
+			return api.NewError(http.StatusForbidden, "account_disabled", "This account is disabled.")
 		}
 		if err := auth.StartSession(c, d, q, user.ID); err != nil {
 			return err
@@ -146,7 +148,7 @@ func login(d *deps.Deps) fiber.Handler {
 	}
 }
 
-func logout(d *deps.Deps) fiber.Handler {
+func logout(d *core.Deps) fiber.Handler {
 	return func(c fiber.Ctx) error {
 		if err := auth.EndSession(c, d); err != nil {
 			return err
@@ -155,7 +157,7 @@ func logout(d *deps.Deps) fiber.Handler {
 	}
 }
 
-func getProfile(d *deps.Deps) fiber.Handler {
+func getProfile(d *core.Deps) fiber.Handler {
 	return func(c fiber.Ctx) error {
 		user, err := d.Q().GetUser(c.Context(), auth.Target(c))
 		if err != nil {
@@ -176,15 +178,15 @@ func getProfile(d *deps.Deps) fiber.Handler {
 }
 
 type profilePatch struct {
-	DisplayName *string               `json:"display_name"`
-	Timezone    *string               `json:"timezone"`
-	QuietHours  httpx.Opt[QuietHours] `json:"quiet_hours"`
+	DisplayName *string             `json:"display_name"`
+	Timezone    *string             `json:"timezone"`
+	QuietHours  api.Opt[QuietHours] `json:"quiet_hours"`
 }
 
-func patchProfile(d *deps.Deps) fiber.Handler {
+func patchProfile(d *core.Deps) fiber.Handler {
 	return func(c fiber.Ctx) error {
 		var in profilePatch
-		if err := httpx.Body(c, &in); err != nil {
+		if err := api.Body(c, &in); err != nil {
 			return err
 		}
 		// What can be checked without the stored profile is checked up front; the
@@ -208,11 +210,11 @@ func patchProfile(d *deps.Deps) fiber.Handler {
 			}
 		}
 		if len(fields) > 0 {
-			return apierr.Validation(fields)
+			return api.Validation(fields)
 		}
 
 		var user sqlc.User
-		err := db.UserTx(c.Context(), d.Pool, auth.Target(c), func(q *sqlc.Queries) error {
+		err := store.UserTx(c.Context(), d.Pool, auth.Target(c), func(q *sqlc.Queries) error {
 			before, err := q.GetUser(c.Context(), auth.Target(c))
 			if err != nil {
 				return err
@@ -239,8 +241,8 @@ func patchProfile(d *deps.Deps) fiber.Handler {
 			}
 			now := d.Now()
 			p, _ := auth.From(c)
-			actor := eventlog.ActorFrom(p)
-			if err := eventlog.Append(c.Context(), q, now, user.ID, actor, "user.updated", View(user)); err != nil {
+			actor := auth.ActorFrom(p)
+			if err := events.Append(c.Context(), q, now, user.ID, actor, "user.updated", View(user)); err != nil {
 				return err
 			}
 			rezoned := user.Timezone != before.Timezone
@@ -248,12 +250,12 @@ func patchProfile(d *deps.Deps) fiber.Handler {
 			if rezoned {
 				// An all-day deadline ends with the day in the user's zone, so its due
 				// time just moved. Clients that keep items in memory need to hear that.
-				moved, err := item.OpenAllDay(c.Context(), q, user.ID)
+				moved, err := todo.OpenAllDayItems(c.Context(), q, user.ID)
 				if err != nil {
 					return err
 				}
 				for _, it := range moved {
-					if err := eventlog.Append(c.Context(), q, now, user.ID, actor, "item.updated", it); err != nil {
+					if err := events.Append(c.Context(), q, now, user.ID, actor, "item.updated", it); err != nil {
 						return err
 					}
 				}
@@ -268,7 +270,7 @@ func patchProfile(d *deps.Deps) fiber.Handler {
 				return nil
 			}
 			// All-day deadlines and quiet hours are reckoned in the user's own time.
-			return schedule.SyncUser(c.Context(), q, now, user.ID)
+			return reminder.SyncUser(c.Context(), q, now, user.ID)
 		})
 		if err != nil {
 			return err
@@ -277,9 +279,9 @@ func patchProfile(d *deps.Deps) fiber.Handler {
 	}
 }
 
-func deleteProfile(d *deps.Deps, revoker Revoker) fiber.Handler {
+func deleteProfile(d *core.Deps, svc *OAuth) fiber.Handler {
 	return func(c fiber.Ctx) error {
-		if err := DeleteUser(c.Context(), d, revoker, auth.Target(c)); err != nil {
+		if err := DeleteUser(c.Context(), d, svc, auth.Target(c)); err != nil {
 			return err
 		}
 		if err := auth.EndSession(c, d); err != nil {
@@ -297,7 +299,7 @@ type Identity struct {
 	CreatedAt   time.Time `json:"created_at"`
 }
 
-func listIdentities(d *deps.Deps) fiber.Handler {
+func listIdentities(d *core.Deps) fiber.Handler {
 	return func(c fiber.Ctx) error {
 		rows, err := d.Q().ListIdentities(c.Context(), auth.Target(c))
 		if err != nil {
@@ -317,21 +319,21 @@ func listIdentities(d *deps.Deps) fiber.Handler {
 	}
 }
 
-func setPassword(d *deps.Deps) fiber.Handler {
+func setPassword(d *core.Deps) fiber.Handler {
 	return func(c fiber.Ctx) error {
 		var in struct {
 			Username        string `json:"username"`
 			CurrentPassword string `json:"current_password"`
 			NewPassword     string `json:"new_password"`
 		}
-		if err := httpx.Body(c, &in); err != nil {
+		if err := api.Body(c, &in); err != nil {
 			return err
 		}
 		userID := auth.Target(c)
-		err := db.UserTx(c.Context(), d.Pool, userID, func(q *sqlc.Queries) error {
+		err := store.UserTx(c.Context(), d.Pool, userID, func(q *sqlc.Queries) error {
 			identity, err := q.GetPasswordIdentity(c.Context(), userID)
 			hasPassword := err == nil
-			if err != nil && !db.IsNotFound(err) {
+			if err != nil && !store.IsNotFound(err) {
 				return err
 			}
 			fields := map[string]string{}
@@ -341,7 +343,7 @@ func setPassword(d *deps.Deps) fiber.Handler {
 				checkUsername(fields, username)
 			}
 			if len(fields) > 0 {
-				return apierr.Validation(fields)
+				return api.Validation(fields)
 			}
 			if !hasPassword {
 				provider, err := q.GetLoginProvider(c.Context(), PasswordProvider)
@@ -349,14 +351,14 @@ func setPassword(d *deps.Deps) fiber.Handler {
 					return err
 				}
 				if !provider.LinkEnabled {
-					return apierr.New(http.StatusForbidden, "link_disabled", "Adding a password is turned off on this instance.")
+					return api.NewError(http.StatusForbidden, "link_disabled", "Adding a password is turned off on this instance.")
 				}
 				return AddPassword(c.Context(), q, d.Now(), userID, username, in.NewPassword)
 			}
-			if !secret.VerifyPassword(*identity.PasswordHash, in.CurrentPassword) {
-				return apierr.New(http.StatusForbidden, "invalid_credentials", "The current password is wrong.")
+			if !core.VerifyPassword(*identity.PasswordHash, in.CurrentPassword) {
+				return api.NewError(http.StatusForbidden, "invalid_credentials", "The current password is wrong.")
 			}
-			hash, err := secret.HashPassword(in.NewPassword)
+			hash, err := core.HashPassword(in.NewPassword)
 			if err != nil {
 				return err
 			}
@@ -373,7 +375,7 @@ func setPassword(d *deps.Deps) fiber.Handler {
 			if err := q.DeleteOtherSessions(c.Context(), sqlc.DeleteOtherSessionsParams{UserID: userID, KeepID: p.CredentialID}); err != nil {
 				return err
 			}
-			return signal.ForUser(c.Context(), q, signal.User, userID)
+			return events.NotifyUser(c.Context(), q, events.SignalUser, userID)
 		})
 		if err != nil {
 			return err

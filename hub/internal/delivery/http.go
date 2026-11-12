@@ -8,40 +8,38 @@ import (
 	"github.com/gofiber/fiber/v3"
 	"github.com/google/uuid"
 
-	"github.com/rayakame/plsremind/hub/internal/apierr"
+	"github.com/rayakame/plsremind/hub/internal/api"
 	"github.com/rayakame/plsremind/hub/internal/auth"
-	"github.com/rayakame/plsremind/hub/internal/db"
-	"github.com/rayakame/plsremind/hub/internal/db/sqlc"
-	"github.com/rayakame/plsremind/hub/internal/deps"
-	"github.com/rayakame/plsremind/hub/internal/duration"
-	"github.com/rayakame/plsremind/hub/internal/httpx"
+	"github.com/rayakame/plsremind/hub/internal/core"
+	"github.com/rayakame/plsremind/hub/internal/store"
+	"github.com/rayakame/plsremind/hub/internal/store/sqlc"
 )
 
 const maxReasonLen = 500
 
-func Register(api, user fiber.Router, d *deps.Deps) {
-	api.Get("/deliveries", fetch(d))
-	api.Put("/deliveries/:id", acknowledge(d))
+func Register(root, user fiber.Router, d *core.Deps) {
+	root.Get("/deliveries", fetch(d))
+	root.Put("/deliveries/:id", acknowledge(d))
 	user.Get("/reminder-log", history(d))
 }
 
 // channel resolves the caller to the channel it speaks for.
-func channel(c fiber.Ctx, d *deps.Deps) (Channel, error) {
+func channel(c fiber.Ctx, d *core.Deps) (Channel, error) {
 	p, ok := auth.From(c)
 	if !ok {
-		return Channel{}, apierr.Unauthorized()
+		return Channel{}, api.Unauthorized()
 	}
 	ch, ok, err := ChannelOf(c.Context(), d.Q(), p)
 	if err != nil {
 		return Channel{}, err
 	}
 	if !ok {
-		return Channel{}, apierr.Forbidden()
+		return Channel{}, api.Forbidden()
 	}
 	return ch, nil
 }
 
-func fetch(d *deps.Deps) fiber.Handler {
+func fetch(d *core.Deps) fiber.Handler {
 	return func(c fiber.Ctx) error {
 		ch, err := channel(c, d)
 		if err != nil {
@@ -62,13 +60,13 @@ func (ch Channel) owns(row sqlc.Delivery) bool {
 	return row.TokenID != nil && ch.TokenID != nil && *row.TokenID == *ch.TokenID
 }
 
-func acknowledge(d *deps.Deps) fiber.Handler {
+func acknowledge(d *core.Deps) fiber.Handler {
 	return func(c fiber.Ctx) error {
 		ch, err := channel(c, d)
 		if err != nil {
 			return err
 		}
-		id, err := httpx.ParamUUID(c, "id")
+		id, err := api.ParamUUID(c, "id")
 		if err != nil {
 			return err
 		}
@@ -76,7 +74,7 @@ func acknowledge(d *deps.Deps) fiber.Handler {
 			Status string `json:"status"`
 			Reason string `json:"reason"`
 		}
-		if err := httpx.Body(c, &in); err != nil {
+		if err := api.Body(c, &in); err != nil {
 			return err
 		}
 		in.Reason = strings.TrimSpace(in.Reason)
@@ -85,18 +83,18 @@ func acknowledge(d *deps.Deps) fiber.Handler {
 			in.Reason = ""
 		case "failed":
 			if n := utf8.RuneCountInString(in.Reason); n < 1 || n > maxReasonLen {
-				return apierr.Field("reason", "A failed delivery needs a reason of at most 500 characters.")
+				return api.Field("reason", "A failed delivery needs a reason of at most 500 characters.")
 			}
 		default:
-			return apierr.Field("status", `Must be "delivered" or "failed".`)
+			return api.Field("status", `Must be "delivered" or "failed".`)
 		}
 
 		var out sqlc.Delivery
-		err = db.Tx(c.Context(), d.Pool, func(q *sqlc.Queries) error {
+		err = store.Tx(c.Context(), d.Pool, func(q *sqlc.Queries) error {
 			row, err := q.LockDelivery(c.Context(), id)
 			// A delivery of another channel does not exist as far as this one is concerned.
-			if db.IsNotFound(err) || (err == nil && !ch.owns(row)) {
-				return apierr.NotFound()
+			if store.IsNotFound(err) || (err == nil && !ch.owns(row)) {
+				return api.NotFound()
 			}
 			if err != nil {
 				return err
@@ -110,7 +108,7 @@ func acknowledge(d *deps.Deps) fiber.Handler {
 				out = row
 				return nil
 			}
-			return apierr.Conflict("delivery_closed", "The delivery is already "+row.Status+".")
+			return api.Conflict("delivery_closed", "The delivery is already "+row.Status+".")
 		})
 		if err != nil {
 			return err
@@ -144,9 +142,9 @@ type logEntry struct {
 	Deliveries   []logDelivery `json:"deliveries"`
 }
 
-func history(d *deps.Deps) fiber.Handler {
+func history(d *core.Deps) fiber.Handler {
 	return func(c fiber.Ctx) error {
-		page, err := httpx.ParsePage(c)
+		page, err := api.ParsePage(c)
 		if err != nil {
 			return err
 		}
@@ -154,13 +152,13 @@ func history(d *deps.Deps) fiber.Handler {
 		if raw := c.Query("item_id"); raw != "" {
 			itemID, err := uuid.Parse(raw)
 			if err != nil {
-				return apierr.Field("item_id", "Must be an item ID.")
+				return api.Field("item_id", "Must be an item ID.")
 			}
 			params.ItemID = &itemID
 		}
 		if page.Cursor != "" {
 			var before uuid.UUID
-			if err := httpx.DecodeCursor(page.Cursor, &before); err != nil {
+			if err := api.DecodeCursor(page.Cursor, &before); err != nil {
 				return err
 			}
 			params.BeforeID = &before
@@ -202,13 +200,13 @@ func history(d *deps.Deps) fiber.Handler {
 				Deliveries:   byReminder[row.ID],
 			}
 			if row.OffsetSeconds != nil {
-				entry.Offset = duration.Format(time.Duration(*row.OffsetSeconds) * time.Second)
+				entry.Offset = api.FormatDuration(time.Duration(*row.OffsetSeconds) * time.Second)
 			}
 			if entry.Deliveries == nil {
 				entry.Deliveries = []logDelivery{}
 			}
 			entries = append(entries, entry)
 		}
-		return c.JSON(httpx.NewList(entries, page.Limit, func(last logEntry) any { return last.ID }))
+		return c.JSON(api.NewList(entries, page.Limit, func(last logEntry) any { return last.ID }))
 	}
 }

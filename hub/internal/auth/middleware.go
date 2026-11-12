@@ -9,19 +9,18 @@ import (
 	"github.com/gofiber/fiber/v3"
 	"github.com/google/uuid"
 
-	"github.com/rayakame/plsremind/hub/internal/apierr"
-	"github.com/rayakame/plsremind/hub/internal/db"
-	"github.com/rayakame/plsremind/hub/internal/db/sqlc"
-	"github.com/rayakame/plsremind/hub/internal/deps"
-	"github.com/rayakame/plsremind/hub/internal/secret"
+	"github.com/rayakame/plsremind/hub/internal/api"
+	"github.com/rayakame/plsremind/hub/internal/core"
+	"github.com/rayakame/plsremind/hub/internal/store"
+	"github.com/rayakame/plsremind/hub/internal/store/sqlc"
 )
 
 func errDisabled() error {
-	return apierr.New(http.StatusForbidden, "account_disabled", "This account is disabled.")
+	return api.NewError(http.StatusForbidden, "account_disabled", "This account is disabled.")
 }
 
 func errCSRF() error {
-	return apierr.New(http.StatusForbidden, "csrf_failed", "The request did not come from this site.")
+	return api.NewError(http.StatusForbidden, "csrf_failed", "The request did not come from this site.")
 }
 
 func isWrite(method string) bool {
@@ -31,7 +30,7 @@ func isWrite(method string) bool {
 // Middleware identifies the caller. Requests without credentials continue anonymously.
 // A request with bad credentials is not answered here: the failure is kept for Reject,
 // so that the rate limiter in between still gets to count the attempt.
-func Middleware(d *deps.Deps) fiber.Handler {
+func Middleware(d *core.Deps) fiber.Handler {
 	return func(c fiber.Ctx) error {
 		var p Principal
 		var ok bool
@@ -76,31 +75,31 @@ func Reject() fiber.Handler {
 const tokenTouchInterval = time.Minute
 
 // fromBearer never falls back to anonymous: a caller that sends a token expects it to count.
-func fromBearer(c fiber.Ctx, d *deps.Deps, header string) (Principal, error) {
+func fromBearer(c fiber.Ctx, d *core.Deps, header string) (Principal, error) {
 	token, found := strings.CutPrefix(header, "Bearer ")
 	if !found {
-		return Principal{}, apierr.Unauthorized()
+		return Principal{}, api.Unauthorized()
 	}
 	return Authenticate(c.Context(), d, token)
 }
 
 // Authenticate resolves a personal or connection token to its principal.
-func Authenticate(ctx context.Context, d *deps.Deps, token string) (Principal, error) {
+func Authenticate(ctx context.Context, d *core.Deps, token string) (Principal, error) {
 	switch {
-	case strings.HasPrefix(token, secret.PrefixPersonal):
+	case strings.HasPrefix(token, core.PrefixPersonal):
 		return fromPersonalToken(ctx, d, token)
-	case strings.HasPrefix(token, secret.PrefixConnection):
+	case strings.HasPrefix(token, core.PrefixConnection):
 		return fromConnectionToken(ctx, d, token)
 	default:
-		return Principal{}, apierr.Unauthorized()
+		return Principal{}, api.Unauthorized()
 	}
 }
 
-func fromPersonalToken(ctx context.Context, d *deps.Deps, token string) (Principal, error) {
+func fromPersonalToken(ctx context.Context, d *core.Deps, token string) (Principal, error) {
 	q := d.Q()
-	row, err := q.GetPersonalTokenUser(ctx, secret.Hash(token))
-	if db.IsNotFound(err) {
-		return Principal{}, apierr.Unauthorized()
+	row, err := q.GetPersonalTokenUser(ctx, core.HashToken(token))
+	if store.IsNotFound(err) {
+		return Principal{}, api.Unauthorized()
 	}
 	if err != nil {
 		return Principal{}, err
@@ -117,11 +116,11 @@ func fromPersonalToken(ctx context.Context, d *deps.Deps, token string) (Princip
 	return Principal{Kind: KindPersonalToken, UserID: row.UserID, Role: row.Role, CredentialID: row.TokenID}, nil
 }
 
-func fromConnectionToken(ctx context.Context, d *deps.Deps, token string) (Principal, error) {
+func fromConnectionToken(ctx context.Context, d *core.Deps, token string) (Principal, error) {
 	q := d.Q()
-	conn, err := q.GetConnectionByToken(ctx, secret.Hash(token))
-	if db.IsNotFound(err) {
-		return Principal{}, apierr.Unauthorized()
+	conn, err := q.GetConnectionByToken(ctx, core.HashToken(token))
+	if store.IsNotFound(err) {
+		return Principal{}, api.Unauthorized()
 	}
 	if err != nil {
 		return Principal{}, err
@@ -137,14 +136,14 @@ func fromConnectionToken(ctx context.Context, d *deps.Deps, token string) (Princ
 
 // SessionPrincipal resolves the value of a session cookie. It does not check
 // where the request came from; callers that accept writes do that themselves.
-func SessionPrincipal(ctx context.Context, d *deps.Deps, value string) (Principal, bool, error) {
+func SessionPrincipal(ctx context.Context, d *core.Deps, value string) (Principal, bool, error) {
 	if value == "" {
 		return Principal{}, false, nil
 	}
 	now := d.Now()
 	q := d.Q()
-	row, err := q.GetSessionUser(ctx, sqlc.GetSessionUserParams{TokenHash: secret.Hash(value), Now: now})
-	if db.IsNotFound(err) {
+	row, err := q.GetSessionUser(ctx, sqlc.GetSessionUserParams{TokenHash: core.HashToken(value), Now: now})
+	if store.IsNotFound(err) {
 		return Principal{}, false, nil
 	}
 	if err != nil {
@@ -162,7 +161,7 @@ func SessionPrincipal(ctx context.Context, d *deps.Deps, value string) (Principa
 	return Principal{Kind: KindSession, UserID: row.UserID, Role: row.Role, CredentialID: row.SessionID}, true, nil
 }
 
-func fromSession(c fiber.Ctx, d *deps.Deps) (Principal, bool, error) {
+func fromSession(c fiber.Ctx, d *core.Deps) (Principal, bool, error) {
 	p, ok, err := SessionPrincipal(c.Context(), d, c.Cookies(SessionCookie))
 	if err != nil || !ok {
 		return Principal{}, false, err
@@ -177,7 +176,7 @@ func fromSession(c fiber.Ctx, d *deps.Deps) (Principal, bool, error) {
 func Require() fiber.Handler {
 	return func(c fiber.Ctx) error {
 		if _, ok := From(c); !ok {
-			return apierr.Unauthorized()
+			return api.Unauthorized()
 		}
 		return c.Next()
 	}
@@ -188,10 +187,10 @@ func RequireSession() fiber.Handler {
 	return func(c fiber.Ctx) error {
 		p, ok := From(c)
 		if !ok {
-			return apierr.Unauthorized()
+			return api.Unauthorized()
 		}
 		if p.Kind != KindSession {
-			return apierr.Forbidden()
+			return api.Forbidden()
 		}
 		return c.Next()
 	}
@@ -201,10 +200,10 @@ func RequireAdmin() fiber.Handler {
 	return func(c fiber.Ctx) error {
 		p, ok := From(c)
 		if !ok {
-			return apierr.Unauthorized()
+			return api.Unauthorized()
 		}
 		if p.Kind != KindSession || p.Role != "admin" {
-			return apierr.Forbidden()
+			return api.Forbidden()
 		}
 		return c.Next()
 	}
@@ -235,16 +234,16 @@ func connectionMayUse(p Principal, method, rest string) bool {
 // ResolveUser maps the :user path parameter to the user the request acts on.
 // Sessions and personal tokens always act on "@me". A connection names the hub
 // ID of a user who has granted it access.
-func ResolveUser(d *deps.Deps) fiber.Handler {
+func ResolveUser(d *core.Deps) fiber.Handler {
 	return func(c fiber.Ctx) error {
 		p, ok := From(c)
 		if !ok {
-			return apierr.Unauthorized()
+			return api.Unauthorized()
 		}
 		param := c.Params("user")
 		if p.Kind != KindConnection {
 			if param != "@me" {
-				return apierr.NotFound()
+				return api.NotFound()
 			}
 			c.Locals(targetKey, p.UserID)
 			return c.Next()
@@ -252,15 +251,15 @@ func ResolveUser(d *deps.Deps) fiber.Handler {
 
 		userID, err := uuid.Parse(param)
 		if err != nil {
-			return apierr.NotFound()
+			return api.NotFound()
 		}
 		_, rest, found := strings.Cut(c.Path(), "/users/"+param)
 		if !found || !connectionMayUse(p, c.Method(), strings.TrimSuffix(rest, "/")) {
-			return apierr.Forbidden()
+			return api.Forbidden()
 		}
 		_, err = d.Q().GetGrantedUser(c.Context(), sqlc.GetGrantedUserParams{ConnectionID: p.CredentialID, UserID: userID})
-		if db.IsNotFound(err) {
-			return apierr.NotFound()
+		if store.IsNotFound(err) {
+			return api.NotFound()
 		}
 		if err != nil {
 			return err

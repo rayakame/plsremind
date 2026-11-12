@@ -10,15 +10,14 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/rayakame/plsremind/hub/internal/apierr"
+	"github.com/rayakame/plsremind/hub/internal/api"
 	"github.com/rayakame/plsremind/hub/internal/auth"
-	"github.com/rayakame/plsremind/hub/internal/deps"
-	"github.com/rayakame/plsremind/hub/internal/secret"
+	"github.com/rayakame/plsremind/hub/internal/core"
 )
 
 // Hub keeps every gateway session of this process.
 type Hub struct {
-	d *deps.Deps
+	d *core.Deps
 
 	mu       sync.Mutex
 	sessions map[string]*Session
@@ -33,7 +32,7 @@ type Hub struct {
 	wg     sync.WaitGroup
 }
 
-func NewHub(d *deps.Deps) *Hub {
+func NewHub(d *core.Deps) *Hub {
 	return &Hub{d: d, sessions: map[string]*Session{}, byUser: map[uuid.UUID]map[*Session]struct{}{}, listening: make(chan struct{}), outbox: make(chan outgoing, 4096)}
 }
 
@@ -209,7 +208,7 @@ const (
 // judge tells a refusal from a failure to check. Only a refusal may ever be
 // reported to the client as "your credentials are no good".
 func judge(found bool, err error) verdict {
-	var refusal *apierr.Error
+	var refusal *api.Error
 	switch {
 	case errors.As(err, &refusal):
 		return denied
@@ -336,7 +335,7 @@ func (h *Hub) identify(ctx context.Context, c *conn, raw json.RawMessage, cookie
 		return nil, CloseRateLimited
 	}
 
-	id, _ := secret.NewToken("")
+	id, _ := core.NewToken("")
 	s := &Session{
 		id: id, hub: h, principal: p, intents: intents, token: in.Token, cookie: cookie, conn: c, createdAt: time.Now(),
 		box: newMailbox(), stop: make(chan struct{}), cursors: map[uuid.UUID]int64{},

@@ -37,7 +37,7 @@ The hub is written in Go and uses PostgreSQL through sqlc.
 cd hub
 make test      # needs Docker, the tests start their own PostgreSQL
 make lint
-make generate  # after changing SQL in internal/db
+make generate  # after changing SQL in internal/store
 ```
 
 ## License
