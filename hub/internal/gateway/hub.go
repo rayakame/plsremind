@@ -75,11 +75,12 @@ func (h *Hub) Shutdown() {
 		s.halt()
 		s.mu.Lock()
 		c := s.conn
+		s.conn = nil
 		s.mu.Unlock()
 		if c != nil {
 			c.send(encode(OpReconnect, nil, nil, nil))
+			c.finish(1012, "restarting")
 		}
-		s.end(1012, "restarting")
 	}
 }
 
@@ -159,6 +160,72 @@ func (h *Hub) countFor(credential uuid.UUID) int {
 	return n
 }
 
+// authenticate finds out who is on the other end: by token, or by the session
+// cookie of the upgrade request.
+func (h *Hub) authenticate(ctx context.Context, token, cookie string, sameOrigin bool) (auth.Principal, string, bool) {
+	switch {
+	case token != "":
+		p, err := auth.Authenticate(ctx, h.d, token)
+		return p, "", err == nil
+	case sameOrigin:
+		// A browser cannot put a token into the handshake, so the dashboard comes with
+		// its session cookie. Only pages of this hub may use it that way.
+		p, found, err := auth.SessionPrincipal(ctx, h.d, cookie)
+		return p, cookie, err == nil && found
+	}
+	return auth.Principal{}, "", false
+}
+
+// resume attaches a connection to a session that lost its own. invalid means
+// the session cannot be continued and the client has to identify afresh.
+func (h *Hub) resume(ctx context.Context, c *conn, raw json.RawMessage, cookie string, sameOrigin bool) (s *Session, code int, invalid bool) {
+	var in resume
+	if err := json.Unmarshal(raw, &in); err != nil {
+		return nil, CloseDecode, false
+	}
+	p, _, ok := h.authenticate(ctx, in.Token, cookie, sameOrigin)
+	if !ok {
+		return nil, CloseAuthFailed, false
+	}
+	h.mu.Lock()
+	s = h.sessions[in.SessionID]
+	h.mu.Unlock()
+	// Someone else's session is as good as none.
+	if s == nil || s.principal.CredentialID != p.CredentialID {
+		return nil, 0, true
+	}
+
+	s.mu.Lock()
+	if in.Seq > s.seq {
+		s.mu.Unlock()
+		return nil, CloseInvalidSeq, false
+	}
+	// Everything after in.Seq must still be in the buffer.
+	oldest := s.seq + 1
+	if len(s.buffer) > 0 {
+		oldest = s.buffer[0].seq
+	}
+	if in.Seq < oldest-1 {
+		s.mu.Unlock()
+		h.drop(s, 0, "")
+		return nil, 0, true
+	}
+	previous := s.conn
+	s.conn = c
+	for _, missed := range s.buffer {
+		if missed.seq > in.Seq {
+			c.send(missed.frame)
+		}
+	}
+	s.mu.Unlock()
+	if previous != nil {
+		previous.close(CloseAlreadyAuthenticated, "resumed elsewhere")
+	}
+	s.emit(EventResumed, true, struct{}{})
+	s.box.post(func(m *mailbox) { m.pending, m.validate = true, true })
+	return s, 0, false
+}
+
 // identify turns a connection into a session. It returns a close code on refusal.
 func (h *Hub) identify(ctx context.Context, c *conn, raw json.RawMessage, cookie string, sameOrigin bool) (*Session, int) {
 	var in identify
@@ -169,24 +236,8 @@ func (h *Hub) identify(ctx context.Context, c *conn, raw json.RawMessage, cookie
 	if !ok {
 		return nil, CloseInvalidIntents
 	}
-
-	var p auth.Principal
-	switch {
-	case in.Token != "":
-		var err error
-		if p, err = auth.Authenticate(ctx, h.d, in.Token); err != nil {
-			return nil, CloseAuthFailed
-		}
-		cookie = ""
-	case sameOrigin:
-		// A browser cannot put a token into the handshake, so the dashboard comes with
-		// its session cookie. Only pages of this hub may use it that way.
-		var found bool
-		var err error
-		if p, found, err = auth.SessionPrincipal(ctx, h.d, cookie); err != nil || !found {
-			return nil, CloseAuthFailed
-		}
-	default:
+	p, cookie, ok := h.authenticate(ctx, in.Token, cookie, sameOrigin)
+	if !ok {
 		return nil, CloseAuthFailed
 	}
 	for _, intent := range intents {

@@ -15,12 +15,18 @@ type conn struct {
 	ws           *websocket.Conn
 	out          chan []byte
 	done         chan struct{}
+	fin          chan closing
 	once         sync.Once
 	writeTimeout time.Duration
 }
 
+type closing struct {
+	code   int
+	reason string
+}
+
 func newConn(ws *websocket.Conn, writeTimeout time.Duration) *conn {
-	c := &conn{ws: ws, out: make(chan []byte, outQueue), done: make(chan struct{}), writeTimeout: writeTimeout}
+	c := &conn{ws: ws, out: make(chan []byte, outQueue), done: make(chan struct{}), fin: make(chan closing, 1), writeTimeout: writeTimeout}
 	go c.write()
 	return c
 }
@@ -31,12 +37,42 @@ func (c *conn) write() {
 		case <-c.done:
 			return
 		case frame := <-c.out:
-			_ = c.ws.SetWriteDeadline(time.Now().Add(c.writeTimeout))
-			if err := c.ws.WriteMessage(websocket.TextMessage, frame); err != nil {
-				c.close(websocket.CloseAbnormalClosure, "")
+			if !c.writeFrame(frame) {
 				return
 			}
+		case end := <-c.fin:
+			// Send what is already queued, then say goodbye.
+			for {
+				select {
+				case frame := <-c.out:
+					if !c.writeFrame(frame) {
+						return
+					}
+					continue
+				default:
+				}
+				break
+			}
+			c.close(end.code, end.reason)
+			return
 		}
+	}
+}
+
+func (c *conn) writeFrame(frame []byte) bool {
+	_ = c.ws.SetWriteDeadline(time.Now().Add(c.writeTimeout))
+	if err := c.ws.WriteMessage(websocket.TextMessage, frame); err != nil {
+		c.close(websocket.CloseAbnormalClosure, "")
+		return false
+	}
+	return true
+}
+
+// finish closes the connection after everything queued so far has been written.
+func (c *conn) finish(code int, reason string) {
+	select {
+	case c.fin <- closing{code, reason}:
+	default:
 	}
 }
 

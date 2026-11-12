@@ -80,6 +80,9 @@ func (h *Hub) serve(ws *websocket.Conn) {
 			c.send(encode(OpHeartbeatACK, nil, nil, nil))
 			if session != nil {
 				_ = ws.SetReadDeadline(time.Now().Add(cfg.HeartbeatInterval * 3 / 2))
+				// Not every loss of access is announced, an expired login for one.
+				// Each heartbeat is a chance to notice.
+				session.box.post(func(m *mailbox) { m.validate = true })
 			}
 		case OpIdentify:
 			if session != nil {
@@ -92,6 +95,23 @@ func (h *Hub) serve(ws *websocket.Conn) {
 				return
 			}
 			_ = ws.SetReadDeadline(time.Now().Add(cfg.HeartbeatInterval * 3 / 2))
+		case OpResume:
+			if session != nil {
+				c.close(CloseAlreadyAuthenticated, "already identified")
+				return
+			}
+			resumed, code, invalid := h.resume(ctx, c, in.D, cookie, sameOrigin)
+			switch {
+			case code != 0:
+				c.close(code, "resume refused")
+				return
+			case invalid:
+				// The session cannot be continued. The connection stays for a fresh Identify.
+				c.send(encode(OpInvalidSession, false, nil, nil))
+			default:
+				session = resumed
+				_ = ws.SetReadDeadline(time.Now().Add(cfg.HeartbeatInterval * 3 / 2))
+			}
 		default:
 			c.close(CloseUnknownOp, "unknown opcode")
 			return

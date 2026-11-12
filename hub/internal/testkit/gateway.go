@@ -1,6 +1,7 @@
 package testkit
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -46,6 +47,44 @@ type GatewayClient struct {
 	writeMu   sync.Mutex
 	stopBeat  chan struct{}
 	beatOnce  sync.Once
+	pause     chan struct{}
+	pauseOnce sync.Once
+}
+
+// Pause makes the client stop reading, the way a hung program would.
+func (g *GatewayClient) Pause() {
+	g.StopHeartbeat()
+	g.pauseOnce.Do(func() { close(g.pause) })
+}
+
+// ExpectEnded requires the connection to end, however it ends.
+func (g *GatewayClient) ExpectEnded(t *testing.T) {
+	t.Helper()
+	select {
+	case <-g.pause:
+		// A paused reader never sees the end; ask the socket directly.
+		_ = g.conn.SetReadDeadline(time.Now().Add(10 * time.Second))
+		for {
+			if _, _, err := g.conn.ReadMessage(); err != nil {
+				var netErr interface{ Timeout() bool }
+				require.False(t, errors.As(err, &netErr) && netErr.Timeout(), "the gateway kept the connection open")
+				return
+			}
+		}
+	default:
+	}
+	select {
+	case <-g.closeCode:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the gateway kept the connection open")
+	}
+}
+
+// RestartGateway stops the gateway and starts it again, as a restart of the hub would.
+func (e *Env) RestartGateway(t *testing.T) {
+	t.Helper()
+	e.Hub.Shutdown()
+	e.Hub.Start(context.Background())
 }
 
 func (e *Env) dial(t *testing.T, opts ...ReqOpt) *GatewayClient {
@@ -63,7 +102,7 @@ func (e *Env) dial(t *testing.T, opts ...ReqOpt) *GatewayClient {
 		res.Body.Close()
 	}
 	require.NoError(t, err)
-	g := &GatewayClient{env: e, conn: conn, frames: make(chan Frame, 4096), closeCode: make(chan int, 1), stopBeat: make(chan struct{})}
+	g := &GatewayClient{env: e, conn: conn, frames: make(chan Frame, 4096), closeCode: make(chan int, 1), stopBeat: make(chan struct{}), pause: make(chan struct{})}
 	t.Cleanup(g.Close)
 	go g.read()
 	return g
@@ -72,6 +111,11 @@ func (e *Env) dial(t *testing.T, opts ...ReqOpt) *GatewayClient {
 func (g *GatewayClient) read() {
 	defer close(g.frames)
 	for {
+		select {
+		case <-g.pause:
+			return
+		default:
+		}
 		_, data, err := g.conn.ReadMessage()
 		if err != nil {
 			code := -1
