@@ -2,6 +2,7 @@ name: hub
 
 on:
   push:
+    branches: [main]
     paths: ["hub/**", "docs/api/**", "deploy/**", ".github/workflows/hub.yml"]
   pull_request:
     paths: ["hub/**", "docs/api/**", "deploy/**", ".github/workflows/hub.yml"]
