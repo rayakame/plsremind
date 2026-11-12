@@ -18,7 +18,23 @@ ALTER TABLE connection_grants
 
 ALTER TABLE personal_tokens ADD COLUMN remind boolean NOT NULL DEFAULT false;
 
+-- Every reminder that is still ahead for an open item. Rewritten whenever something
+-- that decides the times changes; rows whose time has come belong to the ticker.
+CREATE TABLE scheduled_reminders (
+    id uuid PRIMARY KEY,
+    item_id uuid NOT NULL REFERENCES items ON DELETE CASCADE,
+    user_id uuid NOT NULL REFERENCES users ON DELETE CASCADE,
+    kind text NOT NULL CHECK (kind IN ('before', 'due', 'follow_up', 'manual')),
+    offset_seconds integer,
+    manual_id uuid REFERENCES manual_reminders ON DELETE CASCADE,
+    fire_at timestamptz NOT NULL,
+    scheduled_for timestamptz NOT NULL
+);
+CREATE INDEX scheduled_reminders_fire_at_idx ON scheduled_reminders (fire_at);
+CREATE INDEX scheduled_reminders_item_id_idx ON scheduled_reminders (item_id);
+
 -- +goose Down
+DROP TABLE scheduled_reminders;
 ALTER TABLE personal_tokens DROP COLUMN remind;
 ALTER TABLE connection_grants DROP COLUMN remind;
 DELETE FROM connection_grants WHERE enabled IS NULL;

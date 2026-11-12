@@ -16,6 +16,7 @@ import (
 	"github.com/rayakame/plsremind/hub/internal/db/sqlc"
 	"github.com/rayakame/plsremind/hub/internal/deps"
 	"github.com/rayakame/plsremind/hub/internal/httpx"
+	"github.com/rayakame/plsremind/hub/internal/schedule"
 	"github.com/rayakame/plsremind/hub/internal/secret"
 )
 
@@ -217,7 +218,15 @@ func patchProfile(d *deps.Deps) fiber.Handler {
 		if len(fields) > 0 {
 			return apierr.Validation(fields)
 		}
-		user, err = q.UpdateUserProfile(c.Context(), params)
+		retime := params.Timezone != user.Timezone || params.QuietStart != user.QuietStart || params.QuietEnd != user.QuietEnd
+		err = db.Tx(c.Context(), d.Pool, func(q *sqlc.Queries) error {
+			user, err = q.UpdateUserProfile(c.Context(), params)
+			if err != nil || !retime {
+				return err
+			}
+			// All-day deadlines and quiet hours are reckoned in the user's own time.
+			return schedule.SyncUser(c.Context(), q, d.Now(), user.ID)
+		})
 		if err != nil {
 			return err
 		}

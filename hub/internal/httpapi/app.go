@@ -17,6 +17,7 @@ import (
 	"github.com/rayakame/plsremind/hub/internal/plan"
 	"github.com/rayakame/plsremind/hub/internal/ratelimit"
 	"github.com/rayakame/plsremind/hub/internal/reminder"
+	"github.com/rayakame/plsremind/hub/internal/schedule"
 	"github.com/rayakame/plsremind/hub/internal/subitem"
 	"github.com/rayakame/plsremind/hub/internal/token"
 	"github.com/rayakame/plsremind/hub/internal/web"
@@ -91,7 +92,7 @@ func New(d *deps.Deps) *fiber.App {
 	oauth.Register(api, user, admin, d, providers)
 	token.Register(user, d)
 	list.Register(user, d)
-	plan.Register(user, d)
+	plan.Register(user, d, schedule.SyncUser)
 	item.Register(user, d)
 	subitem.Register(user, d)
 	reminder.Register(user, d)

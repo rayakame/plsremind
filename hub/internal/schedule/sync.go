@@ -1,0 +1,163 @@
+package schedule
+
+import (
+	"context"
+	"encoding/json"
+	"time"
+
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
+
+	"github.com/rayakame/plsremind/hub/internal/db"
+	"github.com/rayakame/plsremind/hub/internal/db/sqlc"
+	"github.com/rayakame/plsremind/hub/internal/duration"
+	"github.com/rayakame/plsremind/hub/internal/plan"
+)
+
+func sinceMidnight(t pgtype.Time) time.Duration {
+	return time.Duration(t.Microseconds) * time.Microsecond
+}
+
+// QuietOf returns the user's quiet window, or nil when quiet hours are off.
+func QuietOf(u sqlc.User) *Quiet {
+	if !u.QuietStart.Valid || !u.QuietEnd.Valid {
+		return nil
+	}
+	return &Quiet{Start: sinceMidnight(u.QuietStart), End: sinceMidnight(u.QuietEnd)}
+}
+
+// LocationOf returns the user's time zone. The name was validated when it was set.
+func LocationOf(u sqlc.User) *time.Location {
+	loc, err := time.LoadLocation(u.Timezone)
+	if err != nil {
+		return time.UTC
+	}
+	return loc
+}
+
+// input gathers everything that decides an item's reminder times.
+func input(ctx context.Context, q *sqlc.Queries, row sqlc.Item) (Input, error) {
+	user, err := q.GetUser(ctx, row.UserID)
+	if err != nil {
+		return Input{}, err
+	}
+	in := Input{Open: true, Due: row.DueAt, Quiet: QuietOf(user), Loc: LocationOf(user)}
+	if row.DueDate.Valid {
+		dues, err := q.ListAllDayDue(ctx, []uuid.UUID{row.ID})
+		if err != nil {
+			return Input{}, err
+		}
+		if len(dues) > 0 {
+			in.Due = &dues[0].Due
+		}
+	}
+
+	chosen := plan.Defaults[row.Priority]
+	plans, err := q.ListReminderPlans(ctx, row.UserID)
+	if err != nil {
+		return Input{}, err
+	}
+	for _, p := range plans {
+		if p.Priority != row.Priority {
+			continue
+		}
+		chosen = plan.Plan{FollowUp: p.FollowUp}
+		for _, seconds := range p.BeforeSeconds {
+			chosen.Before = append(chosen.Before, time.Duration(seconds)*time.Second)
+		}
+	}
+	in.Before, in.FollowUp = chosen.Before, chosen.FollowUp
+
+	if row.ReminderOverride != nil {
+		var override struct {
+			Mode   string   `json:"mode"`
+			Before []string `json:"before"`
+		}
+		if err := json.Unmarshal(row.ReminderOverride, &override); err != nil {
+			return Input{}, err
+		}
+		switch override.Mode {
+		case "off":
+			in.Off = true
+		case "custom":
+			in.Before = nil
+			for _, raw := range override.Before {
+				offset, err := duration.Parse(raw)
+				if err != nil {
+					return Input{}, err
+				}
+				in.Before = append(in.Before, offset)
+			}
+		}
+	}
+
+	manual, err := q.ListManualReminders(ctx, row.ID)
+	if err != nil {
+		return Input{}, err
+	}
+	for _, m := range manual {
+		in.Manual = append(in.Manual, Manual{ID: m.ID, At: m.RemindAt})
+	}
+	return in, nil
+}
+
+// SyncItem rewrites the upcoming reminders of one item. It runs in the
+// transaction that changed whatever the times depend on.
+//
+// Rows whose time has already come are left alone: they are the ticker's to
+// fire, and removing them here would lose a reminder that was due.
+func SyncItem(ctx context.Context, q *sqlc.Queries, now time.Time, itemID uuid.UUID) error {
+	row, err := q.GetItemByID(ctx, itemID)
+	if db.IsNotFound(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if row.Status != "open" {
+		return q.DeleteItemSchedule(ctx, itemID)
+	}
+	in, err := input(ctx, q, row)
+	if err != nil {
+		return err
+	}
+	if err := q.DeleteFutureSchedule(ctx, sqlc.DeleteFutureScheduleParams{ItemID: itemID, Now: now}); err != nil {
+		return err
+	}
+	for _, p := range Compute(in, now) {
+		params := sqlc.InsertScheduledReminderParams{
+			ID:           uuid.Must(uuid.NewV7()),
+			ItemID:       itemID,
+			UserID:       row.UserID,
+			Kind:         string(p.Kind),
+			FireAt:       p.At,
+			ScheduledFor: p.For,
+		}
+		switch p.Kind {
+		case KindBefore:
+			seconds := int32(p.Offset / time.Second)
+			params.OffsetSeconds = &seconds
+		case KindManual:
+			params.ManualID = &p.ManualID
+		}
+		if err := q.InsertScheduledReminder(ctx, params); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// SyncUser rewrites the upcoming reminders of all open items of a user, after
+// a change to their plans, time zone or quiet hours.
+func SyncUser(ctx context.Context, q *sqlc.Queries, now time.Time, userID uuid.UUID) error {
+	ids, err := q.ListOpenItemIDs(ctx, userID)
+	if err != nil {
+		return err
+	}
+	for _, id := range ids {
+		if err := SyncItem(ctx, q, now, id); err != nil {
+			return err
+		}
+	}
+	return nil
+}

@@ -138,6 +138,17 @@ type ReminderPlan struct {
 	FollowUp      string
 }
 
+type ScheduledReminder struct {
+	ID            uuid.UUID
+	ItemID        uuid.UUID
+	UserID        uuid.UUID
+	Kind          string
+	OffsetSeconds *int32
+	ManualID      *uuid.UUID
+	FireAt        time.Time
+	ScheduledFor  time.Time
+}
+
 type Session struct {
 	ID         uuid.UUID
 	UserID     uuid.UUID

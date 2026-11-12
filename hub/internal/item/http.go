@@ -15,6 +15,7 @@ import (
 	"github.com/rayakame/plsremind/hub/internal/deps"
 	"github.com/rayakame/plsremind/hub/internal/eventlog"
 	"github.com/rayakame/plsremind/hub/internal/httpx"
+	"github.com/rayakame/plsremind/hub/internal/schedule"
 )
 
 func Register(user fiber.Router, d *deps.Deps) {
@@ -81,6 +82,9 @@ func create(d *deps.Deps) fiber.Handler {
 				if err != nil {
 					return err
 				}
+			}
+			if err := schedule.SyncItem(c.Context(), q, now, row.ID); err != nil {
+				return err
 			}
 			created, err = Load(c.Context(), q, userID, row.ID)
 			if err != nil {
@@ -151,6 +155,9 @@ func update(d *deps.Deps) fiber.Handler {
 				Now:              now,
 			})
 			if err != nil {
+				return err
+			}
+			if err := schedule.SyncItem(c.Context(), q, now, id); err != nil {
 				return err
 			}
 			updated, err = Load(c.Context(), q, userID, id)

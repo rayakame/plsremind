@@ -17,6 +17,7 @@ import (
 	"github.com/rayakame/plsremind/hub/internal/eventlog"
 	"github.com/rayakame/plsremind/hub/internal/httpx"
 	"github.com/rayakame/plsremind/hub/internal/item"
+	"github.com/rayakame/plsremind/hub/internal/schedule"
 )
 
 const maxPerItem = 20
@@ -128,6 +129,9 @@ func create(d *deps.Deps) fiber.Handler {
 			if err != nil {
 				return err
 			}
+			if err := schedule.SyncItem(c.Context(), q, now, itemID); err != nil {
+				return err
+			}
 			created = view(reminder)
 			return eventlog.Append(c.Context(), q, now, userID, eventlog.ActorFrom(p), "reminder.created", created)
 		})
@@ -160,6 +164,9 @@ func remove(d *deps.Deps) fiber.Handler {
 			}
 			if n == 0 {
 				return apierr.NotFound()
+			}
+			if err := schedule.SyncItem(c.Context(), q, d.Now(), itemID); err != nil {
+				return err
 			}
 			return eventlog.Append(c.Context(), q, d.Now(), userID, eventlog.ActorFrom(p), "reminder.deleted", eventlog.Deleted{ID: id})
 		})

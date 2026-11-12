@@ -1,13 +1,16 @@
 package plan
 
 import (
+	"context"
 	"net/http"
 	"time"
 
 	"github.com/gofiber/fiber/v3"
+	"github.com/google/uuid"
 
 	"github.com/rayakame/plsremind/hub/internal/apierr"
 	"github.com/rayakame/plsremind/hub/internal/auth"
+	"github.com/rayakame/plsremind/hub/internal/db"
 	"github.com/rayakame/plsremind/hub/internal/db/sqlc"
 	"github.com/rayakame/plsremind/hub/internal/deps"
 	"github.com/rayakame/plsremind/hub/internal/httpx"
@@ -20,11 +23,14 @@ type view struct {
 	IsDefault bool     `json:"is_default"`
 }
 
-func Register(user fiber.Router, d *deps.Deps) {
+// Changed is called in the transaction that changed a user's plan.
+type Changed func(ctx context.Context, q *sqlc.Queries, now time.Time, userID uuid.UUID) error
+
+func Register(user fiber.Router, d *deps.Deps, changed Changed) {
 	plans := user.Group("/reminder-plans")
 	plans.Get("", index(d))
-	plans.Put("/:priority", put(d))
-	plans.Delete("/:priority", reset(d))
+	plans.Put("/:priority", put(d, changed))
+	plans.Delete("/:priority", reset(d, changed))
 }
 
 func index(d *deps.Deps) fiber.Handler {
@@ -62,7 +68,7 @@ func priorityParam(c fiber.Ctx) (string, error) {
 	return priority, nil
 }
 
-func put(d *deps.Deps) fiber.Handler {
+func put(d *deps.Deps, changed Changed) fiber.Handler {
 	return func(c fiber.Ctx) error {
 		priority, err := priorityParam(c)
 		if err != nil {
@@ -92,11 +98,18 @@ func put(d *deps.Deps) fiber.Handler {
 		for _, b := range before {
 			seconds = append(seconds, int32(b/time.Second))
 		}
-		err = d.Q().UpsertReminderPlan(c.Context(), sqlc.UpsertReminderPlanParams{
-			UserID:        auth.Target(c),
-			Priority:      priority,
-			BeforeSeconds: seconds,
-			FollowUp:      in.FollowUp,
+		userID := auth.Target(c)
+		err = db.Tx(c.Context(), d.Pool, func(q *sqlc.Queries) error {
+			err := q.UpsertReminderPlan(c.Context(), sqlc.UpsertReminderPlanParams{
+				UserID:        userID,
+				Priority:      priority,
+				BeforeSeconds: seconds,
+				FollowUp:      in.FollowUp,
+			})
+			if err != nil {
+				return err
+			}
+			return changed(c.Context(), q, d.Now(), userID)
 		})
 		if err != nil {
 			return err
@@ -105,13 +118,19 @@ func put(d *deps.Deps) fiber.Handler {
 	}
 }
 
-func reset(d *deps.Deps) fiber.Handler {
+func reset(d *deps.Deps, changed Changed) fiber.Handler {
 	return func(c fiber.Ctx) error {
 		priority, err := priorityParam(c)
 		if err != nil {
 			return err
 		}
-		err = d.Q().DeleteReminderPlan(c.Context(), sqlc.DeleteReminderPlanParams{UserID: auth.Target(c), Priority: priority})
+		userID := auth.Target(c)
+		err = db.Tx(c.Context(), d.Pool, func(q *sqlc.Queries) error {
+			if err := q.DeleteReminderPlan(c.Context(), sqlc.DeleteReminderPlanParams{UserID: userID, Priority: priority}); err != nil {
+				return err
+			}
+			return changed(c.Context(), q, d.Now(), userID)
+		})
 		if err != nil {
 			return err
 		}
