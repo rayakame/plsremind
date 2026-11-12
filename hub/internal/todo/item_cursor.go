@@ -8,7 +8,7 @@ import (
 	"github.com/rayakame/plsremind/hub/internal/api"
 )
 
-// cursor marks the last item of a page. It records the sort it was made for,
+// itemCursor marks the last item of a page. It records the sort it was made for,
 // because the position means nothing under a different ordering.
 type itemCursor struct {
 	Sort  string     `json:"s"`

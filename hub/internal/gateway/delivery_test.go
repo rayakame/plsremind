@@ -227,7 +227,11 @@ func TestClosedIsNotAnnouncedForWhatWasNeverSent(t *testing.T) {
 
 	// The delivery is held back by quiet hours, so the bot has never heard of it.
 	mia.Do(t, "PATCH", "/users/@me/items/"+item, J{"status": "done"})
-	gw.ExpectQuiet(t)
+	// Closed and new deliveries are announced in order, so the next one tells.
+	mia.Do(t, "POST", "/users/@me/items", J{"title": "now", "due_at": dueIn(e, time.Minute)})
+	e.Clock.Advance(time.Minute)
+	e.Fire(t)
+	require.Equal(t, "now", gw.Expect(t, "delivery.created").Get("data.item.title").String())
 }
 
 func TestSignalArrivingAfterLoginDoesNotRepeatTheDelivery(t *testing.T) {
@@ -243,6 +247,9 @@ func TestSignalArrivingAfterLoginDoesNotRepeatTheDelivery(t *testing.T) {
 	// The hub hears of the new delivery only now, after the login already handed it out.
 	id := uuid.MustParse(d.Get("data.id").String())
 	require.NoError(t, events.SendSignal(context.Background(), e.Deps.Q(), events.Signal{Type: events.SignalDelivery, DeliveryID: &id}))
+	// Deliveries go out in the order of their signals, so the next one tells.
+	next := testkit.DueSoon(t, e, mia)
+	require.Equal(t, next, gw.Expect(t, "delivery.created").Get("data.item.id").String())
 	gw.ExpectQuiet(t)
 
 	gw.Close()
@@ -301,4 +308,56 @@ func TestOtherAccountActivityIsNotAnnouncedToConnections(t *testing.T) {
 	e.GiveIdentity(t, mia.UserID, "discord", "222")
 	require.NoError(t, events.NotifyUser(context.Background(), e.Deps.Q(), events.SignalUser, uuid.MustParse(mia.UserID)))
 	require.JSONEq(t, `["111","222"]`, gw.Expect(t, "user.updated").Get("data.external_ids").Raw)
+}
+
+func TestTwoQuickResumesDoNotRepeatADelivery(t *testing.T) {
+	e := testkit.New(t)
+	e.Deps.RateConn = api.NewLimiter(1000000, time.Minute, e.Clock.Now)
+	bot := e.Connection(t, "discord")
+	mia := testkit.Linked(t, e, "mia", "111")
+	for i := 0; i < 6; i++ {
+		testkit.DueSoon(t, e, mia)
+	}
+	gw := e.Gateway(t, bot.Token, "deliveries")
+	gw.Collect(200 * time.Millisecond)
+	for round := 0; round < 15; round++ {
+		e.ResumeGateway(t, bot.Token, gw.SessionID, gw.LastSeq)
+		time.Sleep(time.Duration(rand.Intn(10000)) * time.Microsecond)
+		second := e.ResumeGateway(t, bot.Token, gw.SessionID, gw.LastSeq)
+		seen := map[string]int{}
+		for len(seen) < 6 {
+			f := second.NextEvent(t)
+			if f.T == "delivery.created" {
+				seen[f.Get("data.id").String()]++
+			}
+		}
+		for _, f := range second.Collect(200 * time.Millisecond) {
+			if f.T == "delivery.created" {
+				seen[f.Get("data.id").String()]++
+			}
+		}
+		for id, times := range seen {
+			require.Equal(t, 1, times, "round %d: delivery %s arrived %d times on one connection", round, id, times)
+		}
+		gw = second
+	}
+}
+
+func TestDetachedSessionDoesNotSwallowWhatTheHubMissed(t *testing.T) {
+	for round := 0; round < 6; round++ {
+		e := testkit.New(t)
+		bot := e.Connection(t, "discord")
+		mia := testkit.Linked(t, e, "mia", "111")
+		// The adapter reconnected with Identify, so its old session lingers.
+		old := e.Gateway(t, bot.Token, "deliveries")
+		old.Close()
+		time.Sleep(100 * time.Millisecond)
+		first, second := e.Gateway(t, bot.Token, "deliveries"), e.Gateway(t, bot.Token, "deliveries")
+
+		e.KillListener(t)
+		testkit.DueSoon(t, e, mia)
+		// Every connected session of the channel gets it, as with any delivery.
+		require.Equal(t, int64(1), first.Expect(t, "delivery.created").Get("data.attempt").Int(), "round %d", round)
+		require.Equal(t, int64(1), second.Expect(t, "delivery.created").Get("data.attempt").Int(), "round %d", round)
+	}
 }

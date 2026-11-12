@@ -34,7 +34,7 @@ func LocationOf(u sqlc.User) *time.Location {
 	return loc
 }
 
-// input gathers everything that decides an item's reminder times.
+// scheduleInput gathers everything that decides an item's reminder times.
 func scheduleInput(ctx context.Context, q *sqlc.Queries, row sqlc.Item) (ScheduleInput, error) {
 	user, err := q.GetUser(ctx, row.UserID)
 	if err != nil {

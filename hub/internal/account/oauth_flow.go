@@ -42,7 +42,7 @@ func setStateCookie(c fiber.Ctx, d *core.Deps, value string, expires time.Time) 
 	})
 }
 
-// fail sends the browser back to the dashboard with an error code it can show.
+// oauthFail sends the browser back to the dashboard with an error code it can show.
 func oauthFail(c fiber.Ctx, d *core.Deps, code string) error {
 	return c.Redirect().Status(http.StatusFound).To(d.Cfg.PublicURL + "/?auth_error=" + url.QueryEscape(code))
 }
@@ -157,7 +157,7 @@ func oauthCallback(d *core.Deps, svc *OAuth) fiber.Handler {
 	}
 }
 
-// finish applies a verified profile: it logs the user in, creates their account or links the identity.
+// oauthFinish applies a verified profile: it logs the user in, creates their account or links the identity.
 func oauthFinish(c fiber.Ctx, d *core.Deps, used sqlc.LoginProvider, stored sqlc.OauthState, profile OAuthProfile) error {
 	token := d.Box().Seal([]byte(profile.Token))
 	return store.Tx(c.Context(), d.Pool, func(q *sqlc.Queries) error {

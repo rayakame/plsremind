@@ -251,18 +251,18 @@ func (s *Session) syncUser(ctx context.Context, userID uuid.UUID) error {
 			return err
 		}
 	}
-	var items []todo.Item
+	// Items are read and sent a chunk at a time, still inside the snapshot, so a
+	// user with very many of them does not have to fit into memory at once.
+	size := s.hub.d.Gateway.SyncChunk
+	count := 1
 	if s.wants("items") {
-		if items, err = todo.OpenItems(ctx, q, userID); err != nil {
+		open, err := q.CountOpenItems(ctx, userID)
+		if err != nil {
 			return err
 		}
+		count = max(1, (int(open)+size-1)/size)
 	}
-	if err := tx.Commit(ctx); err != nil {
-		return err
-	}
-
-	size := s.hub.d.Gateway.SyncChunk
-	count := max(1, (len(items)+size-1)/size)
+	var after uuid.UUID
 	for index := 0; index < count; index++ {
 		part := userSync{UserID: userID}
 		if index == 0 {
@@ -270,13 +270,23 @@ func (s *Session) syncUser(ctx context.Context, userID uuid.UUID) error {
 		}
 		part.Chunk = chunk{Index: index, Count: count}
 		if s.wants("items") {
-			slice := items[min(index*size, len(items)):min((index+1)*size, len(items))]
-			if slice == nil {
-				slice = []todo.Item{}
+			rows, err := q.ListOpenItemsAfter(ctx, sqlc.ListOpenItemsAfterParams{UserID: userID, After: after, PageSize: int32(size)})
+			if err != nil {
+				return err
 			}
-			part.Items = slice
+			items, err := todo.ViewItems(ctx, q, rows)
+			if err != nil {
+				return err
+			}
+			if len(rows) > 0 {
+				after = rows[len(rows)-1].ID
+			}
+			part.Items = items
 		}
 		s.emit("user.sync", true, part)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return err
 	}
 	s.cursors[userID] = seq
 	s.hub.cover(s, userID)
@@ -351,6 +361,10 @@ func (s *Session) dispatch(ctx context.Context, q *sqlc.Queries, ev sqlc.Event) 
 		// Rendered for this session rather than taken from the log, because a
 		// connection sees less of a profile than the user does.
 		user, err := q.GetUser(ctx, ev.UserID)
+		if store.IsNotFound(err) {
+			// Deleted since. The session hears of that separately.
+			return nil
+		}
 		if err != nil {
 			return err
 		}

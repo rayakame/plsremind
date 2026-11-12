@@ -63,8 +63,38 @@ func (h *Hub) listenOnce(ctx context.Context) error {
 // new events, changed grants, withdrawn access and deliveries nobody was told about.
 func (h *Hub) everything() {
 	h.each(func(*Session) bool { return true }, func(s *Session) {
-		s.box.post(func(m *mailbox) { m.all, m.validate, m.unsent, m.reconcile = true, true, true, true })
+		s.box.post(func(m *mailbox) { m.all, m.validate, m.reconcile = true, true, true })
 	})
+	h.nudge()
+}
+
+// nudge makes the sender look for deliveries that nobody was told about.
+func (h *Hub) nudge() {
+	select {
+	case h.sweep <- struct{}{}:
+	default:
+	}
+}
+
+// sendUnsent hands out what was never sent on the channels that are connected,
+// the same way a new delivery goes out.
+func (h *Hub) sendUnsent(ctx context.Context) error {
+	channels := map[uuid.UUID]struct{}{}
+	h.each(func(sess *Session) bool { return sess.wants("deliveries") && sess.attached() }, func(sess *Session) {
+		channels[sess.principal.CredentialID] = struct{}{}
+	})
+	for channel := range channels {
+		ids, err := h.d.Q().ListUnsentDeliveries(ctx, channel)
+		if err != nil {
+			return err
+		}
+		for _, id := range ids {
+			if err := h.deliverOne(ctx, id); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 func (h *Hub) handle(s events.Signal) {
@@ -164,12 +194,10 @@ func (h *Hub) enqueue(o outgoing) {
 	select {
 	case h.outbox <- o:
 	default:
-		// The queue is full. Nothing is lost for good: every session asks the
-		// database for what it was never sent.
-		slog.Warn("gateway delivery queue is full, sessions will ask for what they missed")
-		h.each(func(sess *Session) bool { return sess.wants("deliveries") }, func(sess *Session) {
-			sess.box.post(func(m *mailbox) { m.unsent = true })
-		})
+		// The queue is full. Nothing is lost for good: the sender asks the
+		// database for what was never sent.
+		slog.Warn("gateway delivery queue is full, looking up what was missed")
+		h.nudge()
 	}
 }
 
@@ -179,6 +207,10 @@ func (h *Hub) deliver(ctx context.Context) {
 		select {
 		case <-ctx.Done():
 			return
+		case <-h.sweep:
+			if err := h.sendUnsent(ctx); err != nil && ctx.Err() == nil {
+				slog.Error("gateway could not look up unsent deliveries", "err", err)
+			}
 		case o := <-h.outbox:
 			if o.closed {
 				data := envelope{UserID: o.userID, Data: map[string]any{"id": o.id, "status": o.status}}
@@ -234,7 +266,9 @@ func (h *Hub) deliverOne(ctx context.Context, id uuid.UUID) error {
 	}
 	data := envelope{UserID: view.User.ID, Data: view}
 	for _, t := range targets {
-		t.sess.box.post(func(m *mailbox) { m.frames = append(m.frames, loose{"delivery.created", data, t.epoch}) })
+		t.sess.box.post(func(m *mailbox) {
+			m.frames = append(m.frames, loose{event: "delivery.created", data: data, delivery: id, epoch: t.epoch})
+		})
 	}
 	return nil
 }

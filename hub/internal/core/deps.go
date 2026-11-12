@@ -50,7 +50,7 @@ func (d *Deps) Q() *sqlc.Queries {
 	return sqlc.New(d.Pool)
 }
 
-// Gateway holds the limits and timers of the WebSocket gateway.
+// GatewayConfig holds the limits and timers of the WebSocket gateway.
 type GatewayConfig struct {
 	HeartbeatInterval time.Duration
 	IdentifyTimeout   time.Duration

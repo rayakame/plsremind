@@ -20,7 +20,7 @@ func getItem(ctx context.Context, q *sqlc.Queries, userID, id uuid.UUID) (sqlc.I
 	return row, err
 }
 
-// Lock returns one of the user's items and holds its row until the transaction
+// LockItem returns one of the user's items and holds its row until the transaction
 // ends, so that changes to its subitems and reminders happen one at a time.
 func LockItem(ctx context.Context, q *sqlc.Queries, userID, id uuid.UUID) (sqlc.Item, error) {
 	row, err := q.LockItem(ctx, sqlc.LockItemParams{ID: id, UserID: userID})
@@ -74,7 +74,7 @@ func ViewItems(ctx context.Context, q *sqlc.Queries, rows []sqlc.Item) ([]Item, 
 	return items, nil
 }
 
-// Load returns one of the user's items, or not_found.
+// LoadItem returns one of the user's items, or not_found.
 func LoadItem(ctx context.Context, q *sqlc.Queries, userID, id uuid.UUID) (Item, error) {
 	row, err := getItem(ctx, q, userID, id)
 	if err != nil {
@@ -87,7 +87,7 @@ func LoadItem(ctx context.Context, q *sqlc.Queries, userID, id uuid.UUID) (Item,
 	return items[0], nil
 }
 
-// Touch marks the item as changed, for edits to things that hang off it.
+// TouchItem marks the item as changed, for edits to things that hang off it.
 func TouchItem(ctx context.Context, q *sqlc.Queries, now time.Time, itemID uuid.UUID) error {
 	return q.TouchItem(ctx, sqlc.TouchItemParams{ID: itemID, Now: now})
 }
@@ -102,19 +102,10 @@ func MoveItems(ctx context.Context, q *sqlc.Queries, now time.Time, from, to uui
 	return ViewItems(ctx, q, rows)
 }
 
-// OpenAllDay returns the user's open all-day items. Their due time depends on
+// OpenAllDayItems returns the user's open all-day items. Their due time depends on
 // the user's time zone, so they change when the zone does.
 func OpenAllDayItems(ctx context.Context, q *sqlc.Queries, userID uuid.UUID) ([]Item, error) {
 	rows, err := q.ListOpenAllDayItems(ctx, userID)
-	if err != nil {
-		return nil, err
-	}
-	return ViewItems(ctx, q, rows)
-}
-
-// Open returns all open items of a user with their subitems and reminders, oldest first.
-func OpenItems(ctx context.Context, q *sqlc.Queries, userID uuid.UUID) ([]Item, error) {
-	rows, err := q.ListOpenItems(ctx, userID)
 	if err != nil {
 		return nil, err
 	}

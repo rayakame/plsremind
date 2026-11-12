@@ -55,7 +55,7 @@ var fiberCodes = map[int]string{
 	http.StatusRequestEntityTooLarge: "payload_too_large",
 }
 
-// Handler renders every error in the API's error format.
+// ErrorHandler renders every error in the API's error format.
 func ErrorHandler(c fiber.Ctx, err error) error {
 	var apiErr *Error
 	var fiberErr *fiber.Error

@@ -30,7 +30,7 @@ func Register(user fiber.Router, d *core.Deps) {
 	plans.Delete("/:priority", resetPlan(d))
 }
 
-// views returns the user's three plans in the order low, normal, high.
+// planViews returns the user's three plans in the order low, normal, high.
 func planViews(ctx context.Context, q *sqlc.Queries, userID uuid.UUID) ([]planView, error) {
 	rows, err := q.ListReminderPlans(ctx, userID)
 	if err != nil {
@@ -56,7 +56,7 @@ func planViews(ctx context.Context, q *sqlc.Queries, userID uuid.UUID) ([]planVi
 	return plans, nil
 }
 
-// Views returns the user's plans as the API shows them.
+// PlanViews returns the user's plans as the API shows them.
 func PlanViews(ctx context.Context, q *sqlc.Queries, userID uuid.UUID) (any, error) {
 	return planViews(ctx, q, userID)
 }

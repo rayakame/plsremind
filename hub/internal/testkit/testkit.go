@@ -162,7 +162,7 @@ func NewWith(t *testing.T, configure func(d *Deps)) *Env {
 	d.Gateway = core.GatewayConfig{
 		HeartbeatInterval: 400 * time.Millisecond,
 		IdentifyTimeout:   300 * time.Millisecond,
-		SessionTTL:        500 * time.Millisecond,
+		SessionTTL:        5 * time.Second,
 		WriteTimeout:      2 * time.Second,
 		// Test clients send a heartbeat every 100 ms, far more than a real client may.
 		// That leaves half a second of slack before a slow machine costs them the connection.

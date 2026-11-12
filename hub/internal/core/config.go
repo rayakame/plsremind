@@ -18,7 +18,7 @@ type Config struct {
 	SecretKey   [32]byte
 }
 
-// Load reads the configuration from PLSREMIND_* environment variables.
+// LoadConfig reads the configuration from PLSREMIND_* environment variables.
 func LoadConfig() (Config, error) {
 	cfg := Config{
 		DatabaseURL: os.Getenv("PLSREMIND_DATABASE_URL"),

@@ -192,10 +192,9 @@ func ReleaseHeldFor(ctx context.Context, q *sqlc.Queries, now time.Time, userID 
 }
 
 // Pending hands a channel everything that is waiting for it. Each delivery
-// handed out counts as one attempt. With onlyUnsent it is limited to
-// deliveries that were never handed out. A claim, if given, is asked about
-// each delivery before it is handed out and can turn it down.
-func Pending(ctx context.Context, d *core.Deps, ch Channel, onlyUnsent bool, claim func(uuid.UUID) bool) ([]View, error) {
+// handed out counts as one attempt. A claim, if given, is asked about each
+// delivery before it is handed out and can turn it down.
+func Pending(ctx context.Context, d *core.Deps, ch Channel, claim func(uuid.UUID) bool) ([]View, error) {
 	var views []View
 	err := store.Tx(ctx, d.Pool, func(q *sqlc.Queries) error {
 		var rows []pendingRow
@@ -206,7 +205,7 @@ func Pending(ctx context.Context, d *core.Deps, ch Channel, onlyUnsent bool, cla
 				return err
 			}
 			provider = conn.Provider
-			found, err := q.ListPendingConnectionDeliveries(ctx, sqlc.ListPendingConnectionDeliveriesParams{ConnectionID: ch.ConnectionID, OnlyUnsent: onlyUnsent})
+			found, err := q.ListPendingConnectionDeliveries(ctx, ch.ConnectionID)
 			if err != nil {
 				return err
 			}
@@ -214,7 +213,7 @@ func Pending(ctx context.Context, d *core.Deps, ch Channel, onlyUnsent bool, cla
 				rows = append(rows, pendingRow{f.Delivery, f.ReminderLog})
 			}
 		} else {
-			found, err := q.ListPendingTokenDeliveries(ctx, sqlc.ListPendingTokenDeliveriesParams{TokenID: ch.TokenID, OnlyUnsent: onlyUnsent})
+			found, err := q.ListPendingTokenDeliveries(ctx, ch.TokenID)
 			if err != nil {
 				return err
 			}

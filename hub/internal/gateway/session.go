@@ -135,10 +135,31 @@ func (s *Session) unclaim(id uuid.UUID, epoch int) {
 	}
 }
 
-func (s *Session) inEpoch(epoch int) bool {
+// deliver sends a delivery that was made for the given epoch. If the client
+// has resumed since, or is gone, the frame is dropped: the delivery is still
+// open and is handed out with the next login.
+func (s *Session) deliver(epoch int, id uuid.UUID, data any) {
+	s.sendMu.Lock()
+	defer s.sendMu.Unlock()
+
+	s.mu.Lock()
+	c := s.conn
+	current := s.epoch == epoch
+	if current && c == nil {
+		delete(s.handed, id)
+	}
+	s.mu.Unlock()
+	if !current || c == nil {
+		return
+	}
+	event := "delivery.created"
+	c.send(encode(OpDispatch, data, nil, &event))
+}
+
+func (s *Session) currentEpoch() int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.epoch == epoch
+	return s.epoch
 }
 
 // attached reports whether a client is currently connected.

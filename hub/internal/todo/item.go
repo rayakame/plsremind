@@ -82,7 +82,7 @@ func CleanSubitemTitle(title string) (string, bool) {
 	return title, n >= 1 && n <= maxSubitemTitleLen
 }
 
-// view builds the API item. allDayDue is the due instant of an all-day item as the
+// viewItem builds the API item. allDayDue is the due instant of an all-day item as the
 // database computed it; the database is the only place that does this calculation.
 func viewItem(row sqlc.Item, allDayDue *time.Time) Item {
 	due := row.DueAt

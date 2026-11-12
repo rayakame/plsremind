@@ -2080,7 +2080,7 @@ components:
           description: How many times this delivery has been handed out, starting at 1.
         late:
           type: boolean
-          description: True when the reminder goes out more than a minute after it should have. A reminder that quiet hours moved to their end is on time.
+          description: True when the reminder goes out more than a minute after it should have. A reminder that quiet hours moved to their end is on time; one that had fired before they began and waited is late.
         reminder:
           type: object
           required: [id, kind, scheduled_for]

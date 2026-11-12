@@ -40,7 +40,7 @@ type Signal struct {
 	Status  string     `json:"status,omitempty"`
 }
 
-// Send queues the signal in q's transaction.
+// SendSignal queues the signal in q's transaction.
 func SendSignal(ctx context.Context, q *sqlc.Queries, s Signal) error {
 	payload, err := json.Marshal(s)
 	if err != nil {

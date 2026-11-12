@@ -22,8 +22,6 @@ type mailbox struct {
 	all      bool
 	// resumed: the client came back; RESUMED and what waits for it are due.
 	resumed bool
-	// unsent: deliveries may have been created without the session hearing of it.
-	unsent bool
 	// reconcile: grants may have changed without the session hearing of it.
 	reconcile bool
 	frames    []loose
@@ -34,8 +32,10 @@ type mailbox struct {
 type loose struct {
 	event string
 	data  any
-	// epoch, if set, is the session's epoch the frame was made for.
-	epoch int
+	// delivery and epoch are set for a new delivery: which one, and the
+	// session's epoch it was made for.
+	delivery uuid.UUID
+	epoch    int
 }
 
 func newMailbox() *mailbox {
@@ -57,7 +57,6 @@ type work struct {
 	validate  bool
 	all       bool
 	resumed   bool
-	unsent    bool
 	reconcile bool
 	frames    []loose
 	dirty     []uuid.UUID
@@ -69,7 +68,7 @@ func (m *mailbox) take() work {
 	defer m.mu.Unlock()
 	w := work{
 		start: m.start, all: m.all, validate: m.validate, frames: m.frames,
-		resumed: m.resumed, unsent: m.unsent, reconcile: m.reconcile,
+		resumed: m.resumed, reconcile: m.reconcile,
 	}
 	for id := range m.dirty {
 		w.dirty = append(w.dirty, id)
@@ -78,7 +77,7 @@ func (m *mailbox) take() work {
 		w.recheck = append(w.recheck, id)
 	}
 	m.start, m.all, m.validate, m.frames = false, false, false, nil
-	m.resumed, m.unsent, m.reconcile = false, false, false
+	m.resumed, m.reconcile = false, false
 	m.dirty, m.recheck = map[uuid.UUID]struct{}{}, map[uuid.UUID]struct{}{}
 	return w
 }
@@ -120,6 +119,10 @@ func (s *Session) do(ctx context.Context, w work) error {
 			if err := s.syncUser(ctx, userID); err != nil {
 				return err
 			}
+			// READY named the user, so the client waits for word about them.
+			if _, following := s.cursors[userID]; !following {
+				s.emit("user.gone", true, map[string]uuid.UUID{"user_id": userID})
+			}
 		}
 		s.initial = nil
 	}
@@ -147,41 +150,43 @@ func (s *Session) do(ctx context.Context, w work) error {
 		s.emit(EventResumed, true, struct{}{})
 	}
 	for _, f := range w.frames {
-		if f.epoch != 0 && !s.inEpoch(f.epoch) {
+		if f.epoch != 0 {
+			s.deliver(f.epoch, f.delivery, f.data)
 			continue
 		}
 		s.emit(f.event, false, f.data)
 	}
-	switch {
-	case w.start || w.resumed:
-		return s.sendPending(ctx, false)
-	case w.unsent:
-		return s.sendPending(ctx, true)
+	if w.start || w.resumed {
+		return s.sendPending(ctx)
 	}
 	return nil
 }
 
 // sendPending hands the session's channel everything that is still waiting for
 // it. This is how a reminder reaches an adapter that was away when it fired.
-// With onlyUnsent it is limited to deliveries that were never handed out, which
-// makes up for a signal that got lost without repeating anything.
-func (s *Session) sendPending(ctx context.Context, onlyUnsent bool) error {
-	if !s.wants("deliveries") {
+func (s *Session) sendPending(ctx context.Context) error {
+	if !s.wants("deliveries") || !s.attached() {
 		return nil
 	}
+	epoch := s.currentEpoch()
 	ch, ok, err := delivery.ChannelOf(ctx, s.hub.d.Q(), s.principal)
 	if err != nil || !ok {
 		return err
 	}
-	views, err := delivery.Pending(ctx, s.hub.d, ch, onlyUnsent, func(id uuid.UUID) bool {
-		_, ok := s.claim(id)
+	views, err := delivery.Pending(ctx, s.hub.d, ch, func(id uuid.UUID) bool {
+		claimed, ok := s.claim(id)
+		if ok && claimed != epoch {
+			// The client resumed meanwhile; that login hands it out.
+			s.unclaim(id, claimed)
+			return false
+		}
 		return ok
 	})
 	if err != nil {
 		return err
 	}
 	for _, view := range views {
-		s.emit("delivery.created", false, envelope{UserID: view.User.ID, Data: view})
+		s.deliver(epoch, view.ID, envelope{UserID: view.User.ID, Data: view})
 	}
 	return nil
 }

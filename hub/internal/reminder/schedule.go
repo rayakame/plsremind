@@ -57,7 +57,7 @@ var followUpEvery = map[string]time.Duration{
 	"twice_daily": 12 * time.Hour,
 }
 
-// rank orders reminders that land on the same moment: the one that matters most first.
+// kindRank orders reminders that land on the same moment: the one that matters most first.
 func kindRank(k Kind) int {
 	return slices.Index([]Kind{KindDue, KindFollowUp, KindBefore}, k)
 }
@@ -67,7 +67,7 @@ func Compute(in ScheduleInput, now time.Time) []Planned {
 	return slices.DeleteFunc(ComputeAll(in), func(p Planned) bool { return !p.At.After(now) })
 }
 
-// All returns every reminder an item has, past ones included, earliest first.
+// ComputeAll returns every reminder an item has, past ones included, earliest first.
 func ComputeAll(in ScheduleInput) []Planned {
 	if !in.Open {
 		return nil

@@ -260,17 +260,19 @@ func patchProfile(d *core.Deps) fiber.Handler {
 					}
 				}
 			}
-			if requieted {
-				// What the old quiet hours were holding back is looked at again.
-				if err := delivery.ReleaseHeldFor(c.Context(), q, now, user.ID); err != nil {
-					return err
-				}
-			}
 			if !rezoned && !requieted {
 				return nil
 			}
 			// All-day deadlines and quiet hours are reckoned in the user's own time.
-			return reminder.SyncUser(c.Context(), q, now, user.ID)
+			// Schedule first, deliveries second: the order the ticker takes them in.
+			if err := reminder.SyncUser(c.Context(), q, now, user.ID); err != nil {
+				return err
+			}
+			if !requieted {
+				return nil
+			}
+			// What the old quiet hours were holding back is looked at again.
+			return delivery.ReleaseHeldFor(c.Context(), q, now, user.ID)
 		})
 		if err != nil {
 			return err
@@ -369,6 +371,9 @@ func setPassword(d *core.Deps) fiber.Handler {
 			// logged out. That includes personal tokens: someone with a stolen session
 			// could have made one to keep their access.
 			p, _ := auth.From(c)
+			if err := delivery.CancelForUserTokens(c.Context(), q, d.Now(), userID); err != nil {
+				return err
+			}
 			if err := q.DeleteUserPersonalTokens(c.Context(), userID); err != nil {
 				return err
 			}

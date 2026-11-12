@@ -12,6 +12,7 @@ import (
 	"github.com/rayakame/plsremind/hub/internal/api"
 	"github.com/rayakame/plsremind/hub/internal/auth"
 	"github.com/rayakame/plsremind/hub/internal/core"
+	"github.com/rayakame/plsremind/hub/internal/delivery"
 	"github.com/rayakame/plsremind/hub/internal/events"
 	"github.com/rayakame/plsremind/hub/internal/store"
 	"github.com/rayakame/plsremind/hub/internal/store/sqlc"
@@ -269,6 +270,9 @@ func resetPassword(d *core.Deps) fiber.Handler {
 				return err
 			}
 			if err := q.UpdatePasswordHash(c.Context(), sqlc.UpdatePasswordHashParams{ID: identity.ID, PasswordHash: &hash}); err != nil {
+				return err
+			}
+			if err := delivery.CancelForUserTokens(c.Context(), q, d.Now(), id); err != nil {
 				return err
 			}
 			if err := q.DeleteUserPersonalTokens(c.Context(), id); err != nil {

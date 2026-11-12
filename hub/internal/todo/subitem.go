@@ -26,7 +26,7 @@ func subitemTitleError() error {
 	return api.Field("title", "Must be 1 to 200 characters.")
 }
 
-// change runs fn on the locked item and records the resulting event.
+// changeSubitems runs fn on the locked item and records the resulting event.
 func changeSubitems(c fiber.Ctx, d *core.Deps, fn func(q *sqlc.Queries, itemID uuid.UUID, log func(typ string, payload any) error) error) error {
 	itemID, err := api.ParamUUID(c, "id")
 	if err != nil {

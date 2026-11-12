@@ -136,7 +136,9 @@ REST only to change things.
 ```
 
 A connection receives this when a user switches it off, is disabled or is deleted. Drop
-everything you hold about the user. When a user comes into reach later, for example by
+everything you hold about the user. It also stands in for the `user.sync` of a user that
+`READY` named but who went out of reach before their state was sent. A `delivery.closed`
+for a reminder you were sent earlier can still follow it. When a user comes into reach later, for example by
 linking their account, the connection receives a `user.sync` for them. These two are the
 counterparts of Discord's `GUILD_DELETE` and `GUILD_CREATE`.
 
@@ -231,8 +233,9 @@ Until a delivery is confirmed it is sent again **every time you identify or resu
 a growing `attempt`. It is not repeated while you stay connected. After 24 hours it expires.
 
 - `late` is true when the reminder reaches you more than a minute after it should have
-  gone out, because you or the hub were away. A reminder that quiet hours moved and that
-  then left on time is not late. `reminder.scheduled_for` is the moment it was meant for.
+  gone out: you or the hub were away, or it had already fired when quiet hours began and
+  waited for them to end. A reminder that quiet hours moved and that then left on time
+  is not late. `reminder.scheduled_for` is the moment it was meant for.
 - If you were away while several reminders for the same item came due, you only get the
   newest.
 - While a user is in their quiet hours, `before` and `follow_up` deliveries are held back

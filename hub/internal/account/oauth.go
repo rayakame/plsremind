@@ -17,7 +17,7 @@ import (
 	"github.com/rayakame/plsremind/hub/internal/store/sqlc"
 )
 
-// Profile is what the hub keeps of an account at a provider.
+// OAuthProfile is what the hub keeps of an account at a provider.
 type OAuthProfile struct {
 	ExternalID  string
 	DisplayName string
@@ -32,7 +32,7 @@ type Provider interface {
 	Revoke(ctx context.Context, token string) error
 }
 
-// Configured reports whether the provider has everything it needs to run a flow.
+// ProviderConfigured reports whether the provider has everything it needs to run a flow.
 func ProviderConfigured(row sqlc.LoginProvider) bool {
 	switch row.Type {
 	case "password":
@@ -87,7 +87,7 @@ func oauthEndpoints(d *core.Deps, key string, defaults core.OAuthEndpoints) core
 	return defaults
 }
 
-// client is an OAuth2 authorization code client with PKCE. The profile and
+// oauthClient is an OAuth2 authorization code client with PKCE. The profile and
 // revoke functions hold what differs between providers.
 type oauthClient struct {
 	cfg     oauth2.Config

@@ -161,6 +161,55 @@ func (q *Queries) CancelTokenDeliveries(ctx context.Context, arg CancelTokenDeli
 	return items, nil
 }
 
+const cancelUserTokenDeliveries = `-- name: CancelUserTokenDeliveries :many
+UPDATE deliveries SET status = 'cancelled', closed_at = $1
+WHERE id IN (
+    SELECT d.id FROM deliveries d
+    WHERE d.user_id = $2 AND d.token_id IS NOT NULL AND d.status = 'pending'
+    ORDER BY d.id
+    FOR UPDATE)
+RETURNING id, reminder_id, user_id, item_id, connection_id, token_id, status, reason, attempts, held_until, created_at, expires_at, closed_at
+`
+
+type CancelUserTokenDeliveriesParams struct {
+	Now    *time.Time
+	UserID uuid.UUID
+}
+
+func (q *Queries) CancelUserTokenDeliveries(ctx context.Context, arg CancelUserTokenDeliveriesParams) ([]Delivery, error) {
+	rows, err := q.db.Query(ctx, cancelUserTokenDeliveries, arg.Now, arg.UserID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Delivery
+	for rows.Next() {
+		var i Delivery
+		if err := rows.Scan(
+			&i.ID,
+			&i.ReminderID,
+			&i.UserID,
+			&i.ItemID,
+			&i.ConnectionID,
+			&i.TokenID,
+			&i.Status,
+			&i.Reason,
+			&i.Attempts,
+			&i.HeldUntil,
+			&i.CreatedAt,
+			&i.ExpiresAt,
+			&i.ClosedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const closeDelivery = `-- name: CloseDelivery :one
 UPDATE deliveries SET status = $1, reason = $2, closed_at = $3
 WHERE id = $4 AND status = 'pending'
@@ -500,23 +549,17 @@ SELECT d.id, d.reminder_id, d.user_id, d.item_id, d.connection_id, d.token_id, d
 FROM deliveries d
 JOIN reminder_log r ON r.id = d.reminder_id
 WHERE d.connection_id = $1 AND d.status = 'pending'
-  AND (NOT $2::boolean OR d.attempts = 0)
 ORDER BY d.id
 FOR UPDATE OF d
 `
-
-type ListPendingConnectionDeliveriesParams struct {
-	ConnectionID *uuid.UUID
-	OnlyUnsent   bool
-}
 
 type ListPendingConnectionDeliveriesRow struct {
 	Delivery    Delivery
 	ReminderLog ReminderLog
 }
 
-func (q *Queries) ListPendingConnectionDeliveries(ctx context.Context, arg ListPendingConnectionDeliveriesParams) ([]ListPendingConnectionDeliveriesRow, error) {
-	rows, err := q.db.Query(ctx, listPendingConnectionDeliveries, arg.ConnectionID, arg.OnlyUnsent)
+func (q *Queries) ListPendingConnectionDeliveries(ctx context.Context, connectionID *uuid.UUID) ([]ListPendingConnectionDeliveriesRow, error) {
+	rows, err := q.db.Query(ctx, listPendingConnectionDeliveries, connectionID)
 	if err != nil {
 		return nil, err
 	}
@@ -563,23 +606,17 @@ SELECT d.id, d.reminder_id, d.user_id, d.item_id, d.connection_id, d.token_id, d
 FROM deliveries d
 JOIN reminder_log r ON r.id = d.reminder_id
 WHERE d.token_id = $1 AND d.status = 'pending'
-  AND (NOT $2::boolean OR d.attempts = 0)
 ORDER BY d.id
 FOR UPDATE OF d
 `
-
-type ListPendingTokenDeliveriesParams struct {
-	TokenID    *uuid.UUID
-	OnlyUnsent bool
-}
 
 type ListPendingTokenDeliveriesRow struct {
 	Delivery    Delivery
 	ReminderLog ReminderLog
 }
 
-func (q *Queries) ListPendingTokenDeliveries(ctx context.Context, arg ListPendingTokenDeliveriesParams) ([]ListPendingTokenDeliveriesRow, error) {
-	rows, err := q.db.Query(ctx, listPendingTokenDeliveries, arg.TokenID, arg.OnlyUnsent)
+func (q *Queries) ListPendingTokenDeliveries(ctx context.Context, tokenID *uuid.UUID) ([]ListPendingTokenDeliveriesRow, error) {
+	rows, err := q.db.Query(ctx, listPendingTokenDeliveries, tokenID)
 	if err != nil {
 		return nil, err
 	}
@@ -714,6 +751,33 @@ ORDER BY t.id
 
 func (q *Queries) ListReminderTokens(ctx context.Context, userID uuid.UUID) ([]uuid.UUID, error) {
 	rows, err := q.db.Query(ctx, listReminderTokens, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []uuid.UUID
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listUnsentDeliveries = `-- name: ListUnsentDeliveries :many
+SELECT id FROM deliveries
+WHERE status = 'pending' AND attempts = 0 AND held_until IS NULL
+  AND (connection_id = $1::uuid OR token_id = $1::uuid)
+ORDER BY id
+`
+
+func (q *Queries) ListUnsentDeliveries(ctx context.Context, channel uuid.UUID) ([]uuid.UUID, error) {
+	rows, err := q.db.Query(ctx, listUnsentDeliveries, channel)
 	if err != nil {
 		return nil, err
 	}

@@ -105,5 +105,10 @@ WHERE i.id = ANY(@item_ids::uuid[]) AND i.due_date IS NOT NULL;
 -- name: ListOpenAllDayItems :many
 SELECT * FROM items WHERE user_id = @user_id AND status = 'open' AND due_date IS NOT NULL ORDER BY id;
 
--- name: ListOpenItems :many
-SELECT * FROM items WHERE user_id = @user_id AND status = 'open' ORDER BY id;
+-- name: CountOpenItems :one
+SELECT count(*) FROM items WHERE user_id = @user_id AND status = 'open';
+
+-- name: ListOpenItemsAfter :many
+SELECT * FROM items WHERE user_id = @user_id AND status = 'open' AND id > @after
+ORDER BY id
+LIMIT @page_size;

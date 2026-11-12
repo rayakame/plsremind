@@ -106,7 +106,6 @@ SELECT sqlc.embed(d), sqlc.embed(r)
 FROM deliveries d
 JOIN reminder_log r ON r.id = d.reminder_id
 WHERE d.connection_id = @connection_id AND d.status = 'pending'
-  AND (NOT @only_unsent::boolean OR d.attempts = 0)
 ORDER BY d.id
 FOR UPDATE OF d;
 
@@ -115,9 +114,23 @@ SELECT sqlc.embed(d), sqlc.embed(r)
 FROM deliveries d
 JOIN reminder_log r ON r.id = d.reminder_id
 WHERE d.token_id = @token_id AND d.status = 'pending'
-  AND (NOT @only_unsent::boolean OR d.attempts = 0)
 ORDER BY d.id
 FOR UPDATE OF d;
+
+-- name: ListUnsentDeliveries :many
+SELECT id FROM deliveries
+WHERE status = 'pending' AND attempts = 0 AND held_until IS NULL
+  AND (connection_id = @channel::uuid OR token_id = @channel::uuid)
+ORDER BY id;
+
+-- name: CancelUserTokenDeliveries :many
+UPDATE deliveries SET status = 'cancelled', closed_at = @now
+WHERE id IN (
+    SELECT d.id FROM deliveries d
+    WHERE d.user_id = @user_id AND d.token_id IS NOT NULL AND d.status = 'pending'
+    ORDER BY d.id
+    FOR UPDATE)
+RETURNING *;
 
 -- name: GetPendingDelivery :one
 SELECT sqlc.embed(d), sqlc.embed(r)

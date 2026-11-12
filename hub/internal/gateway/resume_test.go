@@ -66,14 +66,13 @@ func TestResumeTakesOverFromALingeringConnection(t *testing.T) {
 }
 
 func TestResumeAfterTTLIsInvalid(t *testing.T) {
-	e := testkit.New(t)
+	e := testkit.NewWith(t, func(d *testkit.Deps) { d.Gateway.SessionTTL = 200 * time.Millisecond })
 	mia := e.User(t, "mia")
 	token := personalToken(t, mia)
 	gw := e.Gateway(t, token, "items")
 	gw.Expect(t, "user.sync")
 	gw.Close()
-	// Just past the TTL: the session is gone whether or not the reaper came by yet.
-	time.Sleep(e.Deps.Gateway.SessionTTL + 20*time.Millisecond)
+	time.Sleep(e.Deps.Gateway.SessionTTL + 300*time.Millisecond)
 
 	back := e.ResumeGateway(t, token, gw.SessionID, gw.LastSeq)
 	invalid := back.NextOp(t)

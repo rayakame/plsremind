@@ -13,6 +13,17 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const countOpenItems = `-- name: CountOpenItems :one
+SELECT count(*) FROM items WHERE user_id = $1 AND status = 'open'
+`
+
+func (q *Queries) CountOpenItems(ctx context.Context, userID uuid.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, countOpenItems, userID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createItem = `-- name: CreateItem :one
 INSERT INTO items (id, user_id, list_id, title, note, priority, due_at, due_date, status, completed_at, reminder_override, created_at, updated_at)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $12)
@@ -422,12 +433,20 @@ func (q *Queries) ListOpenAllDayItems(ctx context.Context, userID uuid.UUID) ([]
 	return items, nil
 }
 
-const listOpenItems = `-- name: ListOpenItems :many
-SELECT id, user_id, list_id, title, note, priority, due_at, due_date, status, completed_at, reminder_override, created_at, updated_at FROM items WHERE user_id = $1 AND status = 'open' ORDER BY id
+const listOpenItemsAfter = `-- name: ListOpenItemsAfter :many
+SELECT id, user_id, list_id, title, note, priority, due_at, due_date, status, completed_at, reminder_override, created_at, updated_at FROM items WHERE user_id = $1 AND status = 'open' AND id > $2
+ORDER BY id
+LIMIT $3
 `
 
-func (q *Queries) ListOpenItems(ctx context.Context, userID uuid.UUID) ([]Item, error) {
-	rows, err := q.db.Query(ctx, listOpenItems, userID)
+type ListOpenItemsAfterParams struct {
+	UserID   uuid.UUID
+	After    uuid.UUID
+	PageSize int32
+}
+
+func (q *Queries) ListOpenItemsAfter(ctx context.Context, arg ListOpenItemsAfterParams) ([]Item, error) {
+	rows, err := q.db.Query(ctx, listOpenItemsAfter, arg.UserID, arg.After, arg.PageSize)
 	if err != nil {
 		return nil, err
 	}

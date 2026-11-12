@@ -19,7 +19,7 @@ var durationUnits = []struct {
 
 var ErrDuration = errors.New(`invalid duration, expected a form like "3d", "1d12h" or "90m"`)
 
-// Parse accepts parts in descending unit order, each unit at most once.
+// ParseDuration accepts parts in descending unit order, each unit at most once.
 func ParseDuration(s string) (time.Duration, error) {
 	var total time.Duration
 	rest := s
@@ -60,7 +60,7 @@ func ParseDuration(s string) (time.Duration, error) {
 	return total, nil
 }
 
-// Format renders d with the largest units first. Seconds are dropped.
+// FormatDuration renders d with the largest units first. Seconds are dropped.
 func FormatDuration(d time.Duration) string {
 	var b strings.Builder
 	for _, u := range durationUnits {

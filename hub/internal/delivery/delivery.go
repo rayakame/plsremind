@@ -69,6 +69,15 @@ func CancelForToken(ctx context.Context, q *sqlc.Queries, now time.Time, tokenID
 	return events.DeliveriesClosed(ctx, q, rows)
 }
 
+// CancelForUserTokens closes the open deliveries of all personal tokens of a user.
+func CancelForUserTokens(ctx context.Context, q *sqlc.Queries, now time.Time, userID uuid.UUID) error {
+	rows, err := q.CancelUserTokenDeliveries(ctx, sqlc.CancelUserTokenDeliveriesParams{UserID: userID, Now: &now})
+	if err != nil {
+		return err
+	}
+	return events.DeliveriesClosed(ctx, q, rows)
+}
+
 // SyncConnection cancels what is open for a user on a connection that no longer reminds them.
 func SyncConnection(ctx context.Context, q *sqlc.Queries, now time.Time, connectionID, userID uuid.UUID) error {
 	reminding, err := q.ListReminderConnections(ctx, userID)

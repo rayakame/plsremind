@@ -28,13 +28,15 @@ type Hub struct {
 	listening chan struct{}
 	// outbox holds new deliveries waiting to be rendered and sent.
 	outbox chan outgoing
+	// sweep asks the sender to look for deliveries that were never sent.
+	sweep chan struct{}
 
 	cancel context.CancelFunc
 	wg     sync.WaitGroup
 }
 
 func NewHub(d *core.Deps) *Hub {
-	return &Hub{d: d, sessions: map[string]*Session{}, byUser: map[uuid.UUID]map[*Session]struct{}{}, listening: make(chan struct{}), outbox: make(chan outgoing, 4096)}
+	return &Hub{d: d, sessions: map[string]*Session{}, byUser: map[uuid.UUID]map[*Session]struct{}{}, listening: make(chan struct{}), outbox: make(chan outgoing, 4096), sweep: make(chan struct{}, 1)}
 }
 
 // Start runs the hub's background work until Shutdown.

@@ -267,6 +267,7 @@ func TestDetachedSessionsDoNotCountAgainstTheLimit(t *testing.T) {
 func TestSessionLimitHoldsAgainstABurst(t *testing.T) {
 	e := testkit.New(t)
 	e.Deps.Gateway.MaxSessions = 2
+	e.Deps.Gateway.IdentifyTimeout = 10 * time.Second
 	token := personalToken(t, e.User(t, "mia"))
 	clients := make([]*testkit.GatewayClient, 12)
 	for i := range clients {
@@ -278,9 +279,11 @@ func TestSessionLimitHoldsAgainstABurst(t *testing.T) {
 	}
 	admitted := 0
 	for _, c := range clients {
-		if f, ok := c.Poll(time.Second); ok && f.T == gateway.EventReady {
+		if f, ok := c.Poll(3 * time.Second); ok && f.T == gateway.EventReady {
 			admitted++
+			continue
 		}
+		c.ExpectClose(t, gateway.CloseRateLimited)
 	}
 	require.Equal(t, 2, admitted)
 }
