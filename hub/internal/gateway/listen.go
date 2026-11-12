@@ -210,13 +210,22 @@ func (h *Hub) deliverOne(ctx context.Context, id uuid.UUID) error {
 	var targets []*Session
 	h.each(func(sess *Session) bool {
 		return channel != nil && sess.principal.CredentialID == *channel && sess.wants("deliveries") && sess.attached()
-	}, func(sess *Session) { targets = append(targets, sess) })
+	}, func(sess *Session) {
+		// A session that got it with its login does not get it again.
+		if sess.claim(id) {
+			targets = append(targets, sess)
+		}
+	})
 	// Nobody is listening: the delivery waits, and the attempt is not counted.
 	if len(targets) == 0 {
 		return nil
 	}
 	view, _, sent, err := delivery.Send(ctx, h.d, id)
 	if err != nil || !sent {
+		// It did not go out after all, for one because quiet hours hold it back.
+		for _, sess := range targets {
+			sess.unclaim(id)
+		}
 		return err
 	}
 	data := envelope{UserID: view.User.ID, Data: view}

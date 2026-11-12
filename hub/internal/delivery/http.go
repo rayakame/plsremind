@@ -45,7 +45,7 @@ func fetch(d *core.Deps) fiber.Handler {
 		if err != nil {
 			return err
 		}
-		views, err := Pending(c.Context(), d, ch, false)
+		views, err := Pending(c.Context(), d, ch, false, nil)
 		if err != nil {
 			return err
 		}

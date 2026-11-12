@@ -1,12 +1,16 @@
 package gateway_test
 
 import (
+	"context"
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
 
+	"github.com/rayakame/plsremind/hub/internal/events"
+	"github.com/rayakame/plsremind/hub/internal/gateway"
 	"github.com/rayakame/plsremind/hub/internal/testkit"
 )
 
@@ -222,4 +226,25 @@ func TestClosedIsNotAnnouncedForWhatWasNeverSent(t *testing.T) {
 	// The delivery is held back by quiet hours, so the bot has never heard of it.
 	mia.Do(t, "PATCH", "/users/@me/items/"+item, J{"status": "done"})
 	gw.ExpectQuiet(t)
+}
+
+func TestSignalArrivingAfterLoginDoesNotRepeatTheDelivery(t *testing.T) {
+	e := testkit.New(t)
+	bot := e.Connection(t, "discord")
+	mia := testkit.Linked(t, e, "mia", "111")
+	testkit.DueSoon(t, e, mia)
+
+	gw := e.Gateway(t, bot.Token, "deliveries")
+	d := gw.Expect(t, "delivery.created")
+	require.Equal(t, int64(1), d.Get("data.attempt").Int())
+
+	// The hub hears of the new delivery only now, after the login already handed it out.
+	id := uuid.MustParse(d.Get("data.id").String())
+	require.NoError(t, events.SendSignal(context.Background(), e.Deps.Q(), events.Signal{Type: events.SignalDelivery, DeliveryID: &id}))
+	gw.ExpectQuiet(t)
+
+	gw.Close()
+	again := e.ResumeGateway(t, bot.Token, gw.SessionID, gw.LastSeq)
+	again.Expect(t, gateway.EventResumed)
+	require.Equal(t, int64(2), again.Expect(t, "delivery.created").Get("data.attempt").Int())
 }

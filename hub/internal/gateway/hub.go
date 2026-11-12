@@ -293,6 +293,8 @@ func (h *Hub) resume(ctx context.Context, c *conn, raw json.RawMessage, cookie s
 	}
 	previous := s.conn
 	s.conn = c
+	// A client that comes back gets every open delivery once more.
+	s.handed = map[uuid.UUID]time.Time{}
 	var missed [][]byte
 	for _, frame := range s.buffer {
 		if frame.seq > in.Seq {
@@ -338,7 +340,7 @@ func (h *Hub) identify(ctx context.Context, c *conn, raw json.RawMessage, cookie
 	id, _ := core.NewToken("")
 	s := &Session{
 		id: id, hub: h, principal: p, intents: intents, token: in.Token, cookie: cookie, conn: c, createdAt: time.Now(),
-		box: newMailbox(), stop: make(chan struct{}), cursors: map[uuid.UUID]int64{},
+		box: newMailbox(), stop: make(chan struct{}), cursors: map[uuid.UUID]int64{}, handed: map[uuid.UUID]time.Time{},
 	}
 	// Registered before the list of users is read: a grant that changes from
 	// here on finds the session and is looked at again.

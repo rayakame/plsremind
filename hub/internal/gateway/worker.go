@@ -20,7 +20,6 @@ type mailbox struct {
 	dirty    map[uuid.UUID]struct{}
 	recheck  map[uuid.UUID]struct{}
 	all      bool
-	pending  bool
 	// resumed: the client came back; RESUMED and what waits for it are due.
 	resumed bool
 	// unsent: deliveries may have been created without the session hearing of it.
@@ -55,7 +54,6 @@ type work struct {
 	start     bool
 	validate  bool
 	all       bool
-	pending   bool
 	resumed   bool
 	unsent    bool
 	reconcile bool
@@ -68,7 +66,7 @@ func (m *mailbox) take() work {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	w := work{
-		start: m.start, all: m.all, validate: m.validate, pending: m.pending, frames: m.frames,
+		start: m.start, all: m.all, validate: m.validate, frames: m.frames,
 		resumed: m.resumed, unsent: m.unsent, reconcile: m.reconcile,
 	}
 	for id := range m.dirty {
@@ -77,7 +75,7 @@ func (m *mailbox) take() work {
 	for id := range m.recheck {
 		w.recheck = append(w.recheck, id)
 	}
-	m.start, m.all, m.validate, m.pending, m.frames = false, false, false, false, nil
+	m.start, m.all, m.validate, m.frames = false, false, false, nil
 	m.resumed, m.unsent, m.reconcile = false, false, false
 	m.dirty, m.recheck = map[uuid.UUID]struct{}{}, map[uuid.UUID]struct{}{}
 	return w
@@ -150,7 +148,7 @@ func (s *Session) do(ctx context.Context, w work) error {
 		s.emit(f.event, false, f.data)
 	}
 	switch {
-	case w.start || w.pending || w.resumed:
+	case w.start || w.resumed:
 		return s.sendPending(ctx, false)
 	case w.unsent:
 		return s.sendPending(ctx, true)
@@ -170,7 +168,7 @@ func (s *Session) sendPending(ctx context.Context, onlyUnsent bool) error {
 	if err != nil || !ok {
 		return err
 	}
-	views, err := delivery.Pending(ctx, s.hub.d, ch, onlyUnsent)
+	views, err := delivery.Pending(ctx, s.hub.d, ch, onlyUnsent, s.claim)
 	if err != nil {
 		return err
 	}

@@ -7,6 +7,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/rayakame/plsremind/hub/internal/auth"
+	"github.com/rayakame/plsremind/hub/internal/delivery"
 )
 
 type sequenced struct {
@@ -34,6 +35,8 @@ type Session struct {
 	bufferBytes int
 	detachedAt  time.Time
 	createdAt   time.Time
+	// handed holds the deliveries the client got since it last identified or resumed.
+	handed map[uuid.UUID]time.Time
 
 	box  *mailbox
 	stop chan struct{}
@@ -94,6 +97,33 @@ func (s *Session) emit(event string, numbered bool, data any) {
 	if c != nil {
 		c.send(frame)
 	}
+}
+
+// claim reports whether the client still has to get a delivery, and notes that
+// it now does. A delivery reaches a session by two ways, the login and the
+// signal that it is new, and must go out only once.
+func (s *Session) claim(id uuid.UUID) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.handed[id]; ok {
+		return false
+	}
+	now := time.Now()
+	if len(s.handed) >= 1024 {
+		for old, at := range s.handed {
+			if now.Sub(at) > delivery.Lifetime {
+				delete(s.handed, old)
+			}
+		}
+	}
+	s.handed[id] = now
+	return true
+}
+
+func (s *Session) unclaim(id uuid.UUID) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.handed, id)
 }
 
 // attached reports whether a client is currently connected.

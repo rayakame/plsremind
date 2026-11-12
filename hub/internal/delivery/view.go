@@ -116,8 +116,9 @@ func held(now time.Time, r sqlc.ReminderLog, user sqlc.User) (time.Time, bool) {
 	return reminder.QuietUntil(reminder.QuietOf(user), reminder.LocationOf(user), now)
 }
 
-// render turns pending rows into views, leaving out the ones quiet hours hold back.
-func render(ctx context.Context, q *sqlc.Queries, now time.Time, rows []pendingRow, provider string) ([]View, error) {
+// render turns pending rows into views, leaving out the ones quiet hours hold
+// back and the ones claim turns down.
+func render(ctx context.Context, q *sqlc.Queries, now time.Time, rows []pendingRow, provider string, claim func(uuid.UUID) bool) ([]View, error) {
 	views := make([]View, 0, len(rows))
 	users := map[uuid.UUID]sqlc.User{}
 	channels := map[uuid.UUID][]Channel{}
@@ -152,6 +153,9 @@ func render(ctx context.Context, q *sqlc.Queries, now time.Time, rows []pendingR
 			if err := q.HoldDelivery(ctx, sqlc.HoldDeliveryParams{ID: row.delivery.ID, HeldUntil: &until}); err != nil {
 				return nil, err
 			}
+			continue
+		}
+		if claim != nil && !claim(row.delivery.ID) {
 			continue
 		}
 		view, err := build(ctx, q, now, row.delivery, row.reminder, user, provider)
@@ -189,8 +193,9 @@ func ReleaseHeldFor(ctx context.Context, q *sqlc.Queries, now time.Time, userID 
 
 // Pending hands a channel everything that is waiting for it. Each delivery
 // handed out counts as one attempt. With onlyUnsent it is limited to
-// deliveries that were never handed out.
-func Pending(ctx context.Context, d *core.Deps, ch Channel, onlyUnsent bool) ([]View, error) {
+// deliveries that were never handed out. A claim, if given, is asked about
+// each delivery before it is handed out and can turn it down.
+func Pending(ctx context.Context, d *core.Deps, ch Channel, onlyUnsent bool, claim func(uuid.UUID) bool) ([]View, error) {
 	var views []View
 	err := store.Tx(ctx, d.Pool, func(q *sqlc.Queries) error {
 		var rows []pendingRow
@@ -218,7 +223,7 @@ func Pending(ctx context.Context, d *core.Deps, ch Channel, onlyUnsent bool) ([]
 			}
 		}
 		var err error
-		views, err = render(ctx, q, d.Now(), rows, provider)
+		views, err = render(ctx, q, d.Now(), rows, provider, claim)
 		return err
 	})
 	return views, err
@@ -247,7 +252,7 @@ func Send(ctx context.Context, d *core.Deps, id uuid.UUID) (View, Channel, bool,
 			}
 			provider = conn.Provider
 		}
-		views, err := render(ctx, q, d.Now(), []pendingRow{{found.Delivery, found.ReminderLog}}, provider)
+		views, err := render(ctx, q, d.Now(), []pendingRow{{found.Delivery, found.ReminderLog}}, provider, nil)
 		if err != nil || len(views) == 0 {
 			return err
 		}
