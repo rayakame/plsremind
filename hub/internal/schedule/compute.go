@@ -139,3 +139,9 @@ func (in Input) afterQuiet(t time.Time) time.Time {
 	// Built from the wall clock, so the window ends at the same local time on days the clocks change.
 	return time.Date(y, m, d, int(end/time.Hour), int(end%time.Hour/time.Minute), 0, 0, in.Loc)
 }
+
+// QuietUntil reports whether t falls into the quiet window and, if so, when the window ends.
+func QuietUntil(quiet *Quiet, loc *time.Location, t time.Time) (time.Time, bool) {
+	end := Input{Quiet: quiet, Loc: loc}.afterQuiet(t)
+	return end, !end.Equal(t)
+}

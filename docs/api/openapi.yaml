@@ -79,6 +79,20 @@ tags:
       connection's provider, and the user can switch that off. It reaches the user's lists,
       items, subitems and manual reminders and can read the profile and the reminder plans.
       It cannot touch anything else. Users it may not act for look like they do not exist.
+  - name: Deliveries
+    description: |
+      When a reminder's time comes, the hub creates one delivery for each way the user is
+      reminded through: every connection that reminds them and every personal token marked
+      with `remind`. A delivery stays open until that channel reports the outcome here.
+
+      Report `delivered` only once the reminder has actually reached the person, and `failed`
+      with a reason if it cannot. The hub never assumes either. An open delivery is handed out
+      again every time the channel connects to the gateway or asks this API, with a growing
+      `attempt`, and expires 24 hours after it was created.
+
+      A newer reminder for the same item replaces an open one, and completing or deleting the
+      item withdraws it. While the user is in their quiet hours, reminders before a deadline
+      and follow-ups are held back; the reminder at the due time and manual reminders are not.
 paths:
   /info:
     get:
@@ -1397,6 +1411,105 @@ paths:
           description: The provider is gone.
         default:
           $ref: "#/components/responses/Error"
+  /deliveries:
+    get:
+      tags: [Deliveries]
+      operationId: listDeliveries
+      summary: Fetch the deliveries waiting for the caller
+      description: |
+        For connection tokens that may have `deliveries` and personal tokens marked with
+        `remind`. Returns the same payload the gateway sends as `delivery.created`, so an
+        adapter can work by polling alone. Every fetch counts as an attempt.
+      security:
+        - bearer: []
+      responses:
+        "200":
+          description: The open deliveries of this channel.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Delivery"
+        default:
+          $ref: "#/components/responses/Error"
+  /deliveries/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    put:
+      tags: [Deliveries]
+      operationId: acknowledgeDelivery
+      summary: Report the outcome of a delivery
+      description: |
+        Only the channel the delivery belongs to can report on it. Reporting the same outcome
+        twice is fine; reporting a different outcome for a closed delivery answers `409` with
+        the code `delivery_closed`.
+      security:
+        - bearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                status:
+                  type: string
+                  description: "`delivered` or `failed`."
+                reason:
+                  type: string
+                  description: Required for `failed`, at most 500 characters. Shown to the user.
+      responses:
+        "200":
+          description: The delivery's state.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [id, status, reason]
+                properties:
+                  id:
+                    type: string
+                    format: uuid
+                  status:
+                    $ref: "#/components/schemas/DeliveryStatus"
+                  reason:
+                    type: string
+        default:
+          $ref: "#/components/responses/Error"
+  /users/{user}/reminder-log:
+    parameters:
+      - $ref: "#/components/parameters/User"
+    get:
+      tags: [Deliveries]
+      operationId: listReminderLog
+      summary: List the reminders the hub has fired for a user
+      description: Newest first. Entries are kept for 30 days and disappear with their item.
+      parameters:
+        - name: item_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Cursor"
+      responses:
+        "200":
+          description: One page of the log.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, next_cursor]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/ReminderLogEntry"
+                  next_cursor:
+                    $ref: "#/components/schemas/NextCursor"
+        default:
+          $ref: "#/components/responses/Error"
 components:
   securitySchemes:
     session:
@@ -1915,3 +2028,115 @@ components:
       items:
         type: string
         enum: [users, lists, items, plans, deliveries]
+    DeliveryStatus:
+      type: string
+      enum: [pending, delivered, failed, superseded, cancelled, expired]
+    ReminderKind:
+      type: string
+      description: |
+        `before`: ahead of a deadline, from the reminder plan. `due`: at the due time.
+        `follow_up`: nagging after a missed deadline. `manual`: set by the user on an item.
+      enum: [before, due, follow_up, manual]
+    Delivery:
+      type: object
+      description: One reminder for one channel, with everything needed to remind without further requests.
+      required: [id, attempt, late, reminder, item, user]
+      properties:
+        id:
+          type: string
+          format: uuid
+        attempt:
+          type: integer
+          description: How many times this delivery has been handed out, starting at 1.
+        late:
+          type: boolean
+          description: True when the reminder's time is more than a minute in the past.
+        reminder:
+          type: object
+          required: [id, kind, scheduled_for]
+          properties:
+            id:
+              type: string
+              format: uuid
+            kind:
+              $ref: "#/components/schemas/ReminderKind"
+            offset:
+              $ref: "#/components/schemas/Duration"
+            scheduled_for:
+              type: string
+              format: date-time
+              description: The moment the reminder was meant for.
+        item:
+          $ref: "#/components/schemas/Item"
+        user:
+          type: object
+          required: [id, display_name, timezone]
+          properties:
+            id:
+              type: string
+              format: uuid
+            display_name:
+              type: string
+            timezone:
+              type: string
+            external_ids:
+              type: array
+              description: |
+                For connections: the user's account IDs at the connection's provider, so the
+                connection knows whom to address.
+              items:
+                type: string
+    ReminderLogEntry:
+      type: object
+      required: [id, item_id, kind, scheduled_for, fired_at, outcome, deliveries]
+      properties:
+        id:
+          type: string
+          format: uuid
+        item_id:
+          type: string
+          format: uuid
+        kind:
+          $ref: "#/components/schemas/ReminderKind"
+        offset:
+          $ref: "#/components/schemas/Duration"
+        scheduled_for:
+          type: string
+          format: date-time
+        fired_at:
+          type: string
+          format: date-time
+        outcome:
+          type: string
+          description: |
+            `fired`: deliveries were created. `superseded`: skipped because a newer reminder for
+            the item was due at the same time. `missed`: the hub was not running and the
+            reminder was more than 24 hours old when it came back.
+          enum: [fired, missed, superseded]
+        deliveries:
+          type: array
+          items:
+            type: object
+            required: [id, channel, status, reason, attempts]
+            properties:
+              id:
+                type: string
+                format: uuid
+              channel:
+                type: object
+                required: [kind, id, name]
+                properties:
+                  kind:
+                    type: string
+                    enum: [connection, token]
+                  id:
+                    type: string
+                    format: uuid
+                  name:
+                    type: string
+              status:
+                $ref: "#/components/schemas/DeliveryStatus"
+              reason:
+                type: string
+              attempts:
+                type: integer

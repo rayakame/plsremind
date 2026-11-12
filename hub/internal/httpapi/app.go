@@ -98,6 +98,7 @@ func New(d *deps.Deps) *fiber.App {
 	subitem.Register(user, d)
 	reminder.Register(user, d)
 	connection.Register(api, user, admin, d)
+	delivery.Register(api, user, d)
 
 	app.Use("/api", func(fiber.Ctx) error { return fiber.ErrNotFound })
 	app.Get("/*", web.Handler())

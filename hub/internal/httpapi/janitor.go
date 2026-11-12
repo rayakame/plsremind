@@ -9,7 +9,10 @@ import (
 	"github.com/rayakame/plsremind/hub/internal/db/sqlc"
 )
 
-const eventRetention = 24 * time.Hour
+const (
+	eventRetention       = 24 * time.Hour
+	reminderLogRetention = 30 * 24 * time.Hour
+)
 
 // Sweep deletes rows that have expired and can never be used again.
 func Sweep(ctx context.Context, pool *pgxpool.Pool, now time.Time) error {
@@ -24,5 +27,8 @@ func Sweep(ctx context.Context, pool *pgxpool.Pool, now time.Time) error {
 		return err
 	}
 	// The gateway only needs the log to bridge short gaps; sessions resume from their own buffer.
-	return q.DeleteOldEvents(ctx, now.Add(-eventRetention))
+	if err := q.DeleteOldEvents(ctx, now.Add(-eventRetention)); err != nil {
+		return err
+	}
+	return q.DeleteOldReminderLog(ctx, now.Add(-reminderLogRetention))
 }

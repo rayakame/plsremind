@@ -69,3 +69,62 @@ RETURNING id;
 UPDATE deliveries SET status = 'cancelled', closed_at = @now
 WHERE token_id = @token_id AND status = 'pending'
 RETURNING id;
+
+-- name: ListPendingConnectionDeliveries :many
+SELECT sqlc.embed(d), sqlc.embed(r)
+FROM deliveries d
+JOIN reminder_log r ON r.id = d.reminder_id
+WHERE d.connection_id = @connection_id AND d.status = 'pending'
+ORDER BY d.id
+FOR UPDATE OF d;
+
+-- name: ListPendingTokenDeliveries :many
+SELECT sqlc.embed(d), sqlc.embed(r)
+FROM deliveries d
+JOIN reminder_log r ON r.id = d.reminder_id
+WHERE d.token_id = @token_id AND d.status = 'pending'
+ORDER BY d.id
+FOR UPDATE OF d;
+
+-- name: GetPendingDelivery :one
+SELECT sqlc.embed(d), sqlc.embed(r)
+FROM deliveries d
+JOIN reminder_log r ON r.id = d.reminder_id
+WHERE d.id = @id AND d.status = 'pending'
+FOR UPDATE OF d;
+
+-- name: SendDelivery :one
+UPDATE deliveries SET attempts = attempts + 1, held_until = NULL WHERE id = @id
+RETURNING attempts;
+
+-- name: HoldDelivery :exec
+UPDATE deliveries SET held_until = @held_until WHERE id = @id;
+
+-- name: LockDelivery :one
+SELECT * FROM deliveries WHERE id = @id FOR UPDATE;
+
+-- name: ListExternalIDs :many
+SELECT external_id FROM identities WHERE user_id = @user_id AND provider = @provider ORDER BY created_at, id;
+
+-- name: GetPersonalTokenByID :one
+SELECT * FROM personal_tokens WHERE id = @id;
+
+-- name: ListReminderLog :many
+SELECT * FROM reminder_log
+WHERE user_id = @user_id
+  AND (sqlc.narg('item_id')::uuid IS NULL OR item_id = sqlc.narg('item_id'))
+  AND (sqlc.narg('before_id')::uuid IS NULL OR id < sqlc.narg('before_id'))
+ORDER BY id DESC
+LIMIT @page_size;
+
+-- name: ListLogDeliveries :many
+SELECT d.id, d.reminder_id, d.status, d.reason, d.attempts, d.connection_id, d.token_id,
+       COALESCE(c.name, t.name, '')::text AS channel_name
+FROM deliveries d
+LEFT JOIN connections c ON c.id = d.connection_id
+LEFT JOIN personal_tokens t ON t.id = d.token_id
+WHERE d.reminder_id = ANY(@reminder_ids::uuid[])
+ORDER BY d.id;
+
+-- name: DeleteOldReminderLog :exec
+DELETE FROM reminder_log WHERE fired_at <= @before;
