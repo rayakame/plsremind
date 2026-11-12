@@ -176,3 +176,47 @@ func Pending(ctx context.Context, d *deps.Deps, ch Channel) ([]View, error) {
 	})
 	return views, err
 }
+
+// Send hands out one pending delivery, counting the attempt. It reports false
+// when there is nothing to send: the delivery is closed, or quiet hours hold it back.
+func Send(ctx context.Context, d *deps.Deps, id uuid.UUID) (View, Channel, bool, error) {
+	var view View
+	var ch Channel
+	sent := false
+	err := db.Tx(ctx, d.Pool, func(q *sqlc.Queries) error {
+		found, err := q.GetPendingDelivery(ctx, id)
+		if db.IsNotFound(err) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		ch = Channel{ConnectionID: found.Delivery.ConnectionID, TokenID: found.Delivery.TokenID}
+		provider := ""
+		if ch.ConnectionID != nil {
+			conn, err := q.GetConnection(ctx, *ch.ConnectionID)
+			if err != nil {
+				return err
+			}
+			provider = conn.Provider
+		}
+		views, err := render(ctx, q, d.Now(), []pendingRow{{found.Delivery, found.ReminderLog}}, provider)
+		if err != nil || len(views) == 0 {
+			return err
+		}
+		view, sent = views[0], true
+		return nil
+	})
+	return view, ch, sent, err
+}
+
+// ID returns the credential the channel belongs to: the connection or the token.
+func (ch Channel) ID() uuid.UUID {
+	if ch.ConnectionID != nil {
+		return *ch.ConnectionID
+	}
+	if ch.TokenID != nil {
+		return *ch.TokenID
+	}
+	return uuid.Nil
+}

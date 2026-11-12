@@ -42,9 +42,27 @@ func Channels(ctx context.Context, q *sqlc.Queries, userID uuid.UUID) ([]Channel
 	return channels, nil
 }
 
-func announce(ctx context.Context, q *sqlc.Queries, typ string, ids []uuid.UUID) error {
+func announceNew(ctx context.Context, q *sqlc.Queries, ids []uuid.UUID) error {
 	for _, id := range ids {
-		if err := signal.Send(ctx, q, signal.Signal{Type: typ, DeliveryID: &id}); err != nil {
+		if err := signal.Send(ctx, q, signal.Signal{Type: signal.Delivery, DeliveryID: &id}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// announceClosed tells the gateway which deliveries were closed without being confirmed.
+func announceClosed(ctx context.Context, q *sqlc.Queries, rows []sqlc.Delivery) error {
+	for _, row := range rows {
+		err := signal.Send(ctx, q, signal.Signal{
+			Type:         signal.Closed,
+			DeliveryID:   &row.ID,
+			UserID:       &row.UserID,
+			ConnectionID: row.ConnectionID,
+			TokenID:      row.TokenID,
+			Status:       row.Status,
+		})
+		if err != nil {
 			return err
 		}
 	}
@@ -53,29 +71,29 @@ func announce(ctx context.Context, q *sqlc.Queries, typ string, ids []uuid.UUID)
 
 // CancelForItem closes the open deliveries of an item that was completed or is about to be deleted.
 func CancelForItem(ctx context.Context, q *sqlc.Queries, now time.Time, itemID uuid.UUID) error {
-	ids, err := q.CancelItemDeliveries(ctx, sqlc.CancelItemDeliveriesParams{ItemID: itemID, Now: &now})
+	rows, err := q.CancelItemDeliveries(ctx, sqlc.CancelItemDeliveriesParams{ItemID: itemID, Now: &now})
 	if err != nil {
 		return err
 	}
-	return announce(ctx, q, signal.Closed, ids)
+	return announceClosed(ctx, q, rows)
 }
 
 // CancelForConnection closes the open deliveries of a connection, for one user or for all (userID nil).
 func CancelForConnection(ctx context.Context, q *sqlc.Queries, now time.Time, connectionID uuid.UUID, userID *uuid.UUID) error {
-	ids, err := q.CancelConnectionDeliveries(ctx, sqlc.CancelConnectionDeliveriesParams{ConnectionID: &connectionID, UserID: userID, Now: &now})
+	rows, err := q.CancelConnectionDeliveries(ctx, sqlc.CancelConnectionDeliveriesParams{ConnectionID: &connectionID, UserID: userID, Now: &now})
 	if err != nil {
 		return err
 	}
-	return announce(ctx, q, signal.Closed, ids)
+	return announceClosed(ctx, q, rows)
 }
 
 // CancelForToken closes the open deliveries of a personal token.
 func CancelForToken(ctx context.Context, q *sqlc.Queries, now time.Time, tokenID uuid.UUID) error {
-	ids, err := q.CancelTokenDeliveries(ctx, sqlc.CancelTokenDeliveriesParams{TokenID: &tokenID, Now: &now})
+	rows, err := q.CancelTokenDeliveries(ctx, sqlc.CancelTokenDeliveriesParams{TokenID: &tokenID, Now: &now})
 	if err != nil {
 		return err
 	}
-	return announce(ctx, q, signal.Closed, ids)
+	return announceClosed(ctx, q, rows)
 }
 
 // SyncConnection cancels what is open for a user on a connection that no longer reminds them.

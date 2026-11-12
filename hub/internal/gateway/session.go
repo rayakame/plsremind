@@ -76,6 +76,13 @@ func (s *Session) emit(event string, numbered bool, data any) {
 	}
 }
 
+// attached reports whether a client is currently connected.
+func (s *Session) attached() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.conn != nil
+}
+
 // detach is called when the connection ends. The session stays for SessionTTL.
 func (s *Session) detach(c *conn) {
 	s.mu.Lock()

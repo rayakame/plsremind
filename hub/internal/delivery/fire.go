@@ -9,7 +9,6 @@ import (
 	"github.com/rayakame/plsremind/hub/internal/db"
 	"github.com/rayakame/plsremind/hub/internal/db/sqlc"
 	"github.com/rayakame/plsremind/hub/internal/deps"
-	"github.com/rayakame/plsremind/hub/internal/signal"
 )
 
 const batchSize = 200
@@ -32,7 +31,15 @@ func RunOnce(ctx context.Context, d *deps.Deps) error {
 		if err != nil {
 			return err
 		}
-		return announce(ctx, q, signal.Closed, expired)
+		if err := announceClosed(ctx, q, expired); err != nil {
+			return err
+		}
+		// Deliveries that waited for quiet hours to end go out now.
+		released, err := q.ReleaseHeldDeliveries(ctx, &now)
+		if err != nil {
+			return err
+		}
+		return announceNew(ctx, q, released)
 	})
 }
 
@@ -101,7 +108,7 @@ func deliver(ctx context.Context, q *sqlc.Queries, now time.Time, row sqlc.Sched
 		return err
 	}
 	for _, ch := range channels {
-		var replaced []uuid.UUID
+		var replaced []sqlc.Delivery
 		if ch.ConnectionID != nil {
 			replaced, err = q.SupersedeConnectionDeliveries(ctx, sqlc.SupersedeConnectionDeliveriesParams{ItemID: row.ItemID, ConnectionID: ch.ConnectionID, Now: &now})
 		} else {
@@ -110,7 +117,7 @@ func deliver(ctx context.Context, q *sqlc.Queries, now time.Time, row sqlc.Sched
 		if err != nil {
 			return err
 		}
-		if err := announce(ctx, q, signal.Closed, replaced); err != nil {
+		if err := announceClosed(ctx, q, replaced); err != nil {
 			return err
 		}
 		id := uuid.Must(uuid.NewV7())
@@ -127,7 +134,7 @@ func deliver(ctx context.Context, q *sqlc.Queries, now time.Time, row sqlc.Sched
 		if err != nil {
 			return err
 		}
-		if err := announce(ctx, q, signal.Delivery, []uuid.UUID{id}); err != nil {
+		if err := announceNew(ctx, q, []uuid.UUID{id}); err != nil {
 			return err
 		}
 	}

@@ -124,7 +124,20 @@ func SyncItem(ctx context.Context, q *sqlc.Queries, now time.Time, itemID uuid.U
 	if err := q.DeleteFutureSchedule(ctx, sqlc.DeleteFutureScheduleParams{ItemID: itemID, Now: now}); err != nil {
 		return err
 	}
+	// Quiet hours can move a reminder that already went out to a later time.
+	// What the log knows was handled must not be scheduled a second time.
+	handled, err := q.ListHandledReminders(ctx, itemID)
+	if err != nil {
+		return err
+	}
+	done := make(map[string]bool, len(handled))
+	for _, h := range handled {
+		done[h.Kind+h.ScheduledFor.UTC().Format(time.RFC3339Nano)] = true
+	}
 	for _, p := range Compute(in, now) {
+		if done[string(p.Kind)+p.For.UTC().Format(time.RFC3339Nano)] {
+			continue
+		}
 		params := sqlc.InsertScheduledReminderParams{
 			ID:           uuid.Must(uuid.NewV7()),
 			ItemID:       itemID,

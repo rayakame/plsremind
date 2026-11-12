@@ -117,3 +117,33 @@ func TestDeletingItemClearsSchedule(t *testing.T) {
 	u.Do(t, "DELETE", "/users/@me/items/"+id, nil)
 	require.Empty(t, e.Schedule(t, id))
 }
+
+func TestChangingQuietHoursDoesNotRepeatAFiredReminder(t *testing.T) {
+	e := testkit.New(t)
+	u, _ := reminded(t, e, "mia")
+	id := u.Do(t, "POST", "/users/@me/items", J{"title": "overdue", "due_at": "2026-11-10T13:00:00Z"}).Get("id").String()
+	e.Clock.Advance(time.Hour)
+	e.Fire(t) // today's follow-up, at 13:00
+	require.Equal(t, []string{"follow_up fired"}, e.ReminderLog(t, u.UserID))
+
+	// Quiet hours that would have moved that follow-up to 13:30 must not bring it back.
+	u.Do(t, "PATCH", "/users/@me", J{"quiet_hours": J{"start": "12:30", "end": "13:30"}})
+	require.Equal(t, "follow_up 2026-11-12T13:30:00Z", fireTimes(e.Schedule(t, id))[0])
+	e.Clock.Advance(30 * time.Minute)
+	e.Fire(t)
+	require.Equal(t, []string{"follow_up fired"}, e.ReminderLog(t, u.UserID))
+}
+
+func TestHeldReminderSurvivesAnEdit(t *testing.T) {
+	e := testkit.New(t)
+	u := e.User(t, "mia")
+	u.Do(t, "PATCH", "/users/@me", J{"quiet_hours": J{"start": "12:30", "end": "14:00"}})
+	// "1h before" is meant for 13:00 and waits for 14:00.
+	id := u.Do(t, "POST", "/users/@me/items", J{"title": "x", "priority": "low", "due_at": "2026-11-11T16:00:00Z",
+		"reminder_override": J{"mode": "custom", "before": []string{"3h"}}}).Get("id").String()
+	require.Equal(t, "before 3h 2026-11-11T14:00:00Z", fireTimes(e.Schedule(t, id))[0])
+
+	e.Clock.Advance(90 * time.Minute) // 13:30: past the time it was meant for, not yet fired
+	u.Do(t, "PATCH", "/users/@me/items/"+id, J{"title": "y"})
+	require.Equal(t, "before 3h 2026-11-11T14:00:00Z", fireTimes(e.Schedule(t, id))[0])
+}

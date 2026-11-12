@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
+	"github.com/rayakame/plsremind/hub/internal/delivery"
 )
 
 // mailbox collects what a session still has to do. Work for the same user is
@@ -18,7 +20,15 @@ type mailbox struct {
 	dirty    map[uuid.UUID]struct{}
 	recheck  map[uuid.UUID]struct{}
 	all      bool
+	pending  bool
+	frames   []loose
 	wake     chan struct{}
+}
+
+// loose is a dispatch outside the numbered sequence, such as a delivery.
+type loose struct {
+	event string
+	data  any
 }
 
 func newMailbox() *mailbox {
@@ -39,6 +49,8 @@ type work struct {
 	start    bool
 	validate bool
 	all      bool
+	pending  bool
+	frames   []loose
 	dirty    []uuid.UUID
 	recheck  []uuid.UUID
 }
@@ -46,14 +58,14 @@ type work struct {
 func (m *mailbox) take() work {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	w := work{start: m.start, all: m.all, validate: m.validate}
+	w := work{start: m.start, all: m.all, validate: m.validate, pending: m.pending, frames: m.frames}
 	for id := range m.dirty {
 		w.dirty = append(w.dirty, id)
 	}
 	for id := range m.recheck {
 		w.recheck = append(w.recheck, id)
 	}
-	m.start, m.all, m.validate = false, false, false
+	m.start, m.all, m.validate, m.pending, m.frames = false, false, false, false, nil
 	m.dirty, m.recheck = map[uuid.UUID]struct{}{}, map[uuid.UUID]struct{}{}
 	return w
 }
@@ -112,6 +124,32 @@ func (s *Session) do(ctx context.Context, w work) error {
 		if err := s.pump(ctx, userID); err != nil {
 			return err
 		}
+	}
+	for _, f := range w.frames {
+		s.emit(f.event, false, f.data)
+	}
+	if w.start || w.pending {
+		return s.sendPending(ctx)
+	}
+	return nil
+}
+
+// sendPending hands the session's channel everything that is still waiting for
+// it. This is how a reminder reaches an adapter that was away when it fired.
+func (s *Session) sendPending(ctx context.Context) error {
+	if !s.wants("deliveries") {
+		return nil
+	}
+	ch, ok, err := delivery.ChannelOf(ctx, s.hub.d.Q(), s.principal)
+	if err != nil || !ok {
+		return err
+	}
+	views, err := delivery.Pending(ctx, s.hub.d, ch)
+	if err != nil {
+		return err
+	}
+	for _, view := range views {
+		s.emit("delivery.created", false, envelope{UserID: view.User.ID, Data: view})
 	}
 	return nil
 }

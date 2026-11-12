@@ -42,33 +42,33 @@ RETURNING *;
 -- name: SupersedeConnectionDeliveries :many
 UPDATE deliveries SET status = 'superseded', closed_at = @now
 WHERE item_id = @item_id AND connection_id = @connection_id AND status = 'pending'
-RETURNING id;
+RETURNING *;
 
 -- name: SupersedeTokenDeliveries :many
 UPDATE deliveries SET status = 'superseded', closed_at = @now
 WHERE item_id = @item_id AND token_id = @token_id AND status = 'pending'
-RETURNING id;
+RETURNING *;
 
 -- name: ExpireDeliveries :many
 UPDATE deliveries SET status = 'expired', closed_at = @now
 WHERE status = 'pending' AND expires_at < @now
-RETURNING id;
+RETURNING *;
 
 -- name: CancelItemDeliveries :many
 UPDATE deliveries SET status = 'cancelled', closed_at = @now
 WHERE item_id = @item_id AND status = 'pending'
-RETURNING id;
+RETURNING *;
 
 -- name: CancelConnectionDeliveries :many
 UPDATE deliveries SET status = 'cancelled', closed_at = @now
 WHERE connection_id = @connection_id AND status = 'pending'
   AND (sqlc.narg('user_id')::uuid IS NULL OR user_id = sqlc.narg('user_id'))
-RETURNING id;
+RETURNING *;
 
 -- name: CancelTokenDeliveries :many
 UPDATE deliveries SET status = 'cancelled', closed_at = @now
 WHERE token_id = @token_id AND status = 'pending'
-RETURNING id;
+RETURNING *;
 
 -- name: ListPendingConnectionDeliveries :many
 SELECT sqlc.embed(d), sqlc.embed(r)
@@ -128,3 +128,11 @@ ORDER BY d.id;
 
 -- name: DeleteOldReminderLog :exec
 DELETE FROM reminder_log WHERE fired_at <= @before;
+
+-- name: ReleaseHeldDeliveries :many
+UPDATE deliveries SET held_until = NULL
+WHERE status = 'pending' AND held_until <= @now
+RETURNING id;
+
+-- name: GetDeliveryChannel :one
+SELECT connection_id, token_id FROM deliveries WHERE id = @id AND status = 'pending';

@@ -35,6 +35,10 @@ type Signal struct {
 	UserID       *uuid.UUID `json:"user_id,omitempty"`
 	ConnectionID *uuid.UUID `json:"connection_id,omitempty"`
 	DeliveryID   *uuid.UUID `json:"delivery_id,omitempty"`
+	// TokenID and Status accompany Closed, together with the user and the connection:
+	// the delivery itself may already be gone when the signal arrives.
+	TokenID *uuid.UUID `json:"token_id,omitempty"`
+	Status  string     `json:"status,omitempty"`
 }
 
 // Send queues the signal in q's transaction.

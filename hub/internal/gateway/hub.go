@@ -23,23 +23,29 @@ type Hub struct {
 	byUser map[uuid.UUID]map[*Session]struct{}
 	// listening is closed each time the signal connection is (re)established.
 	listening chan struct{}
+	// outbox holds new deliveries waiting to be rendered and sent.
+	outbox chan uuid.UUID
 
 	cancel context.CancelFunc
 	wg     sync.WaitGroup
 }
 
 func NewHub(d *deps.Deps) *Hub {
-	return &Hub{d: d, sessions: map[string]*Session{}, byUser: map[uuid.UUID]map[*Session]struct{}{}, listening: make(chan struct{})}
+	return &Hub{d: d, sessions: map[string]*Session{}, byUser: map[uuid.UUID]map[*Session]struct{}{}, listening: make(chan struct{}), outbox: make(chan uuid.UUID, 4096)}
 }
 
 // Start runs the hub's background work until Shutdown.
 func (h *Hub) Start(ctx context.Context) {
 	ctx, h.cancel = context.WithCancel(ctx)
 	ready := h.listening
-	h.wg.Add(2)
+	h.wg.Add(3)
 	go func() {
 		defer h.wg.Done()
 		h.reap(ctx)
+	}()
+	go func() {
+		defer h.wg.Done()
+		h.deliver(ctx)
 	}()
 	go func() {
 		defer h.wg.Done()

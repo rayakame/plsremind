@@ -9,6 +9,8 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/rayakame/plsremind/hub/internal/auth"
+	"github.com/rayakame/plsremind/hub/internal/db"
+	"github.com/rayakame/plsremind/hub/internal/delivery"
 	"github.com/rayakame/plsremind/hub/internal/signal"
 )
 
@@ -94,6 +96,31 @@ func (h *Hub) handle(s signal.Signal) {
 				sess.box.post(func(m *mailbox) { m.validate = true })
 			}
 		})
+	case signal.Delivery:
+		if s.DeliveryID != nil {
+			// Rendering a delivery takes a few queries; they must not hold up the other signals.
+			select {
+			case h.outbox <- *s.DeliveryID:
+			default:
+				slog.Warn("gateway delivery queue is full, the delivery waits for the next login")
+			}
+		}
+	case signal.Closed:
+		// Acknowledged deliveries need no announcement: whoever confirmed them knows.
+		if s.DeliveryID == nil || s.UserID == nil || (s.Status != "superseded" && s.Status != "cancelled" && s.Status != "expired") {
+			return
+		}
+		channel := s.ConnectionID
+		if channel == nil {
+			channel = s.TokenID
+		}
+		if channel == nil {
+			return
+		}
+		data := envelope{UserID: *s.UserID, Data: map[string]any{"id": *s.DeliveryID, "status": s.Status}}
+		h.each(func(sess *Session) bool { return sess.principal.CredentialID == *channel && sess.wants("deliveries") }, func(sess *Session) {
+			sess.box.post(func(m *mailbox) { m.frames = append(m.frames, loose{"delivery.closed", data}) })
+		})
 	case signal.Connection:
 		if s.ConnectionID != nil {
 			h.each(func(sess *Session) bool { return sess.principal.CredentialID == *s.ConnectionID }, func(sess *Session) {
@@ -128,4 +155,50 @@ func (h *Hub) eachCovering(userID uuid.UUID, fn func(*Session)) {
 	for _, s := range sessions {
 		fn(s)
 	}
+}
+
+// deliver sends new deliveries to the sessions of their channel, one at a time.
+func (h *Hub) deliver(ctx context.Context) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case id := <-h.outbox:
+			if err := h.deliverOne(ctx, id); err != nil && ctx.Err() == nil {
+				slog.Error("gateway could not send a delivery", "delivery", id, "err", err)
+			}
+		}
+	}
+}
+
+func (h *Hub) deliverOne(ctx context.Context, id uuid.UUID) error {
+	q := h.d.Q()
+	row, err := q.GetDeliveryChannel(ctx, id)
+	if db.IsNotFound(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	channel := row.TokenID
+	if row.ConnectionID != nil {
+		channel = row.ConnectionID
+	}
+	var targets []*Session
+	h.each(func(sess *Session) bool {
+		return channel != nil && sess.principal.CredentialID == *channel && sess.wants("deliveries") && sess.attached()
+	}, func(sess *Session) { targets = append(targets, sess) })
+	// Nobody is listening: the delivery waits, and the attempt is not counted.
+	if len(targets) == 0 {
+		return nil
+	}
+	view, _, sent, err := delivery.Send(ctx, h.d, id)
+	if err != nil || !sent {
+		return err
+	}
+	data := envelope{UserID: view.User.ID, Data: view}
+	for _, sess := range targets {
+		sess.box.post(func(m *mailbox) { m.frames = append(m.frames, loose{"delivery.created", data}) })
+	}
+	return nil
 }

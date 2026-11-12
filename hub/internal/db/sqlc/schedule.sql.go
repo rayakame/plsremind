@@ -90,6 +90,35 @@ func (q *Queries) InsertScheduledReminder(ctx context.Context, arg InsertSchedul
 	return err
 }
 
+const listHandledReminders = `-- name: ListHandledReminders :many
+SELECT kind, scheduled_for FROM reminder_log WHERE item_id = $1
+`
+
+type ListHandledRemindersRow struct {
+	Kind         string
+	ScheduledFor time.Time
+}
+
+func (q *Queries) ListHandledReminders(ctx context.Context, itemID uuid.UUID) ([]ListHandledRemindersRow, error) {
+	rows, err := q.db.Query(ctx, listHandledReminders, itemID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListHandledRemindersRow
+	for rows.Next() {
+		var i ListHandledRemindersRow
+		if err := rows.Scan(&i.Kind, &i.ScheduledFor); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listOpenItemIDs = `-- name: ListOpenItemIDs :many
 SELECT id FROM items WHERE user_id = $1 AND status = 'open' ORDER BY id
 `

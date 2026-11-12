@@ -16,7 +16,7 @@ const cancelConnectionDeliveries = `-- name: CancelConnectionDeliveries :many
 UPDATE deliveries SET status = 'cancelled', closed_at = $1
 WHERE connection_id = $2 AND status = 'pending'
   AND ($3::uuid IS NULL OR user_id = $3)
-RETURNING id
+RETURNING id, reminder_id, user_id, item_id, connection_id, token_id, status, reason, attempts, held_until, created_at, expires_at, closed_at
 `
 
 type CancelConnectionDeliveriesParams struct {
@@ -25,19 +25,33 @@ type CancelConnectionDeliveriesParams struct {
 	UserID       *uuid.UUID
 }
 
-func (q *Queries) CancelConnectionDeliveries(ctx context.Context, arg CancelConnectionDeliveriesParams) ([]uuid.UUID, error) {
+func (q *Queries) CancelConnectionDeliveries(ctx context.Context, arg CancelConnectionDeliveriesParams) ([]Delivery, error) {
 	rows, err := q.db.Query(ctx, cancelConnectionDeliveries, arg.Now, arg.ConnectionID, arg.UserID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []uuid.UUID
+	var items []Delivery
 	for rows.Next() {
-		var id uuid.UUID
-		if err := rows.Scan(&id); err != nil {
+		var i Delivery
+		if err := rows.Scan(
+			&i.ID,
+			&i.ReminderID,
+			&i.UserID,
+			&i.ItemID,
+			&i.ConnectionID,
+			&i.TokenID,
+			&i.Status,
+			&i.Reason,
+			&i.Attempts,
+			&i.HeldUntil,
+			&i.CreatedAt,
+			&i.ExpiresAt,
+			&i.ClosedAt,
+		); err != nil {
 			return nil, err
 		}
-		items = append(items, id)
+		items = append(items, i)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
@@ -48,7 +62,7 @@ func (q *Queries) CancelConnectionDeliveries(ctx context.Context, arg CancelConn
 const cancelItemDeliveries = `-- name: CancelItemDeliveries :many
 UPDATE deliveries SET status = 'cancelled', closed_at = $1
 WHERE item_id = $2 AND status = 'pending'
-RETURNING id
+RETURNING id, reminder_id, user_id, item_id, connection_id, token_id, status, reason, attempts, held_until, created_at, expires_at, closed_at
 `
 
 type CancelItemDeliveriesParams struct {
@@ -56,19 +70,33 @@ type CancelItemDeliveriesParams struct {
 	ItemID uuid.UUID
 }
 
-func (q *Queries) CancelItemDeliveries(ctx context.Context, arg CancelItemDeliveriesParams) ([]uuid.UUID, error) {
+func (q *Queries) CancelItemDeliveries(ctx context.Context, arg CancelItemDeliveriesParams) ([]Delivery, error) {
 	rows, err := q.db.Query(ctx, cancelItemDeliveries, arg.Now, arg.ItemID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []uuid.UUID
+	var items []Delivery
 	for rows.Next() {
-		var id uuid.UUID
-		if err := rows.Scan(&id); err != nil {
+		var i Delivery
+		if err := rows.Scan(
+			&i.ID,
+			&i.ReminderID,
+			&i.UserID,
+			&i.ItemID,
+			&i.ConnectionID,
+			&i.TokenID,
+			&i.Status,
+			&i.Reason,
+			&i.Attempts,
+			&i.HeldUntil,
+			&i.CreatedAt,
+			&i.ExpiresAt,
+			&i.ClosedAt,
+		); err != nil {
 			return nil, err
 		}
-		items = append(items, id)
+		items = append(items, i)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
@@ -79,7 +107,7 @@ func (q *Queries) CancelItemDeliveries(ctx context.Context, arg CancelItemDelive
 const cancelTokenDeliveries = `-- name: CancelTokenDeliveries :many
 UPDATE deliveries SET status = 'cancelled', closed_at = $1
 WHERE token_id = $2 AND status = 'pending'
-RETURNING id
+RETURNING id, reminder_id, user_id, item_id, connection_id, token_id, status, reason, attempts, held_until, created_at, expires_at, closed_at
 `
 
 type CancelTokenDeliveriesParams struct {
@@ -87,19 +115,33 @@ type CancelTokenDeliveriesParams struct {
 	TokenID *uuid.UUID
 }
 
-func (q *Queries) CancelTokenDeliveries(ctx context.Context, arg CancelTokenDeliveriesParams) ([]uuid.UUID, error) {
+func (q *Queries) CancelTokenDeliveries(ctx context.Context, arg CancelTokenDeliveriesParams) ([]Delivery, error) {
 	rows, err := q.db.Query(ctx, cancelTokenDeliveries, arg.Now, arg.TokenID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []uuid.UUID
+	var items []Delivery
 	for rows.Next() {
-		var id uuid.UUID
-		if err := rows.Scan(&id); err != nil {
+		var i Delivery
+		if err := rows.Scan(
+			&i.ID,
+			&i.ReminderID,
+			&i.UserID,
+			&i.ItemID,
+			&i.ConnectionID,
+			&i.TokenID,
+			&i.Status,
+			&i.Reason,
+			&i.Attempts,
+			&i.HeldUntil,
+			&i.CreatedAt,
+			&i.ExpiresAt,
+			&i.ClosedAt,
+		); err != nil {
 			return nil, err
 		}
-		items = append(items, id)
+		items = append(items, i)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
@@ -167,27 +209,57 @@ func (q *Queries) DeleteScheduledReminders(ctx context.Context, ids []uuid.UUID)
 const expireDeliveries = `-- name: ExpireDeliveries :many
 UPDATE deliveries SET status = 'expired', closed_at = $1
 WHERE status = 'pending' AND expires_at < $1
-RETURNING id
+RETURNING id, reminder_id, user_id, item_id, connection_id, token_id, status, reason, attempts, held_until, created_at, expires_at, closed_at
 `
 
-func (q *Queries) ExpireDeliveries(ctx context.Context, now *time.Time) ([]uuid.UUID, error) {
+func (q *Queries) ExpireDeliveries(ctx context.Context, now *time.Time) ([]Delivery, error) {
 	rows, err := q.db.Query(ctx, expireDeliveries, now)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []uuid.UUID
+	var items []Delivery
 	for rows.Next() {
-		var id uuid.UUID
-		if err := rows.Scan(&id); err != nil {
+		var i Delivery
+		if err := rows.Scan(
+			&i.ID,
+			&i.ReminderID,
+			&i.UserID,
+			&i.ItemID,
+			&i.ConnectionID,
+			&i.TokenID,
+			&i.Status,
+			&i.Reason,
+			&i.Attempts,
+			&i.HeldUntil,
+			&i.CreatedAt,
+			&i.ExpiresAt,
+			&i.ClosedAt,
+		); err != nil {
 			return nil, err
 		}
-		items = append(items, id)
+		items = append(items, i)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
 	return items, nil
+}
+
+const getDeliveryChannel = `-- name: GetDeliveryChannel :one
+SELECT connection_id, token_id FROM deliveries WHERE id = $1 AND status = 'pending'
+`
+
+type GetDeliveryChannelRow struct {
+	ConnectionID *uuid.UUID
+	TokenID      *uuid.UUID
+}
+
+func (q *Queries) GetDeliveryChannel(ctx context.Context, id uuid.UUID) (GetDeliveryChannelRow, error) {
+	row := q.db.QueryRow(ctx, getDeliveryChannel, id)
+	var i GetDeliveryChannelRow
+	err := row.Scan(&i.ConnectionID, &i.TokenID)
+	return i, err
 }
 
 const getPendingDelivery = `-- name: GetPendingDelivery :one
@@ -693,32 +765,14 @@ func (q *Queries) LockDueReminders(ctx context.Context, arg LockDueRemindersPara
 	return items, nil
 }
 
-const sendDelivery = `-- name: SendDelivery :one
-UPDATE deliveries SET attempts = attempts + 1, held_until = NULL WHERE id = $1
-RETURNING attempts
-`
-
-func (q *Queries) SendDelivery(ctx context.Context, id uuid.UUID) (int32, error) {
-	row := q.db.QueryRow(ctx, sendDelivery, id)
-	var attempts int32
-	err := row.Scan(&attempts)
-	return attempts, err
-}
-
-const supersedeConnectionDeliveries = `-- name: SupersedeConnectionDeliveries :many
-UPDATE deliveries SET status = 'superseded', closed_at = $1
-WHERE item_id = $2 AND connection_id = $3 AND status = 'pending'
+const releaseHeldDeliveries = `-- name: ReleaseHeldDeliveries :many
+UPDATE deliveries SET held_until = NULL
+WHERE status = 'pending' AND held_until <= $1
 RETURNING id
 `
 
-type SupersedeConnectionDeliveriesParams struct {
-	Now          *time.Time
-	ItemID       uuid.UUID
-	ConnectionID *uuid.UUID
-}
-
-func (q *Queries) SupersedeConnectionDeliveries(ctx context.Context, arg SupersedeConnectionDeliveriesParams) ([]uuid.UUID, error) {
-	rows, err := q.db.Query(ctx, supersedeConnectionDeliveries, arg.Now, arg.ItemID, arg.ConnectionID)
+func (q *Queries) ReleaseHeldDeliveries(ctx context.Context, now *time.Time) ([]uuid.UUID, error) {
+	rows, err := q.db.Query(ctx, releaseHeldDeliveries, now)
 	if err != nil {
 		return nil, err
 	}
@@ -737,10 +791,68 @@ func (q *Queries) SupersedeConnectionDeliveries(ctx context.Context, arg Superse
 	return items, nil
 }
 
+const sendDelivery = `-- name: SendDelivery :one
+UPDATE deliveries SET attempts = attempts + 1, held_until = NULL WHERE id = $1
+RETURNING attempts
+`
+
+func (q *Queries) SendDelivery(ctx context.Context, id uuid.UUID) (int32, error) {
+	row := q.db.QueryRow(ctx, sendDelivery, id)
+	var attempts int32
+	err := row.Scan(&attempts)
+	return attempts, err
+}
+
+const supersedeConnectionDeliveries = `-- name: SupersedeConnectionDeliveries :many
+UPDATE deliveries SET status = 'superseded', closed_at = $1
+WHERE item_id = $2 AND connection_id = $3 AND status = 'pending'
+RETURNING id, reminder_id, user_id, item_id, connection_id, token_id, status, reason, attempts, held_until, created_at, expires_at, closed_at
+`
+
+type SupersedeConnectionDeliveriesParams struct {
+	Now          *time.Time
+	ItemID       uuid.UUID
+	ConnectionID *uuid.UUID
+}
+
+func (q *Queries) SupersedeConnectionDeliveries(ctx context.Context, arg SupersedeConnectionDeliveriesParams) ([]Delivery, error) {
+	rows, err := q.db.Query(ctx, supersedeConnectionDeliveries, arg.Now, arg.ItemID, arg.ConnectionID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Delivery
+	for rows.Next() {
+		var i Delivery
+		if err := rows.Scan(
+			&i.ID,
+			&i.ReminderID,
+			&i.UserID,
+			&i.ItemID,
+			&i.ConnectionID,
+			&i.TokenID,
+			&i.Status,
+			&i.Reason,
+			&i.Attempts,
+			&i.HeldUntil,
+			&i.CreatedAt,
+			&i.ExpiresAt,
+			&i.ClosedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const supersedeTokenDeliveries = `-- name: SupersedeTokenDeliveries :many
 UPDATE deliveries SET status = 'superseded', closed_at = $1
 WHERE item_id = $2 AND token_id = $3 AND status = 'pending'
-RETURNING id
+RETURNING id, reminder_id, user_id, item_id, connection_id, token_id, status, reason, attempts, held_until, created_at, expires_at, closed_at
 `
 
 type SupersedeTokenDeliveriesParams struct {
@@ -749,19 +861,33 @@ type SupersedeTokenDeliveriesParams struct {
 	TokenID *uuid.UUID
 }
 
-func (q *Queries) SupersedeTokenDeliveries(ctx context.Context, arg SupersedeTokenDeliveriesParams) ([]uuid.UUID, error) {
+func (q *Queries) SupersedeTokenDeliveries(ctx context.Context, arg SupersedeTokenDeliveriesParams) ([]Delivery, error) {
 	rows, err := q.db.Query(ctx, supersedeTokenDeliveries, arg.Now, arg.ItemID, arg.TokenID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []uuid.UUID
+	var items []Delivery
 	for rows.Next() {
-		var id uuid.UUID
-		if err := rows.Scan(&id); err != nil {
+		var i Delivery
+		if err := rows.Scan(
+			&i.ID,
+			&i.ReminderID,
+			&i.UserID,
+			&i.ItemID,
+			&i.ConnectionID,
+			&i.TokenID,
+			&i.Status,
+			&i.Reason,
+			&i.Attempts,
+			&i.HeldUntil,
+			&i.CreatedAt,
+			&i.ExpiresAt,
+			&i.ClosedAt,
+		); err != nil {
 			return nil, err
 		}
-		items = append(items, id)
+		items = append(items, i)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
