@@ -12,20 +12,22 @@ import (
 )
 
 type Connection struct {
-	ID          uuid.UUID
-	Name        string
-	Description string
-	Provider    string
-	Enabled     bool
-	TokenHash   []byte
-	CreatedAt   time.Time
-	LastUsedAt  *time.Time
+	ID             uuid.UUID
+	Name           string
+	Description    string
+	Provider       string
+	Enabled        bool
+	TokenHash      []byte
+	CreatedAt      time.Time
+	LastUsedAt     *time.Time
+	AllowedIntents []string
 }
 
 type ConnectionGrant struct {
 	UserID       uuid.UUID
 	ConnectionID uuid.UUID
-	Enabled      bool
+	Enabled      *bool
+	Remind       *bool
 }
 
 type Event struct {
@@ -126,6 +128,7 @@ type PersonalToken struct {
 	TokenHash  []byte
 	CreatedAt  time.Time
 	LastUsedAt *time.Time
+	Remind     bool
 }
 
 type ReminderPlan struct {

@@ -16,12 +16,12 @@ type QuietHours struct {
 }
 
 type User struct {
-	ID          uuid.UUID  `json:"id"`
-	DisplayName string     `json:"display_name"`
-	Role        string     `json:"role"`
-	Timezone    string     `json:"timezone"`
-	QuietHours  QuietHours `json:"quiet_hours"`
-	CreatedAt   time.Time  `json:"created_at"`
+	ID          uuid.UUID   `json:"id"`
+	DisplayName string      `json:"display_name"`
+	Role        string      `json:"role"`
+	Timezone    string      `json:"timezone"`
+	QuietHours  *QuietHours `json:"quiet_hours"`
+	CreatedAt   time.Time   `json:"created_at"`
 }
 
 func View(u sqlc.User) User {
@@ -30,9 +30,17 @@ func View(u sqlc.User) User {
 		DisplayName: u.DisplayName,
 		Role:        u.Role,
 		Timezone:    u.Timezone,
-		QuietHours:  QuietHours{Start: formatClock(u.QuietStart), End: formatClock(u.QuietEnd)},
+		QuietHours:  ViewQuietHours(u),
 		CreatedAt:   u.CreatedAt.UTC(),
 	}
+}
+
+// ViewQuietHours returns the user's quiet hours, or nil when they are off.
+func ViewQuietHours(u sqlc.User) *QuietHours {
+	if !u.QuietStart.Valid || !u.QuietEnd.Valid {
+		return nil
+	}
+	return &QuietHours{Start: formatClock(u.QuietStart), End: formatClock(u.QuietEnd)}
 }
 
 func formatClock(t pgtype.Time) string {

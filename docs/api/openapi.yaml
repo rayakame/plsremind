@@ -203,7 +203,10 @@ paths:
                   description: IANA time zone name.
                   examples: [Europe/Berlin]
                 quiet_hours:
-                  $ref: "#/components/schemas/QuietHours"
+                  description: Send null to turn quiet hours off.
+                  oneOf:
+                    - type: "null"
+                    - type: object
       responses:
         "200":
           description: The updated user.
@@ -522,6 +525,8 @@ paths:
                 name:
                   type: string
                   description: 1 to 64 characters, for you to recognise the token later.
+                remind:
+                  type: boolean
       responses:
         "201":
           description: The token. `token` is only shown this once.
@@ -535,6 +540,32 @@ paths:
     parameters:
       - $ref: "#/components/parameters/User"
       - $ref: "#/components/parameters/Id"
+    patch:
+      tags: [Account]
+      operationId: updateToken
+      summary: Rename a personal token or make it a way to be reminded
+      security:
+        - session: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                remind:
+                  type: boolean
+      responses:
+        "200":
+          description: The token, without its secret value.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PersonalToken"
+        default:
+          $ref: "#/components/responses/Error"
     delete:
       tags: [Account]
       operationId: deleteToken
@@ -1061,7 +1092,8 @@ paths:
     put:
       tags: [Connections]
       operationId: setConnectionGrant
-      summary: Allow or forbid a connection to act for the user
+      summary: Allow or forbid a connection to act for the user, or to remind them
+      description: Send `enabled`, `remind` or both. Turning reminders off leaves the connection's access as it is.
       requestBody:
         required: true
         content:
@@ -1070,6 +1102,8 @@ paths:
               type: object
               properties:
                 enabled:
+                  type: boolean
+                remind:
                   type: boolean
       responses:
         "200":
@@ -1120,6 +1154,11 @@ paths:
                 provider:
                   type: string
                   description: The provider whose accounts the connection works with, for example `discord`.
+                allowed_intents:
+                  type: array
+                  description: Defaults to all intents.
+                  items:
+                    type: string
       responses:
         "201":
           description: The connection. `token` is only shown this once.
@@ -1151,6 +1190,10 @@ paths:
                   type: string
                 enabled:
                   type: boolean
+                allowed_intents:
+                  type: array
+                  items:
+                    type: string
       responses:
         "200":
           description: The updated connection.
@@ -1455,10 +1498,18 @@ components:
                 enum: [password, github, discord, oidc]
               name:
                 type: string
+    OptionalQuietHours:
+      description: Null while quiet hours are off, which is the default.
+      oneOf:
+        - type: "null"
+        - $ref: "#/components/schemas/QuietHours"
     QuietHours:
       type: object
       required: [start, end]
-      description: Reminders that fall into this window are delivered when it ends.
+      description: |
+        A daily window in the user's time zone, which may span midnight. Reminders before a
+        deadline and follow-ups that fall into it wait until it ends. The reminder at the due
+        time and reminders the user set by hand are never delayed.
       properties:
         start:
           type: string
@@ -1481,7 +1532,7 @@ components:
         timezone:
           type: string
         quiet_hours:
-          $ref: "#/components/schemas/QuietHours"
+          $ref: "#/components/schemas/OptionalQuietHours"
         created_at:
           type: string
           format: date-time
@@ -1497,7 +1548,7 @@ components:
         timezone:
           type: string
         quiet_hours:
-          $ref: "#/components/schemas/QuietHours"
+          $ref: "#/components/schemas/OptionalQuietHours"
     NewPasswordAccount:
       type: object
       required: [username, password]
@@ -1580,13 +1631,16 @@ components:
               type: boolean
     PersonalToken:
       type: object
-      required: [id, name, created_at, last_used_at]
+      required: [id, name, remind, created_at, last_used_at]
       properties:
         id:
           type: string
           format: uuid
         name:
           type: string
+        remind:
+          type: boolean
+          description: Whether the hub holds reminders for this token to pick up. Off by default.
         token:
           type: string
           description: Only present in the response that creates the token.
@@ -1781,7 +1835,7 @@ components:
           format: date-time
     Connection:
       type: object
-      required: [id, name, description, provider, enabled, created_at, last_used_at]
+      required: [id, name, description, provider, enabled, allowed_intents, created_at, last_used_at]
       properties:
         id:
           type: string
@@ -1794,6 +1848,8 @@ components:
           type: string
         enabled:
           type: boolean
+        allowed_intents:
+          $ref: "#/components/schemas/Intents"
         token:
           type: string
           description: Only present right after creating the connection or replacing its token.
@@ -1805,7 +1861,7 @@ components:
           format: date-time
     UserConnection:
       type: object
-      required: [id, name, description, provider, linked, enabled]
+      required: [id, name, description, provider, linked, enabled, remind, intents]
       properties:
         id:
           type: string
@@ -1822,6 +1878,11 @@ components:
         enabled:
           type: boolean
           description: Whether the connection may act for the user right now.
+        remind:
+          type: boolean
+          description: Whether the user is reminded through this connection. On unless the user turns it off.
+        intents:
+          $ref: "#/components/schemas/Intents"
     LoginProvider:
       type: object
       required: [key, type, name, login_enabled, link_enabled, client_id, has_client_secret, issuer_url]
@@ -1844,3 +1905,13 @@ components:
           type: boolean
         issuer_url:
           type: string
+    Intents:
+      type: array
+      description: |
+        The kinds of data a client can have: `users` (profile), `lists`, `items` (with subitems
+        and manual reminders), `plans` (reminder plans) and `deliveries` (reminders to play out).
+        For a connection the admin decides which of them it may have, and that limit applies to
+        the gateway and to this API alike.
+      items:
+        type: string
+        enum: [users, lists, items, plans, deliveries]

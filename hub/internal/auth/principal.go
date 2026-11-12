@@ -1,6 +1,8 @@
 package auth
 
 import (
+	"slices"
+
 	"github.com/gofiber/fiber/v3"
 	"github.com/google/uuid"
 )
@@ -20,6 +22,33 @@ type Principal struct {
 	Role               string
 	CredentialID       uuid.UUID
 	ConnectionProvider string
+	// Intents is what the admin allows a connection to have. Empty for other kinds.
+	Intents []string
+}
+
+// Intents are the kinds of data a client can ask for, in canonical order.
+var Intents = []string{"users", "lists", "items", "plans", "deliveries"}
+
+// HasIntent reports whether the caller may have the given kind of data. Sessions
+// and personal tokens belong to the user and may have everything.
+func HasIntent(p Principal, intent string) bool {
+	return p.Kind != KindConnection || slices.Contains(p.Intents, intent)
+}
+
+// NormalizeIntents validates a list of intents and returns it without duplicates in canonical order.
+func NormalizeIntents(in []string) ([]string, bool) {
+	out := make([]string, 0, len(Intents))
+	for _, known := range Intents {
+		if slices.Contains(in, known) {
+			out = append(out, known)
+		}
+	}
+	for _, intent := range in {
+		if !slices.Contains(Intents, intent) {
+			return nil, false
+		}
+	}
+	return out, len(out) > 0
 }
 
 type localKey int

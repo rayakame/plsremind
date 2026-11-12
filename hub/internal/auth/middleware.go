@@ -126,7 +126,7 @@ func fromConnectionToken(c fiber.Ctx, d *deps.Deps, token string) (Principal, er
 			return Principal{}, err
 		}
 	}
-	return Principal{Kind: KindConnection, CredentialID: conn.ID, ConnectionProvider: conn.Provider}, nil
+	return Principal{Kind: KindConnection, CredentialID: conn.ID, ConnectionProvider: conn.Provider, Intents: conn.AllowedIntents}, nil
 }
 
 func fromSession(c fiber.Ctx, d *deps.Deps) (Principal, bool, error) {
@@ -196,15 +196,25 @@ func RequireAdmin() fiber.Handler {
 }
 
 // connectionMayUse is the complete list of what a connection can do for a user:
-// their lists and items, plus reading the profile and the reminder plans.
-// Everything about the account itself stays out of reach.
-func connectionMayUse(method, rest string) bool {
-	for _, prefix := range []string{"/lists", "/items"} {
+// their lists and items, plus reading the profile and the reminder plans, each
+// only if the admin allows the connection that kind of data. Everything about
+// the account itself stays out of reach.
+func connectionMayUse(p Principal, method, rest string) bool {
+	for prefix, intent := range map[string]string{"/lists": "lists", "/items": "items"} {
 		if rest == prefix || strings.HasPrefix(rest, prefix+"/") {
-			return true
+			return HasIntent(p, intent)
 		}
 	}
-	return method == fiber.MethodGet && (rest == "" || rest == "/reminder-plans")
+	if method != fiber.MethodGet {
+		return false
+	}
+	switch rest {
+	case "":
+		return HasIntent(p, "users")
+	case "/reminder-plans":
+		return HasIntent(p, "plans")
+	}
+	return false
 }
 
 // ResolveUser maps the :user path parameter to the user the request acts on.
@@ -230,7 +240,7 @@ func ResolveUser(d *deps.Deps) fiber.Handler {
 			return apierr.NotFound()
 		}
 		_, rest, found := strings.Cut(c.Path(), "/users/"+param)
-		if !found || !connectionMayUse(c.Method(), strings.TrimSuffix(rest, "/")) {
+		if !found || !connectionMayUse(p, c.Method(), strings.TrimSuffix(rest, "/")) {
 			return apierr.Forbidden()
 		}
 		_, err = d.Q().GetGrantedUser(c.Context(), sqlc.GetGrantedUserParams{ConnectionID: p.CredentialID, UserID: userID})

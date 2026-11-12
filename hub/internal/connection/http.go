@@ -25,24 +25,27 @@ import (
 var providerPattern = regexp.MustCompile(`^[a-z0-9_-]{1,32}$`)
 
 type Connection struct {
-	ID          uuid.UUID  `json:"id"`
-	Name        string     `json:"name"`
-	Description string     `json:"description"`
-	Provider    string     `json:"provider"`
-	Enabled     bool       `json:"enabled"`
-	Token       string     `json:"token,omitempty"`
-	CreatedAt   time.Time  `json:"created_at"`
-	LastUsedAt  *time.Time `json:"last_used_at"`
+	ID          uuid.UUID `json:"id"`
+	Name        string    `json:"name"`
+	Description string    `json:"description"`
+	Provider    string    `json:"provider"`
+	Enabled     bool      `json:"enabled"`
+	// AllowedIntents is the data the admin lets the connection have.
+	AllowedIntents []string   `json:"allowed_intents"`
+	Token          string     `json:"token,omitempty"`
+	CreatedAt      time.Time  `json:"created_at"`
+	LastUsedAt     *time.Time `json:"last_used_at"`
 }
 
 func view(c sqlc.Connection) Connection {
 	out := Connection{
-		ID:          c.ID,
-		Name:        c.Name,
-		Description: c.Description,
-		Provider:    c.Provider,
-		Enabled:     c.Enabled,
-		CreatedAt:   c.CreatedAt.UTC(),
+		ID:             c.ID,
+		Name:           c.Name,
+		Description:    c.Description,
+		Provider:       c.Provider,
+		Enabled:        c.Enabled,
+		AllowedIntents: c.AllowedIntents,
+		CreatedAt:      c.CreatedAt.UTC(),
 	}
 	if c.LastUsedAt != nil {
 		used := c.LastUsedAt.UTC()
@@ -59,12 +62,20 @@ type UserConnection struct {
 	Provider    string    `json:"provider"`
 	Linked      bool      `json:"linked"`
 	Enabled     bool      `json:"enabled"`
+	// Remind says whether the user is reminded through this connection.
+	Remind bool `json:"remind"`
+	// Intents is the data the connection may have, so users can see what they share.
+	Intents []string `json:"intents"`
 }
 
 func userView(row sqlc.ListUserConnectionsRow) UserConnection {
 	enabled := row.Linked
 	if row.Granted != nil {
 		enabled = *row.Granted
+	}
+	remind := true
+	if row.RemindChoice != nil {
+		remind = *row.RemindChoice
 	}
 	return UserConnection{
 		ID:          row.ID,
@@ -73,6 +84,8 @@ func userView(row sqlc.ListUserConnectionsRow) UserConnection {
 		Provider:    row.Provider,
 		Linked:      row.Linked,
 		Enabled:     enabled,
+		Remind:      remind,
+		Intents:     row.AllowedIntents,
 	}
 }
 
@@ -145,12 +158,13 @@ func setGrant(d *deps.Deps) fiber.Handler {
 		}
 		var in struct {
 			Enabled *bool `json:"enabled"`
+			Remind  *bool `json:"remind"`
 		}
 		if err := httpx.Body(c, &in); err != nil {
 			return err
 		}
-		if in.Enabled == nil {
-			return apierr.Field("enabled", "Is required.")
+		if in.Enabled == nil && in.Remind == nil {
+			return apierr.Field("enabled", `Send "enabled", "remind" or both.`)
 		}
 		userID := auth.Target(c)
 		var out UserConnection
@@ -162,9 +176,17 @@ func setGrant(d *deps.Deps) fiber.Handler {
 			if err != nil {
 				return err
 			}
-			err = q.SetConnectionGrant(c.Context(), sqlc.SetConnectionGrantParams{UserID: userID, ConnectionID: id, Enabled: *in.Enabled})
-			if err != nil {
-				return err
+			if in.Enabled != nil {
+				err = q.SetGrantEnabled(c.Context(), sqlc.SetGrantEnabledParams{UserID: userID, ConnectionID: id, Enabled: in.Enabled})
+				if err != nil {
+					return err
+				}
+			}
+			if in.Remind != nil {
+				err = q.SetGrantRemind(c.Context(), sqlc.SetGrantRemindParams{UserID: userID, ConnectionID: id, Remind: in.Remind})
+				if err != nil {
+					return err
+				}
 			}
 			rows, err := q.ListUserConnections(c.Context(), userID)
 			if err != nil {
@@ -209,12 +231,21 @@ func checkText(fields map[string]string, name, value string, min, max int) {
 	}
 }
 
+func checkIntents(fields map[string]string, in []string) []string {
+	intents, ok := auth.NormalizeIntents(in)
+	if !ok {
+		fields["allowed_intents"] = "Must be a non-empty list of: " + strings.Join(auth.Intents, ", ") + "."
+	}
+	return intents
+}
+
 func create(d *deps.Deps) fiber.Handler {
 	return func(c fiber.Ctx) error {
 		var in struct {
-			Name        string `json:"name"`
-			Description string `json:"description"`
-			Provider    string `json:"provider"`
+			Name           string    `json:"name"`
+			Description    string    `json:"description"`
+			Provider       string    `json:"provider"`
+			AllowedIntents *[]string `json:"allowed_intents"`
 		}
 		if err := httpx.Body(c, &in); err != nil {
 			return err
@@ -227,17 +258,22 @@ func create(d *deps.Deps) fiber.Handler {
 		if !providerPattern.MatchString(in.Provider) {
 			fields["provider"] = "Must be 1 to 32 characters: a-z, 0-9, underscore or dash."
 		}
+		intents := auth.Intents
+		if in.AllowedIntents != nil {
+			intents = checkIntents(fields, *in.AllowedIntents)
+		}
 		if len(fields) > 0 {
 			return apierr.Validation(fields)
 		}
 		plain, hash := secret.NewToken(secret.PrefixConnection)
 		row, err := d.Q().CreateConnection(c.Context(), sqlc.CreateConnectionParams{
-			ID:          uuid.Must(uuid.NewV7()),
-			Name:        in.Name,
-			Description: in.Description,
-			Provider:    in.Provider,
-			TokenHash:   hash,
-			CreatedAt:   d.Now(),
+			ID:             uuid.Must(uuid.NewV7()),
+			Name:           in.Name,
+			Description:    in.Description,
+			Provider:       in.Provider,
+			AllowedIntents: intents,
+			TokenHash:      hash,
+			CreatedAt:      d.Now(),
 		})
 		if err != nil {
 			return err
@@ -255,9 +291,10 @@ func update(d *deps.Deps) fiber.Handler {
 			return err
 		}
 		var in struct {
-			Name        *string `json:"name"`
-			Description *string `json:"description"`
-			Enabled     *bool   `json:"enabled"`
+			Name           *string   `json:"name"`
+			Description    *string   `json:"description"`
+			Enabled        *bool     `json:"enabled"`
+			AllowedIntents *[]string `json:"allowed_intents"`
 		}
 		if err := httpx.Body(c, &in); err != nil {
 			return err
@@ -271,7 +308,10 @@ func update(d *deps.Deps) fiber.Handler {
 			if err != nil {
 				return err
 			}
-			params := sqlc.UpdateConnectionParams{ID: id, Name: current.Name, Description: current.Description, Enabled: current.Enabled}
+			params := sqlc.UpdateConnectionParams{
+				ID: id, Name: current.Name, Description: current.Description,
+				Enabled: current.Enabled, AllowedIntents: current.AllowedIntents,
+			}
 			fields := map[string]string{}
 			if in.Name != nil {
 				params.Name = strings.TrimSpace(*in.Name)
@@ -283,6 +323,9 @@ func update(d *deps.Deps) fiber.Handler {
 			}
 			if in.Enabled != nil {
 				params.Enabled = *in.Enabled
+			}
+			if in.AllowedIntents != nil {
+				params.AllowedIntents = checkIntents(fields, *in.AllowedIntents)
 			}
 			if len(fields) > 0 {
 				return apierr.Validation(fields)

@@ -24,15 +24,16 @@ func (q *Queries) CountPersonalTokens(ctx context.Context, userID uuid.UUID) (in
 }
 
 const createPersonalToken = `-- name: CreatePersonalToken :one
-INSERT INTO personal_tokens (id, user_id, name, token_hash, created_at)
-VALUES ($1, $2, $3, $4, $5)
-RETURNING id, user_id, name, token_hash, created_at, last_used_at
+INSERT INTO personal_tokens (id, user_id, name, remind, token_hash, created_at)
+VALUES ($1, $2, $3, $4, $5, $6)
+RETURNING id, user_id, name, token_hash, created_at, last_used_at, remind
 `
 
 type CreatePersonalTokenParams struct {
 	ID        uuid.UUID
 	UserID    uuid.UUID
 	Name      string
+	Remind    bool
 	TokenHash []byte
 	CreatedAt time.Time
 }
@@ -42,6 +43,7 @@ func (q *Queries) CreatePersonalToken(ctx context.Context, arg CreatePersonalTok
 		arg.ID,
 		arg.UserID,
 		arg.Name,
+		arg.Remind,
 		arg.TokenHash,
 		arg.CreatedAt,
 	)
@@ -53,6 +55,7 @@ func (q *Queries) CreatePersonalToken(ctx context.Context, arg CreatePersonalTok
 		&i.TokenHash,
 		&i.CreatedAt,
 		&i.LastUsedAt,
+		&i.Remind,
 	)
 	return i, err
 }
@@ -81,6 +84,30 @@ DELETE FROM personal_tokens WHERE user_id = $1
 func (q *Queries) DeleteUserPersonalTokens(ctx context.Context, userID uuid.UUID) error {
 	_, err := q.db.Exec(ctx, deleteUserPersonalTokens, userID)
 	return err
+}
+
+const getPersonalToken = `-- name: GetPersonalToken :one
+SELECT id, user_id, name, token_hash, created_at, last_used_at, remind FROM personal_tokens WHERE id = $1 AND user_id = $2 FOR UPDATE
+`
+
+type GetPersonalTokenParams struct {
+	ID     uuid.UUID
+	UserID uuid.UUID
+}
+
+func (q *Queries) GetPersonalToken(ctx context.Context, arg GetPersonalTokenParams) (PersonalToken, error) {
+	row := q.db.QueryRow(ctx, getPersonalToken, arg.ID, arg.UserID)
+	var i PersonalToken
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.Name,
+		&i.TokenHash,
+		&i.CreatedAt,
+		&i.LastUsedAt,
+		&i.Remind,
+	)
+	return i, err
 }
 
 const getPersonalTokenUser = `-- name: GetPersonalTokenUser :one
@@ -112,7 +139,7 @@ func (q *Queries) GetPersonalTokenUser(ctx context.Context, tokenHash []byte) (G
 }
 
 const listPersonalTokens = `-- name: ListPersonalTokens :many
-SELECT id, user_id, name, token_hash, created_at, last_used_at FROM personal_tokens WHERE user_id = $1 ORDER BY id
+SELECT id, user_id, name, token_hash, created_at, last_used_at, remind FROM personal_tokens WHERE user_id = $1 ORDER BY id
 `
 
 func (q *Queries) ListPersonalTokens(ctx context.Context, userID uuid.UUID) ([]PersonalToken, error) {
@@ -131,6 +158,7 @@ func (q *Queries) ListPersonalTokens(ctx context.Context, userID uuid.UUID) ([]P
 			&i.TokenHash,
 			&i.CreatedAt,
 			&i.LastUsedAt,
+			&i.Remind,
 		); err != nil {
 			return nil, err
 		}
@@ -154,4 +182,30 @@ type TouchPersonalTokenParams struct {
 func (q *Queries) TouchPersonalToken(ctx context.Context, arg TouchPersonalTokenParams) error {
 	_, err := q.db.Exec(ctx, touchPersonalToken, arg.Now, arg.ID)
 	return err
+}
+
+const updatePersonalToken = `-- name: UpdatePersonalToken :one
+UPDATE personal_tokens SET name = $1, remind = $2 WHERE id = $3
+RETURNING id, user_id, name, token_hash, created_at, last_used_at, remind
+`
+
+type UpdatePersonalTokenParams struct {
+	Name   string
+	Remind bool
+	ID     uuid.UUID
+}
+
+func (q *Queries) UpdatePersonalToken(ctx context.Context, arg UpdatePersonalTokenParams) (PersonalToken, error) {
+	row := q.db.QueryRow(ctx, updatePersonalToken, arg.Name, arg.Remind, arg.ID)
+	var i PersonalToken
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.Name,
+		&i.TokenHash,
+		&i.CreatedAt,
+		&i.LastUsedAt,
+		&i.Remind,
+	)
+	return i, err
 }

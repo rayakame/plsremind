@@ -22,15 +22,17 @@ import (
 const maxPerUser = 25
 
 type Token struct {
-	ID         uuid.UUID  `json:"id"`
-	Name       string     `json:"name"`
+	ID   uuid.UUID `json:"id"`
+	Name string    `json:"name"`
+	// Remind marks the token as a way to be reminded: the hub then holds deliveries for it.
+	Remind     bool       `json:"remind"`
 	Token      string     `json:"token,omitempty"`
 	CreatedAt  time.Time  `json:"created_at"`
 	LastUsedAt *time.Time `json:"last_used_at"`
 }
 
 func view(t sqlc.PersonalToken) Token {
-	out := Token{ID: t.ID, Name: t.Name, CreatedAt: t.CreatedAt.UTC()}
+	out := Token{ID: t.ID, Name: t.Name, Remind: t.Remind, CreatedAt: t.CreatedAt.UTC()}
 	if t.LastUsedAt != nil {
 		used := t.LastUsedAt.UTC()
 		out.LastUsedAt = &used
@@ -42,6 +44,7 @@ func Register(user fiber.Router, d *deps.Deps) {
 	tokens := user.Group("/tokens", auth.RequireSession())
 	tokens.Get("", list(d))
 	tokens.Post("", create(d))
+	tokens.Patch("/:id", update(d))
 	tokens.Delete("/:id", remove(d))
 }
 
@@ -62,19 +65,20 @@ func list(d *deps.Deps) fiber.Handler {
 func create(d *deps.Deps) fiber.Handler {
 	return func(c fiber.Ctx) error {
 		var in struct {
-			Name string `json:"name"`
+			Name   string `json:"name"`
+			Remind bool   `json:"remind"`
 		}
 		if err := httpx.Body(c, &in); err != nil {
 			return err
 		}
-		name := strings.TrimSpace(in.Name)
-		if n := utf8.RuneCountInString(name); n < 1 || n > 64 {
-			return apierr.Field("name", "Must be 1 to 64 characters.")
+		name, err := cleanName(in.Name)
+		if err != nil {
+			return err
 		}
 		userID := auth.Target(c)
 		plain, hash := secret.NewToken(secret.PrefixPersonal)
 		var created sqlc.PersonalToken
-		err := db.Tx(c.Context(), d.Pool, func(q *sqlc.Queries) error {
+		err = db.Tx(c.Context(), d.Pool, func(q *sqlc.Queries) error {
 			// Locking the user row keeps two concurrent creates from both passing the limit.
 			if _, err := q.LockUser(c.Context(), userID); err != nil {
 				return err
@@ -90,6 +94,7 @@ func create(d *deps.Deps) fiber.Handler {
 				ID:        uuid.Must(uuid.NewV7()),
 				UserID:    userID,
 				Name:      name,
+				Remind:    in.Remind,
 				TokenHash: hash,
 				CreatedAt: d.Now(),
 			})
@@ -101,6 +106,58 @@ func create(d *deps.Deps) fiber.Handler {
 		out := view(created)
 		out.Token = plain
 		return c.Status(http.StatusCreated).JSON(out)
+	}
+}
+
+func cleanName(raw string) (string, error) {
+	name := strings.TrimSpace(raw)
+	if n := utf8.RuneCountInString(name); n < 1 || n > 64 {
+		return "", apierr.Field("name", "Must be 1 to 64 characters.")
+	}
+	return name, nil
+}
+
+func update(d *deps.Deps) fiber.Handler {
+	return func(c fiber.Ctx) error {
+		id, err := httpx.ParamUUID(c, "id")
+		if err != nil {
+			return err
+		}
+		var in struct {
+			Name   *string `json:"name"`
+			Remind *bool   `json:"remind"`
+		}
+		if err := httpx.Body(c, &in); err != nil {
+			return err
+		}
+		if in.Name == nil && in.Remind == nil {
+			return apierr.Field("name", `Send "name", "remind" or both.`)
+		}
+		var updated sqlc.PersonalToken
+		err = db.Tx(c.Context(), d.Pool, func(q *sqlc.Queries) error {
+			current, err := q.GetPersonalToken(c.Context(), sqlc.GetPersonalTokenParams{ID: id, UserID: auth.Target(c)})
+			if db.IsNotFound(err) {
+				return apierr.NotFound()
+			}
+			if err != nil {
+				return err
+			}
+			params := sqlc.UpdatePersonalTokenParams{ID: id, Name: current.Name, Remind: current.Remind}
+			if in.Name != nil {
+				if params.Name, err = cleanName(*in.Name); err != nil {
+					return err
+				}
+			}
+			if in.Remind != nil {
+				params.Remind = *in.Remind
+			}
+			updated, err = q.UpdatePersonalToken(c.Context(), params)
+			return err
+		})
+		if err != nil {
+			return err
+		}
+		return c.JSON(view(updated))
 	}
 }
 

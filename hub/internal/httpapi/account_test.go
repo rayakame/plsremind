@@ -8,6 +8,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
+	"github.com/tidwall/gjson"
 
 	"github.com/rayakame/plsremind/hub/internal/ratelimit"
 	"github.com/rayakame/plsremind/hub/internal/testkit"
@@ -60,8 +61,7 @@ func TestLoginAndMe(t *testing.T) {
 	require.Equal(t, 200, me.Status)
 	require.Equal(t, admin.UserID, me.Get("id").String())
 	require.Equal(t, "UTC", me.Get("timezone").String())
-	require.Equal(t, "22:00", me.Get("quiet_hours.start").String())
-	require.Equal(t, "08:00", me.Get("quiet_hours.end").String())
+	require.Equal(t, gjson.Null, me.Get("quiet_hours").Type)
 
 	require.Equal(t, 401, e.Do(t, "GET", "/users/@me", nil).Status)
 }

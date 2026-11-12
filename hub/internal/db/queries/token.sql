@@ -1,6 +1,6 @@
 -- name: CreatePersonalToken :one
-INSERT INTO personal_tokens (id, user_id, name, token_hash, created_at)
-VALUES (@id, @user_id, @name, @token_hash, @created_at)
+INSERT INTO personal_tokens (id, user_id, name, remind, token_hash, created_at)
+VALUES (@id, @user_id, @name, @remind, @token_hash, @created_at)
 RETURNING *;
 
 -- name: CountPersonalTokens :one
@@ -23,3 +23,10 @@ UPDATE personal_tokens SET last_used_at = @now WHERE id = @id;
 
 -- name: DeleteUserPersonalTokens :exec
 DELETE FROM personal_tokens WHERE user_id = @user_id;
+
+-- name: GetPersonalToken :one
+SELECT * FROM personal_tokens WHERE id = @id AND user_id = @user_id FOR UPDATE;
+
+-- name: UpdatePersonalToken :one
+UPDATE personal_tokens SET name = @name, remind = @remind WHERE id = @id
+RETURNING *;

@@ -8,6 +8,7 @@ import (
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/rayakame/plsremind/hub/internal/apierr"
 	"github.com/rayakame/plsremind/hub/internal/auth"
@@ -170,9 +171,9 @@ func getProfile(d *deps.Deps) fiber.Handler {
 }
 
 type profilePatch struct {
-	DisplayName *string     `json:"display_name"`
-	Timezone    *string     `json:"timezone"`
-	QuietHours  *QuietHours `json:"quiet_hours"`
+	DisplayName *string               `json:"display_name"`
+	Timezone    *string               `json:"timezone"`
+	QuietHours  httpx.Opt[QuietHours] `json:"quiet_hours"`
 }
 
 func patchProfile(d *deps.Deps) fiber.Handler {
@@ -202,11 +203,14 @@ func patchProfile(d *deps.Deps) fiber.Handler {
 			params.Timezone = *in.Timezone
 			checkTimezone(c.Context(), q, fields, params.Timezone)
 		}
-		if in.QuietHours != nil {
-			start, okStart := parseClock(in.QuietHours.Start)
-			end, okEnd := parseClock(in.QuietHours.End)
-			if !okStart || !okEnd {
-				fields["quiet_hours"] = "Start and end must be times in HH:MM format."
+		switch {
+		case in.QuietHours.Null:
+			params.QuietStart, params.QuietEnd = pgtype.Time{}, pgtype.Time{}
+		case in.QuietHours.Set:
+			start, okStart := parseClock(in.QuietHours.Val.Start)
+			end, okEnd := parseClock(in.QuietHours.Val.End)
+			if !okStart || !okEnd || start == end {
+				fields["quiet_hours"] = "Start and end must be two different times in HH:MM format."
 			}
 			params.QuietStart, params.QuietEnd = start, end
 		}

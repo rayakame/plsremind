@@ -215,7 +215,7 @@ func TestConnectionSeesOnlyWhatItNeedsOfTheProfile(t *testing.T) {
 	require.Equal(t, 200, r.Status)
 	require.Equal(t, "mia", r.Get("display_name").String())
 	require.Equal(t, "UTC", r.Get("timezone").String())
-	require.Equal(t, "22:00", r.Get("quiet_hours.start").String())
+	require.True(t, r.Get("quiet_hours").Exists())
 	require.False(t, r.Get("role").Exists())
 	require.False(t, r.Get("created_at").Exists())
 }
