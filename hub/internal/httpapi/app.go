@@ -50,15 +50,21 @@ func New(d *deps.Deps) *fiber.App {
 
 func NewServer(d *deps.Deps) *Server {
 	d.Gateway = d.Gateway.WithDefaults()
+	if d.ReadTimeout == 0 {
+		d.ReadTimeout = 30 * time.Second
+	}
+	if d.IdleTimeout == 0 {
+		d.IdleTimeout = 2 * time.Minute
+	}
 	cfg := fiber.Config{
 		AppName:   "plsremind",
 		BodyLimit: bodyLimit,
 		// Access checks compare paths as written, so routing must not be more lenient than they are.
 		CaseSensitive: true,
 		// A client that stops sending must not hold a connection open forever.
-		ReadTimeout:  30 * time.Second,
+		ReadTimeout:  d.ReadTimeout,
 		WriteTimeout: 30 * time.Second,
-		IdleTimeout:  2 * time.Minute,
+		IdleTimeout:  d.IdleTimeout,
 		ErrorHandler: apierr.Handler,
 	}
 	if d.Cfg.ProxyHeader != "" {

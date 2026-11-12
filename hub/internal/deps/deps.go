@@ -26,6 +26,10 @@ type Deps struct {
 
 	Gateway Gateway
 
+	// ReadTimeout and IdleTimeout bound plain HTTP requests. Zero means the defaults.
+	ReadTimeout time.Duration
+	IdleTimeout time.Duration
+
 	// OAuthEndpoints replaces the built-in addresses of "github" and "discord", for tests.
 	OAuthEndpoints map[string]OAuthEndpoints
 }

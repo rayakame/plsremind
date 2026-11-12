@@ -21,7 +21,6 @@ const (
 const (
 	CloseUnknownOp            = 4001
 	CloseDecode               = 4002
-	CloseNotAuthenticated     = 4003
 	CloseAuthFailed           = 4004
 	CloseAlreadyAuthenticated = 4005
 	CloseInvalidSeq           = 4007
@@ -31,11 +30,41 @@ const (
 	CloseDisallowedIntents    = 4014
 )
 
+// Opcodes names every opcode, for the documentation check.
+var Opcodes = map[int]string{
+	OpDispatch:       "Dispatch",
+	OpHeartbeat:      "Heartbeat",
+	OpIdentify:       "Identify",
+	OpResume:         "Resume",
+	OpReconnect:      "Reconnect",
+	OpInvalidSession: "Invalid Session",
+	OpHello:          "Hello",
+	OpHeartbeatACK:   "Heartbeat ACK",
+}
+
+// CloseCodes lists every close code the gateway uses.
+var CloseCodes = []int{
+	CloseUnknownOp, CloseDecode, CloseAuthFailed, CloseAlreadyAuthenticated,
+	CloseInvalidSeq, CloseRateLimited, CloseTimeout, CloseInvalidIntents, CloseDisallowedIntents,
+}
+
 // Event names of dispatches.
 const (
 	EventReady   = "READY"
 	EventResumed = "RESUMED"
 )
+
+// Events lists every dispatch the gateway can send.
+var Events = []string{
+	EventReady, EventResumed,
+	"user.sync", "user.gone", "user.updated", "connection.updated",
+	"list.created", "list.updated", "list.deleted",
+	"item.created", "item.updated", "item.deleted",
+	"subitem.created", "subitem.updated", "subitem.deleted",
+	"reminder.created", "reminder.deleted",
+	"plan.updated",
+	"delivery.created", "delivery.closed",
+}
 
 type inbound struct {
 	Op int             `json:"op"`

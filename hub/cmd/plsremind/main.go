@@ -15,9 +15,13 @@ import (
 
 	"github.com/rayakame/plsremind/hub/internal/config"
 	"github.com/rayakame/plsremind/hub/internal/db"
+	"github.com/rayakame/plsremind/hub/internal/delivery"
 	"github.com/rayakame/plsremind/hub/internal/deps"
 	"github.com/rayakame/plsremind/hub/internal/httpapi"
 )
+
+// tickEvery is how often the hub looks for reminders whose time has come.
+const tickEvery = 5 * time.Second
 
 func main() {
 	if err := run(); err != nil {
@@ -43,12 +47,30 @@ func run() error {
 	}
 	defer pool.Close()
 
-	app := httpapi.New(&deps.Deps{
+	d := &deps.Deps{
 		Cfg:  cfg,
 		Pool: pool,
 		Now:  time.Now,
 		HTTP: &http.Client{Timeout: 10 * time.Second},
-	})
+	}
+	server := httpapi.NewServer(d)
+	app := server.App
+	server.Gateway.Start(ctx)
+
+	go func() {
+		ticker := time.NewTicker(tickEvery)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				if err := delivery.RunOnce(ctx, d); err != nil && ctx.Err() == nil {
+					slog.Error("fire reminders", "err", err)
+				}
+			}
+		}
+	}()
 
 	go func() {
 		ticker := time.NewTicker(time.Hour)
@@ -67,6 +89,8 @@ func run() error {
 
 	go func() {
 		<-ctx.Done()
+		// Gateway clients are told to reconnect before the listener goes away.
+		server.Gateway.Shutdown()
 		if err := app.ShutdownWithTimeout(10 * time.Second); err != nil {
 			slog.Error("shutdown", "err", err)
 		}

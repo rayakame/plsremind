@@ -24,10 +24,13 @@ jobs:
         with:
           sqlc-version: "1.31.1"
       - run: make lint
-      - run: make test
+      - run: make test-race
 
   smoke:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: hub/go.mod
       - run: deploy/smoke.sh

@@ -130,8 +130,17 @@ type Env struct {
 	baseURL string
 }
 
+// Deps is the hub's dependency set, for tests that change it before the server is built.
+type Deps = deps.Deps
+
 // New returns an environment with its own freshly migrated database.
 func New(t *testing.T) *Env {
+	t.Helper()
+	return NewWith(t, nil)
+}
+
+// NewWith is New with a chance to change settings that are read when the server is built.
+func NewWith(t *testing.T, configure func(d *Deps)) *Env {
 	t.Helper()
 	ctx := context.Background()
 	name := fmt.Sprintf("t_%d_%d", os.Getpid(), dbCounter.Add(1))
@@ -159,6 +168,9 @@ func New(t *testing.T) *Env {
 	}
 	// Every test client comes from 127.0.0.1; the production limit per address would get in the way.
 	d.RateAnon = ratelimit.New(100000, time.Minute, clock.Now)
+	if configure != nil {
+		configure(d)
+	}
 	server := httpapi.NewServer(d)
 	server.Gateway.Start(ctx)
 	t.Cleanup(server.Gateway.Shutdown)

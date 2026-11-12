@@ -102,10 +102,19 @@ A connection is an integration for all users of the instance. Create one with
 `POST /api/v1/admin/connections` and give the returned token to the integration. The token
 is shown once; `POST /api/v1/admin/connections/{id}/token` issues a new one.
 
+## Behind a reverse proxy
+
+The gateway is a WebSocket at `/api/v1/gateway`. The proxy has to pass the upgrade
+through and must not cut idle connections after less than a minute; clients send a
+heartbeat every 45 seconds. Caddy does both on its own. For nginx, set
+`proxy_http_version 1.1`, forward the `Upgrade` and `Connection` headers and raise
+`proxy_read_timeout` to at least 75 seconds.
+
 ## API documentation
 
-The full API is described in [`docs/api/openapi.yaml`](api/openapi.yaml). Run `make docs` in
-`hub/` to render it to `docs/api/index.html`.
+The REST API is described in [`docs/api/openapi.yaml`](api/openapi.yaml). Run `make docs` in
+`hub/` to render it to `docs/api/index.html`. The gateway is described in
+[`docs/gateway.md`](gateway.md).
 
 ## Updating
 
