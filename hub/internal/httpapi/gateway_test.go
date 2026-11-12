@@ -48,7 +48,7 @@ func TestGatewayReadyForConnection(t *testing.T) {
 
 func TestGatewayHeartbeat(t *testing.T) {
 	e := testkit.New(t)
-	gw := e.Gateway(t, personalToken(t, e.User(t, "mia")), "items")
+	gw := e.Gateway(t, personalToken(t, e.User(t, "mia")), "deliveries")
 	gw.StopHeartbeat()
 	for i := 0; i < 3; i++ {
 		gw.Send(t, gateway.OpHeartbeat, nil)
@@ -177,7 +177,7 @@ func TestGatewaySessionLimit(t *testing.T) {
 func TestGatewayClientRateLimit(t *testing.T) {
 	e := testkit.New(t)
 	e.Deps.Gateway.MaxClientMessages = 5
-	gw := e.Gateway(t, personalToken(t, e.User(t, "mia")), "items") // identify is the first message
+	gw := e.Gateway(t, personalToken(t, e.User(t, "mia")), "deliveries") // identify is the first message
 	gw.StopHeartbeat()
 	for i := 0; i < 4; i++ {
 		gw.Send(t, gateway.OpHeartbeat, nil)

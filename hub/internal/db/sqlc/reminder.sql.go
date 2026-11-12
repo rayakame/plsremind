@@ -87,3 +87,32 @@ func (q *Queries) ListManualReminders(ctx context.Context, itemID uuid.UUID) ([]
 	}
 	return items, nil
 }
+
+const listManualRemindersForItems = `-- name: ListManualRemindersForItems :many
+SELECT id, item_id, remind_at, created_at FROM manual_reminders WHERE item_id = ANY($1::uuid[]) ORDER BY item_id, remind_at, id
+`
+
+func (q *Queries) ListManualRemindersForItems(ctx context.Context, itemIds []uuid.UUID) ([]ManualReminder, error) {
+	rows, err := q.db.Query(ctx, listManualRemindersForItems, itemIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ManualReminder
+	for rows.Next() {
+		var i ManualReminder
+		if err := rows.Scan(
+			&i.ID,
+			&i.ItemID,
+			&i.RemindAt,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}

@@ -34,8 +34,22 @@ type Item struct {
 	CompletedAt      *time.Time `json:"completed_at"`
 	ReminderOverride *Override  `json:"reminder_override"`
 	Subitems         []Subitem  `json:"subitems"`
-	CreatedAt        time.Time  `json:"created_at"`
-	UpdatedAt        time.Time  `json:"updated_at"`
+	// Reminders are the ones the user set by hand, earliest first.
+	Reminders []Reminder `json:"reminders"`
+	CreatedAt time.Time  `json:"created_at"`
+	UpdatedAt time.Time  `json:"updated_at"`
+}
+
+// Reminder is a reminder the user set on an item by hand.
+type Reminder struct {
+	ID        uuid.UUID `json:"id"`
+	ItemID    uuid.UUID `json:"item_id"`
+	RemindAt  time.Time `json:"remind_at"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+func ViewReminder(r sqlc.ManualReminder) Reminder {
+	return Reminder{ID: r.ID, ItemID: r.ItemID, RemindAt: r.RemindAt.UTC(), CreatedAt: r.CreatedAt.UTC()}
 }
 
 type Subitem struct {
@@ -90,6 +104,7 @@ func view(row sqlc.Item, allDayDue *time.Time) Item {
 		AllDay:    row.DueDate.Valid,
 		Status:    row.Status,
 		Subitems:  []Subitem{},
+		Reminders: []Reminder{},
 		CreatedAt: row.CreatedAt.UTC(),
 		UpdatedAt: row.UpdatedAt.UTC(),
 	}

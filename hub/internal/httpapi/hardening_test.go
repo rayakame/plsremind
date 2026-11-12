@@ -3,6 +3,7 @@ package httpapi_test
 import (
 	"context"
 	"fmt"
+	"slices"
 	"sync"
 	"testing"
 	"time"
@@ -62,7 +63,11 @@ func TestOnlyOnePasswordPerAccount(t *testing.T) {
 			}()
 		}
 		wg.Wait()
-		require.ElementsMatch(t, []int{204, 409}, statuses, "round %d", round)
+		// Whoever comes second finds a password already set: asked for the current one,
+		// or stopped by the database if both got past that check.
+		slices.Sort(statuses)
+		require.Equal(t, 204, statuses[0], "round %d", round)
+		require.Contains(t, []int{403, 409}, statuses[1], "round %d", round)
 		require.Equal(t, int64(2), e.Do(t, "GET", "/users/@me/identities", nil, session).Get("#").Int())
 	}
 }

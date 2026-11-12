@@ -45,7 +45,7 @@ func create(d *deps.Deps) fiber.Handler {
 		}
 		userID := auth.Target(c)
 		var created Item
-		err := db.Tx(c.Context(), d.Pool, func(q *sqlc.Queries) error {
+		err := db.UserTx(c.Context(), d.Pool, userID, func(q *sqlc.Queries) error {
 			inbox, err := q.GetInbox(c.Context(), userID)
 			if err != nil {
 				return err
@@ -133,7 +133,7 @@ func update(d *deps.Deps, closed Closed) fiber.Handler {
 		}
 		userID := auth.Target(c)
 		var updated Item
-		err = db.Tx(c.Context(), d.Pool, func(q *sqlc.Queries) error {
+		err = db.UserTx(c.Context(), d.Pool, userID, func(q *sqlc.Queries) error {
 			list, listValid, err := in.holdList(c.Context(), q, userID)
 			if err != nil {
 				return err
@@ -190,8 +190,12 @@ func remove(d *deps.Deps, closed Closed) fiber.Handler {
 			return err
 		}
 		userID := auth.Target(c)
-		err = db.Tx(c.Context(), d.Pool, func(q *sqlc.Queries) error {
+		err = db.UserTx(c.Context(), d.Pool, userID, func(q *sqlc.Queries) error {
 			if _, err := Lock(c.Context(), q, userID, id); err != nil {
+				return err
+			}
+			// Schedule first, deliveries second: the same order the ticker takes them in.
+			if err := q.DeleteItemSchedule(c.Context(), id); err != nil {
 				return err
 			}
 			if err := closed(c.Context(), q, d.Now(), id); err != nil {

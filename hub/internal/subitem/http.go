@@ -37,7 +37,7 @@ func change(c fiber.Ctx, d *deps.Deps, fn func(q *sqlc.Queries, itemID uuid.UUID
 	}
 	userID := auth.Target(c)
 	p, _ := auth.From(c)
-	return db.Tx(c.Context(), d.Pool, func(q *sqlc.Queries) error {
+	return db.UserTx(c.Context(), d.Pool, userID, func(q *sqlc.Queries) error {
 		if _, err := item.Lock(c.Context(), q, userID, itemID); err != nil {
 			return err
 		}
@@ -45,9 +45,20 @@ func change(c fiber.Ctx, d *deps.Deps, fn func(q *sqlc.Queries, itemID uuid.UUID
 		if err := item.Touch(c.Context(), q, now, itemID); err != nil {
 			return err
 		}
-		return fn(q, itemID, func(typ string, payload any) error {
-			return eventlog.Append(c.Context(), q, now, userID, eventlog.ActorFrom(p), typ, payload)
+		actor := eventlog.ActorFrom(p)
+		err := fn(q, itemID, func(typ string, payload any) error {
+			return eventlog.Append(c.Context(), q, now, userID, actor, typ, payload)
 		})
+		if err != nil {
+			return err
+		}
+		// The item changed too: its checklist and its updated_at. Sending it whole
+		// lets a client that keeps items in memory simply replace its copy.
+		whole, err := item.Load(c.Context(), q, userID, itemID)
+		if err != nil {
+			return err
+		}
+		return eventlog.Append(c.Context(), q, now, userID, actor, "item.updated", whole)
 	})
 }
 

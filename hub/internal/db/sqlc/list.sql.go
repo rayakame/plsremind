@@ -158,7 +158,7 @@ func (q *Queries) ListLists(ctx context.Context, userID uuid.UUID) ([]List, erro
 }
 
 const lockList = `-- name: LockList :one
-SELECT id, user_id, name, position, is_inbox, created_at, updated_at FROM lists WHERE id = $1 AND user_id = $2 FOR UPDATE
+SELECT id, user_id, name, position, is_inbox, created_at, updated_at FROM lists WHERE id = $1 AND user_id = $2 FOR NO KEY UPDATE
 `
 
 type LockListParams struct {

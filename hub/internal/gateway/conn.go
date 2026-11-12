@@ -40,17 +40,25 @@ func (c *conn) write() {
 	}
 }
 
-// send queues a frame. A connection whose queue is full is too slow to keep and is closed.
+// send queues a frame. When the queue is full it waits for the writer to catch
+// up, which slows down only the session that is sending. A client that does not
+// take anything for a whole write timeout is too slow to keep.
 func (c *conn) send(frame []byte) bool {
 	select {
 	case <-c.done:
 		return false
-	default:
-	}
-	select {
 	case c.out <- frame:
 		return true
 	default:
+	}
+	timer := time.NewTimer(c.writeTimeout)
+	defer timer.Stop()
+	select {
+	case <-c.done:
+		return false
+	case c.out <- frame:
+		return true
+	case <-timer.C:
 		c.close(CloseRateLimited, "too slow")
 		return false
 	}

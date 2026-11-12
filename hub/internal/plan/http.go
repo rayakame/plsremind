@@ -135,7 +135,7 @@ func put(d *deps.Deps, changed Changed) fiber.Handler {
 		}
 		userID := auth.Target(c)
 		var saved view
-		err = db.Tx(c.Context(), d.Pool, func(q *sqlc.Queries) error {
+		err = db.UserTx(c.Context(), d.Pool, userID, func(q *sqlc.Queries) error {
 			err := q.UpsertReminderPlan(c.Context(), sqlc.UpsertReminderPlanParams{
 				UserID:        userID,
 				Priority:      priority,
@@ -162,7 +162,7 @@ func reset(d *deps.Deps, changed Changed) fiber.Handler {
 			return err
 		}
 		userID := auth.Target(c)
-		err = db.Tx(c.Context(), d.Pool, func(q *sqlc.Queries) error {
+		err = db.UserTx(c.Context(), d.Pool, userID, func(q *sqlc.Queries) error {
 			if err := q.DeleteReminderPlan(c.Context(), sqlc.DeleteReminderPlanParams{UserID: userID, Priority: priority}); err != nil {
 				return err
 			}

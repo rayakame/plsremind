@@ -223,7 +223,7 @@ func patchProfile(d *deps.Deps) fiber.Handler {
 		}
 		before := user
 		retime := params.Timezone != user.Timezone || params.QuietStart != user.QuietStart || params.QuietEnd != user.QuietEnd
-		err = db.Tx(c.Context(), d.Pool, func(q *sqlc.Queries) error {
+		err = db.UserTx(c.Context(), d.Pool, user.ID, func(q *sqlc.Queries) error {
 			user, err = q.UpdateUserProfile(c.Context(), params)
 			if err != nil {
 				return err
@@ -310,7 +310,7 @@ func setPassword(d *deps.Deps) fiber.Handler {
 			return err
 		}
 		userID := auth.Target(c)
-		err := db.Tx(c.Context(), d.Pool, func(q *sqlc.Queries) error {
+		err := db.UserTx(c.Context(), d.Pool, userID, func(q *sqlc.Queries) error {
 			identity, err := q.GetPasswordIdentity(c.Context(), userID)
 			hasPassword := err == nil
 			if err != nil && !db.IsNotFound(err) {

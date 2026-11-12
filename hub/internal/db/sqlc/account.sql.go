@@ -382,7 +382,7 @@ func (q *Queries) ListUsers(ctx context.Context, arg ListUsersParams) ([]User, e
 }
 
 const lockUser = `-- name: LockUser :one
-SELECT id FROM users WHERE id = $1 FOR UPDATE
+SELECT id FROM users WHERE id = $1 FOR NO KEY UPDATE
 `
 
 func (q *Queries) LockUser(ctx context.Context, id uuid.UUID) (uuid.UUID, error) {

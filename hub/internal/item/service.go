@@ -52,11 +52,22 @@ func Views(ctx context.Context, q *sqlc.Queries, rows []sqlc.Item) ([]Item, erro
 	for _, sub := range subitems {
 		byItem[sub.ItemID] = append(byItem[sub.ItemID], ViewSubitem(sub))
 	}
+	manual, err := q.ListManualRemindersForItems(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+	reminders := make(map[uuid.UUID][]Reminder, len(rows))
+	for _, m := range manual {
+		reminders[m.ItemID] = append(reminders[m.ItemID], ViewReminder(m))
+	}
 	items := make([]Item, 0, len(rows))
 	for _, row := range rows {
 		item := view(row, allDayDue[row.ID])
 		if subs := byItem[row.ID]; subs != nil {
 			item.Subitems = subs
+		}
+		if rs := reminders[row.ID]; rs != nil {
+			item.Reminders = rs
 		}
 		items = append(items, item)
 	}
@@ -95,6 +106,15 @@ func MoveAll(ctx context.Context, q *sqlc.Queries, now time.Time, from, to uuid.
 // the user's time zone, so they change when the zone does.
 func OpenAllDay(ctx context.Context, q *sqlc.Queries, userID uuid.UUID) ([]Item, error) {
 	rows, err := q.ListOpenAllDayItems(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	return Views(ctx, q, rows)
+}
+
+// Open returns all open items of a user with their subitems and reminders, oldest first.
+func Open(ctx context.Context, q *sqlc.Queries, userID uuid.UUID) ([]Item, error) {
+	rows, err := q.ListOpenItems(ctx, userID)
 	if err != nil {
 		return nil, err
 	}

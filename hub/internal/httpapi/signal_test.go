@@ -59,7 +59,7 @@ func TestChildDeletesNameTheirItem(t *testing.T) {
 	u.Do(t, "DELETE", "/users/@me/items/"+id+"/reminders/"+rem, nil)
 
 	ev := e.Events(t, u.UserID)
-	subDeleted, remDeleted := ev[len(ev)-2], ev[len(ev)-1]
+	subDeleted, remDeleted := ev[len(ev)-4], ev[len(ev)-2]
 	require.Equal(t, []string{"subitem.deleted", sub, id}, []string{subDeleted.Type, subDeleted.Payload.Get("id").String(), subDeleted.Payload.Get("item_id").String()})
 	require.Equal(t, []string{"reminder.deleted", rem, id}, []string{remDeleted.Type, remDeleted.Payload.Get("id").String(), remDeleted.Payload.Get("item_id").String()})
 }

@@ -60,7 +60,15 @@ func TestSubitemCRUDAndOrder(t *testing.T) {
 	for _, ev := range e.Events(t, u.UserID) {
 		types = append(types, ev.Type)
 	}
-	require.Equal(t, []string{"item.created", "subitem.created", "subitem.created", "subitem.updated", "subitem.updated", "subitem.updated", "subitem.deleted"}, types)
+	// Every change to the checklist is followed by the item in its new state.
+	require.Equal(t, []string{
+		"item.created",
+		"subitem.created", "item.updated",
+		"subitem.created", "item.updated",
+		"subitem.updated", "item.updated",
+		"subitem.updated", "subitem.updated", "item.updated",
+		"subitem.deleted", "item.updated",
+	}, types)
 }
 
 func TestSubitemsDoNotCompleteItem(t *testing.T) {

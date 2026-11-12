@@ -22,15 +22,19 @@ import (
 
 const maxPerItem = 20
 
-type Reminder struct {
-	ID        uuid.UUID `json:"id"`
-	ItemID    uuid.UUID `json:"item_id"`
-	RemindAt  time.Time `json:"remind_at"`
-	CreatedAt time.Time `json:"created_at"`
-}
+type Reminder = item.Reminder
 
 func view(r sqlc.ManualReminder) Reminder {
-	return Reminder{ID: r.ID, ItemID: r.ItemID, RemindAt: r.RemindAt.UTC(), CreatedAt: r.CreatedAt.UTC()}
+	return item.ViewReminder(r)
+}
+
+// announceItem logs the item with its new set of reminders, for clients that keep items in memory.
+func announceItem(c fiber.Ctx, q *sqlc.Queries, now time.Time, userID, itemID uuid.UUID, actor eventlog.Actor) error {
+	whole, err := item.Load(c.Context(), q, userID, itemID)
+	if err != nil {
+		return err
+	}
+	return eventlog.Append(c.Context(), q, now, userID, actor, "item.updated", whole)
 }
 
 func Register(user fiber.Router, d *deps.Deps) {
@@ -105,7 +109,7 @@ func create(d *deps.Deps) fiber.Handler {
 		userID := auth.Target(c)
 		p, _ := auth.From(c)
 		var created Reminder
-		err = db.Tx(c.Context(), d.Pool, func(q *sqlc.Queries) error {
+		err = db.UserTx(c.Context(), d.Pool, userID, func(q *sqlc.Queries) error {
 			row, err := item.Lock(c.Context(), q, userID, itemID)
 			if err != nil {
 				return err
@@ -133,7 +137,10 @@ func create(d *deps.Deps) fiber.Handler {
 				return err
 			}
 			created = view(reminder)
-			return eventlog.Append(c.Context(), q, now, userID, eventlog.ActorFrom(p), "reminder.created", created)
+			if err := eventlog.Append(c.Context(), q, now, userID, eventlog.ActorFrom(p), "reminder.created", created); err != nil {
+				return err
+			}
+			return announceItem(c, q, now, userID, itemID, eventlog.ActorFrom(p))
 		})
 		if err != nil {
 			return err
@@ -154,7 +161,7 @@ func remove(d *deps.Deps) fiber.Handler {
 		}
 		userID := auth.Target(c)
 		p, _ := auth.From(c)
-		err = db.Tx(c.Context(), d.Pool, func(q *sqlc.Queries) error {
+		err = db.UserTx(c.Context(), d.Pool, userID, func(q *sqlc.Queries) error {
 			if _, err := item.Lock(c.Context(), q, userID, itemID); err != nil {
 				return err
 			}
@@ -168,7 +175,11 @@ func remove(d *deps.Deps) fiber.Handler {
 			if err := schedule.SyncItem(c.Context(), q, d.Now(), itemID); err != nil {
 				return err
 			}
-			return eventlog.Append(c.Context(), q, d.Now(), userID, eventlog.ActorFrom(p), "reminder.deleted", eventlog.Deleted{ID: id, ItemID: &itemID})
+			now := d.Now()
+			if err := eventlog.Append(c.Context(), q, now, userID, eventlog.ActorFrom(p), "reminder.deleted", eventlog.Deleted{ID: id, ItemID: &itemID}); err != nil {
+				return err
+			}
+			return announceItem(c, q, now, userID, itemID, eventlog.ActorFrom(p))
 		})
 		if err != nil {
 			return err

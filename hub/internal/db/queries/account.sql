@@ -74,4 +74,4 @@ FOR UPDATE;
 UPDATE invites SET used_at = @now, used_by = @used_by WHERE id = @id;
 
 -- name: LockUser :one
-SELECT id FROM users WHERE id = @id FOR UPDATE;
+SELECT id FROM users WHERE id = @id FOR NO KEY UPDATE;

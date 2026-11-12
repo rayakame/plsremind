@@ -4,6 +4,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/rayakame/plsremind/hub/internal/auth"
 )
 
@@ -28,6 +30,19 @@ type Session struct {
 	seq        int64
 	buffer     []sequenced
 	detachedAt time.Time
+
+	box  *mailbox
+	stop chan struct{}
+	once sync.Once
+	// initial and cursors belong to the session's goroutine. cursors holds, for
+	// every user the session follows, the last event of theirs that it sent.
+	initial []uuid.UUID
+	cursors map[uuid.UUID]int64
+}
+
+// halt stops the session's goroutine.
+func (s *Session) halt() {
+	s.once.Do(func() { close(s.stop) })
 }
 
 func (s *Session) wants(intent string) bool {

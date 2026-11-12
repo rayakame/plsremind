@@ -7,10 +7,12 @@ import (
 	"fmt"
 	"io/fs"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/pressly/goose/v3"
 
+	"github.com/rayakame/plsremind/hub/internal/apierr"
 	"github.com/rayakame/plsremind/hub/internal/db/sqlc"
 )
 
@@ -46,6 +48,24 @@ func Migrate(ctx context.Context, url string) error {
 	}
 	_, err = provider.Up(ctx)
 	return err
+}
+
+// UserTx is Tx for a change to one user's data. It takes the user's row lock
+// before anything else, so that all changes to one user happen one after the
+// other. Without that, two requests that lock an item and the user in opposite
+// order can wait on each other until PostgreSQL aborts one of them.
+//
+// The lock is FOR NO KEY UPDATE: it does not block inserts that merely refer to the user.
+func UserTx(ctx context.Context, pool *pgxpool.Pool, userID uuid.UUID, fn func(q *sqlc.Queries) error) error {
+	return Tx(ctx, pool, func(q *sqlc.Queries) error {
+		if _, err := q.LockUser(ctx, userID); err != nil {
+			if IsNotFound(err) {
+				return apierr.NotFound()
+			}
+			return err
+		}
+		return fn(q)
+	})
 }
 
 // Tx runs fn in a transaction and commits when fn returns nil.

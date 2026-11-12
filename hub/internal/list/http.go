@@ -68,7 +68,7 @@ func create(d *deps.Deps) fiber.Handler {
 		}
 		userID := auth.Target(c)
 		var created List
-		err = db.Tx(c.Context(), d.Pool, func(q *sqlc.Queries) error {
+		err = db.UserTx(c.Context(), d.Pool, userID, func(q *sqlc.Queries) error {
 			// The row lock makes position assignment and the limit check safe under concurrency.
 			if _, err := q.LockUser(c.Context(), userID); err != nil {
 				return err
@@ -117,7 +117,7 @@ func rename(d *deps.Deps) fiber.Handler {
 		}
 		userID := auth.Target(c)
 		var updated List
-		err = db.Tx(c.Context(), d.Pool, func(q *sqlc.Queries) error {
+		err = db.UserTx(c.Context(), d.Pool, userID, func(q *sqlc.Queries) error {
 			current, err := Get(c.Context(), q, userID, id)
 			if err != nil {
 				return err
@@ -147,7 +147,7 @@ func remove(d *deps.Deps) fiber.Handler {
 			return err
 		}
 		userID := auth.Target(c)
-		err = db.Tx(c.Context(), d.Pool, func(q *sqlc.Queries) error {
+		err = db.UserTx(c.Context(), d.Pool, userID, func(q *sqlc.Queries) error {
 			current, err := Get(c.Context(), q, userID, id)
 			if err != nil {
 				return err
@@ -191,7 +191,7 @@ func reorder(d *deps.Deps) fiber.Handler {
 		}
 		userID := auth.Target(c)
 		var lists []List
-		err := db.Tx(c.Context(), d.Pool, func(q *sqlc.Queries) error {
+		err := db.UserTx(c.Context(), d.Pool, userID, func(q *sqlc.Queries) error {
 			if _, err := q.LockUser(c.Context(), userID); err != nil {
 				return err
 			}

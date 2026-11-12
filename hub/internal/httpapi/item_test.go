@@ -292,9 +292,9 @@ func TestGarbageCursorIs400(t *testing.T) {
 
 func TestTitleLimitsCountCharacters(t *testing.T) {
 	u := testkit.New(t).User(t, "mia")
-	ok := u.Do(t, "POST", "/users/@me/items", J{"title": strings.Repeat("🔔", 500)})
+	ok := u.Do(t, "POST", "/users/@me/items", J{"title": strings.Repeat("語", 500)})
 	require.Equal(t, 201, ok.Status)
-	require.Equal(t, 422, u.Do(t, "POST", "/users/@me/items", J{"title": strings.Repeat("🔔", 501)}).Status)
+	require.Equal(t, 422, u.Do(t, "POST", "/users/@me/items", J{"title": strings.Repeat("語", 501)}).Status)
 	require.Equal(t, 422, u.Do(t, "POST", "/users/@me/items", J{"title": "   "}).Status)
 	require.Equal(t, 422, u.Do(t, "POST", "/users/@me/items", J{}).Status)
 	require.Equal(t, 201, u.Do(t, "POST", "/users/@me/items", J{"title": "x", "note": strings.Repeat("ä", 10000)}).Status)

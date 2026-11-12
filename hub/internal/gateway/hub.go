@@ -19,23 +19,38 @@ type Hub struct {
 
 	mu       sync.Mutex
 	sessions map[string]*Session
+	// byUser finds the sessions that follow a user.
+	byUser map[uuid.UUID]map[*Session]struct{}
+	// listening is closed each time the signal connection is (re)established.
+	listening chan struct{}
 
 	cancel context.CancelFunc
 	wg     sync.WaitGroup
 }
 
 func NewHub(d *deps.Deps) *Hub {
-	return &Hub{d: d, sessions: map[string]*Session{}}
+	return &Hub{d: d, sessions: map[string]*Session{}, byUser: map[uuid.UUID]map[*Session]struct{}{}, listening: make(chan struct{})}
 }
 
 // Start runs the hub's background work until Shutdown.
 func (h *Hub) Start(ctx context.Context) {
 	ctx, h.cancel = context.WithCancel(ctx)
-	h.wg.Add(1)
+	ready := h.listening
+	h.wg.Add(2)
 	go func() {
 		defer h.wg.Done()
 		h.reap(ctx)
 	}()
+	go func() {
+		defer h.wg.Done()
+		h.listen(ctx)
+	}()
+	// Return only once signals are being received, so nothing sent after Start is missed.
+	select {
+	case <-ready:
+	case <-time.After(5 * time.Second):
+	case <-ctx.Done():
+	}
 }
 
 // Shutdown asks every client to reconnect and forgets all sessions.
@@ -48,8 +63,10 @@ func (h *Hub) Shutdown() {
 	h.mu.Lock()
 	sessions := h.sessions
 	h.sessions = map[string]*Session{}
+	h.byUser = map[uuid.UUID]map[*Session]struct{}{}
 	h.mu.Unlock()
 	for _, s := range sessions {
+		s.halt()
 		s.mu.Lock()
 		c := s.conn
 		s.mu.Unlock()
@@ -71,19 +88,47 @@ func (h *Hub) reap(ctx context.Context) {
 		}
 		now := time.Now()
 		h.mu.Lock()
-		for id, s := range h.sessions {
+		var gone []*Session
+		for _, s := range h.sessions {
 			if s.expired(now) {
-				delete(h.sessions, id)
+				gone = append(gone, s)
 			}
 		}
 		h.mu.Unlock()
+		for _, s := range gone {
+			h.drop(s, 0, "")
+		}
 	}
 }
 
-func (h *Hub) remove(s *Session) {
+// drop forgets a session for good. With a code, its connection is closed with it.
+func (h *Hub) drop(s *Session, code int, reason string) {
 	h.mu.Lock()
 	delete(h.sessions, s.id)
+	for userID, sessions := range h.byUser {
+		delete(sessions, s)
+		if len(sessions) == 0 {
+			delete(h.byUser, userID)
+		}
+	}
 	h.mu.Unlock()
+	s.halt()
+	if code != 0 {
+		s.end(code, reason)
+	}
+}
+
+// cover records that a session follows a user.
+func (h *Hub) cover(s *Session, userID uuid.UUID) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if _, alive := h.sessions[s.id]; !alive {
+		return
+	}
+	if h.byUser[userID] == nil {
+		h.byUser[userID] = map[*Session]struct{}{}
+	}
+	h.byUser[userID][s] = struct{}{}
 }
 
 func (h *Hub) countFor(credential uuid.UUID) int {
@@ -138,7 +183,10 @@ func (h *Hub) identify(ctx context.Context, c *conn, raw json.RawMessage, cookie
 	}
 
 	id, _ := secret.NewToken("")
-	s := &Session{id: id, hub: h, principal: p, intents: intents, token: in.Token, cookie: cookie, conn: c}
+	s := &Session{
+		id: id, hub: h, principal: p, intents: intents, token: in.Token, cookie: cookie, conn: c,
+		box: newMailbox(), stop: make(chan struct{}), cursors: map[uuid.UUID]int64{},
+	}
 	welcome, err := h.ready(ctx, s)
 	if err != nil {
 		return nil, CloseAuthFailed
@@ -147,6 +195,8 @@ func (h *Hub) identify(ctx context.Context, c *conn, raw json.RawMessage, cookie
 	h.sessions[s.id] = s
 	h.mu.Unlock()
 	s.emit(EventReady, true, welcome)
+	go s.run()
+	s.box.post(func(m *mailbox) { m.start = true })
 	return s, 0
 }
 
@@ -166,6 +216,12 @@ func (h *Hub) ready(ctx context.Context, s *Session) (ready, error) {
 		}
 		userID := s.principal.UserID.String()
 		out.Principal = readyPrincipal{Kind: kind, UserID: &userID}
+		if s.keepsState() {
+			s.initial = []uuid.UUID{s.principal.UserID}
+		}
+	}
+	for _, userID := range s.initial {
+		out.Users = append(out.Users, userID.String())
 	}
 	return out, nil
 }

@@ -94,7 +94,7 @@ ORDER BY
 LIMIT @page_size;
 
 -- name: LockItem :one
-SELECT * FROM items WHERE id = @id AND user_id = @user_id FOR UPDATE;
+SELECT * FROM items WHERE id = @id AND user_id = @user_id FOR NO KEY UPDATE;
 
 -- name: ListAllDayDue :many
 SELECT i.id, item_due(i.due_at, i.due_date, u.timezone)::timestamptz AS due
@@ -104,3 +104,6 @@ WHERE i.id = ANY(@item_ids::uuid[]) AND i.due_date IS NOT NULL;
 
 -- name: ListOpenAllDayItems :many
 SELECT * FROM items WHERE user_id = @user_id AND status = 'open' AND due_date IS NOT NULL ORDER BY id;
+
+-- name: ListOpenItems :many
+SELECT * FROM items WHERE user_id = @user_id AND status = 'open' ORDER BY id;

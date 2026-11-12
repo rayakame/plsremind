@@ -172,7 +172,7 @@ func setGrant(d *deps.Deps) fiber.Handler {
 		}
 		userID := auth.Target(c)
 		var out UserConnection
-		err = db.Tx(c.Context(), d.Pool, func(q *sqlc.Queries) error {
+		err = db.UserTx(c.Context(), d.Pool, userID, func(q *sqlc.Queries) error {
 			conn, err := q.GetConnection(c.Context(), id)
 			if db.IsNotFound(err) || (err == nil && !conn.Enabled) {
 				return apierr.NotFound()

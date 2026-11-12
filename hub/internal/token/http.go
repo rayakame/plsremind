@@ -80,7 +80,7 @@ func create(d *deps.Deps) fiber.Handler {
 		userID := auth.Target(c)
 		plain, hash := secret.NewToken(secret.PrefixPersonal)
 		var created sqlc.PersonalToken
-		err = db.Tx(c.Context(), d.Pool, func(q *sqlc.Queries) error {
+		err = db.UserTx(c.Context(), d.Pool, userID, func(q *sqlc.Queries) error {
 			// Locking the user row keeps two concurrent creates from both passing the limit.
 			if _, err := q.LockUser(c.Context(), userID); err != nil {
 				return err
@@ -136,7 +136,7 @@ func update(d *deps.Deps) fiber.Handler {
 			return apierr.Field("name", `Send "name", "remind" or both.`)
 		}
 		var updated sqlc.PersonalToken
-		err = db.Tx(c.Context(), d.Pool, func(q *sqlc.Queries) error {
+		err = db.UserTx(c.Context(), d.Pool, auth.Target(c), func(q *sqlc.Queries) error {
 			current, err := q.GetPersonalToken(c.Context(), sqlc.GetPersonalTokenParams{ID: id, UserID: auth.Target(c)})
 			if db.IsNotFound(err) {
 				return apierr.NotFound()
@@ -178,7 +178,7 @@ func remove(d *deps.Deps) fiber.Handler {
 			return err
 		}
 		userID := auth.Target(c)
-		err = db.Tx(c.Context(), d.Pool, func(q *sqlc.Queries) error {
+		err = db.UserTx(c.Context(), d.Pool, userID, func(q *sqlc.Queries) error {
 			if err := delivery.CancelForToken(c.Context(), q, d.Now(), id); err != nil {
 				return err
 			}

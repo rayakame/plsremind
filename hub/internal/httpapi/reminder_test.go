@@ -72,10 +72,15 @@ func TestReminderEventsAndDelete(t *testing.T) {
 	require.Equal(t, []string{keep}, ids(mia.Do(t, "GET", "/users/@me/items/"+id+"/reminders", nil), "#.id"))
 
 	ev := e.Events(t, mia.UserID)
-	require.Equal(t, []string{"item.created", "reminder.created", "reminder.created", "reminder.deleted"},
-		[]string{ev[0].Type, ev[1].Type, ev[2].Type, ev[3].Type})
+	var types []string
+	for _, event := range ev {
+		types = append(types, event.Type)
+	}
+	// Every change to a reminder is followed by the item in its new state.
+	require.Equal(t, []string{"item.created", "reminder.created", "item.updated", "reminder.created", "item.updated", "reminder.deleted", "item.updated"}, types)
 	require.Equal(t, rem, ev[1].Payload.Get("id").String())
-	require.Equal(t, rem, ev[3].Payload.Get("id").String())
+	require.Equal(t, rem, ev[5].Payload.Get("id").String())
+	require.Equal(t, int64(1), ev[6].Payload.Get("reminders.#").Int())
 
 	mia.Do(t, "DELETE", "/users/@me/items/"+id, nil)
 	var left int

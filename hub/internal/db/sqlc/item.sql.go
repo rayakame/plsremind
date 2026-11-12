@@ -422,8 +422,46 @@ func (q *Queries) ListOpenAllDayItems(ctx context.Context, userID uuid.UUID) ([]
 	return items, nil
 }
 
+const listOpenItems = `-- name: ListOpenItems :many
+SELECT id, user_id, list_id, title, note, priority, due_at, due_date, status, completed_at, reminder_override, created_at, updated_at FROM items WHERE user_id = $1 AND status = 'open' ORDER BY id
+`
+
+func (q *Queries) ListOpenItems(ctx context.Context, userID uuid.UUID) ([]Item, error) {
+	rows, err := q.db.Query(ctx, listOpenItems, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Item
+	for rows.Next() {
+		var i Item
+		if err := rows.Scan(
+			&i.ID,
+			&i.UserID,
+			&i.ListID,
+			&i.Title,
+			&i.Note,
+			&i.Priority,
+			&i.DueAt,
+			&i.DueDate,
+			&i.Status,
+			&i.CompletedAt,
+			&i.ReminderOverride,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const lockItem = `-- name: LockItem :one
-SELECT id, user_id, list_id, title, note, priority, due_at, due_date, status, completed_at, reminder_override, created_at, updated_at FROM items WHERE id = $1 AND user_id = $2 FOR UPDATE
+SELECT id, user_id, list_id, title, note, priority, due_at, due_date, status, completed_at, reminder_override, created_at, updated_at FROM items WHERE id = $1 AND user_id = $2 FOR NO KEY UPDATE
 `
 
 type LockItemParams struct {

@@ -8,6 +8,8 @@ package sqlc
 import (
 	"context"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 const deleteOldEvents = `-- name: DeleteOldEvents :exec
@@ -17,6 +19,55 @@ DELETE FROM events WHERE created_at <= $1
 func (q *Queries) DeleteOldEvents(ctx context.Context, before time.Time) error {
 	_, err := q.db.Exec(ctx, deleteOldEvents, before)
 	return err
+}
+
+const getEventSeq = `-- name: GetEventSeq :one
+SELECT event_seq FROM users WHERE id = $1
+`
+
+func (q *Queries) GetEventSeq(ctx context.Context, id uuid.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, getEventSeq, id)
+	var event_seq int64
+	err := row.Scan(&event_seq)
+	return event_seq, err
+}
+
+const listEventsAfter = `-- name: ListEventsAfter :many
+SELECT user_id, seq, type, payload, actor_kind, actor_id, created_at FROM events WHERE user_id = $1 AND seq > $2 ORDER BY seq LIMIT $3
+`
+
+type ListEventsAfterParams struct {
+	UserID uuid.UUID
+	After  int64
+	Batch  int32
+}
+
+func (q *Queries) ListEventsAfter(ctx context.Context, arg ListEventsAfterParams) ([]Event, error) {
+	rows, err := q.db.Query(ctx, listEventsAfter, arg.UserID, arg.After, arg.Batch)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Event
+	for rows.Next() {
+		var i Event
+		if err := rows.Scan(
+			&i.UserID,
+			&i.Seq,
+			&i.Type,
+			&i.Payload,
+			&i.ActorKind,
+			&i.ActorID,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const notify = `-- name: Notify :exec
