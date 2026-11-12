@@ -66,6 +66,13 @@ func fireBatch(ctx context.Context, d *core.Deps) (int, error) {
 				newest[row.ItemID] = row
 			}
 		}
+		items := make([]uuid.UUID, 0, len(newest))
+		for itemID := range newest {
+			items = append(items, itemID)
+		}
+		if err := q.LockItemsDeliveries(ctx, items); err != nil {
+			return err
+		}
 		ids := make([]uuid.UUID, 0, len(due))
 		for _, row := range due {
 			ids = append(ids, row.ID)

@@ -160,11 +160,12 @@ func NewWith(t *testing.T, configure func(d *Deps)) *Env {
 	}
 	// The gateway runs on real time. Short timers keep its tests fast.
 	d.Gateway = core.GatewayConfig{
-		HeartbeatInterval: 200 * time.Millisecond,
+		HeartbeatInterval: 400 * time.Millisecond,
 		IdentifyTimeout:   300 * time.Millisecond,
 		SessionTTL:        500 * time.Millisecond,
 		WriteTimeout:      2 * time.Second,
 		// Test clients send a heartbeat every 100 ms, far more than a real client may.
+		// That leaves half a second of slack before a slow machine costs them the connection.
 		MaxClientMessages: 100000,
 	}
 	// Every test client comes from 127.0.0.1; the production limit per address would get in the way.

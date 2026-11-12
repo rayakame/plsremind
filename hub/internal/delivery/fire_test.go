@@ -3,12 +3,14 @@ package delivery_test
 import (
 	"context"
 	"fmt"
+	"math/rand"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/rayakame/plsremind/hub/internal/api"
 	"github.com/rayakame/plsremind/hub/internal/delivery"
 	"github.com/rayakame/plsremind/hub/internal/testkit"
 )
@@ -214,4 +216,39 @@ func TestLiftingQuietHoursReleasesHeldDeliveries(t *testing.T) {
 	mia.Do(t, "PATCH", "/users/@me", J{"quiet_hours": nil})
 	e.Fire(t)
 	require.Equal(t, "follow_up", gw.Expect(t, "delivery.created").Get("data.reminder.kind").String())
+}
+
+func TestFetchingWhileRemindersFireNeverFails(t *testing.T) {
+	e := testkit.New(t)
+	e.Deps.RateAuth = api.NewLimiter(1000000, time.Minute, e.Clock.Now)
+	mia, token := testkit.Reminded(t, e, "mia")
+	const items = 8
+	for round := 0; round < 10; round++ {
+		ids := make([]string, items)
+		for i := range ids {
+			ids[i] = mia.Do(t, "POST", "/users/@me/items", J{"title": fmt.Sprintf("r%d i%d", round, i)}).Get("id").String()
+			// The second reminders come due in the opposite order of the first ones.
+			require.Equal(t, 201, mia.Do(t, "POST", "/users/@me/items/"+ids[i]+"/reminders", J{"in": fmt.Sprintf("%dm", 10+i)}).Status)
+			require.Equal(t, 201, mia.Do(t, "POST", "/users/@me/items/"+ids[i]+"/reminders", J{"in": fmt.Sprintf("%dm", 100-i)}).Status)
+		}
+		e.Clock.Advance(10 * time.Minute)
+		e.Fire(t)
+		for i := 1; i < items; i++ {
+			e.Clock.Advance(time.Minute)
+			e.Fire(t)
+		}
+		e.Clock.Advance(2 * time.Hour)
+		fired := make(chan error, 1)
+		go func() {
+			time.Sleep(time.Duration(rand.Intn(3000)) * time.Microsecond)
+			fired <- delivery.RunOnce(context.Background(), e.Deps)
+		}()
+		time.Sleep(time.Duration(rand.Intn(6000)) * time.Microsecond)
+		fetched := e.Do(t, "GET", "/deliveries", nil, token)
+		require.Equal(t, 200, fetched.Status, string(fetched.Body))
+		require.NoError(t, <-fired)
+		for _, id := range ids {
+			require.Equal(t, 200, mia.Do(t, "PATCH", "/users/@me/items/"+id, J{"status": "done"}).Status)
+		}
+	}
 }

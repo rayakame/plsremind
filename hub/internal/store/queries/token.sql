@@ -25,7 +25,7 @@ UPDATE personal_tokens SET last_used_at = @now WHERE id = @id;
 DELETE FROM personal_tokens WHERE user_id = @user_id;
 
 -- name: GetPersonalToken :one
-SELECT * FROM personal_tokens WHERE id = @id AND user_id = @user_id FOR UPDATE;
+SELECT * FROM personal_tokens WHERE id = @id AND user_id = @user_id FOR NO KEY UPDATE;
 
 -- name: UpdatePersonalToken :one
 UPDATE personal_tokens SET name = @name, remind = @remind WHERE id = @id

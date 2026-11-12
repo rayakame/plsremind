@@ -181,7 +181,7 @@ func (e *Env) ResumeGateway(t *testing.T, token, sessionID string, seq int64) *G
 }
 
 func (g *GatewayClient) beat() {
-	interval := g.env.Deps.Gateway.HeartbeatInterval / 2
+	interval := g.env.Deps.Gateway.HeartbeatInterval / 4
 	go func() {
 		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
@@ -305,4 +305,21 @@ func (g *GatewayClient) ExpectClose(t *testing.T, code int) {
 func (g *GatewayClient) Close() {
 	g.StopHeartbeat()
 	_ = g.conn.Close()
+}
+
+// Poll returns the next message that is not a heartbeat acknowledgement, if one arrives in time.
+func (g *GatewayClient) Poll(wait time.Duration) (Frame, bool) {
+	return g.next(wait, true)
+}
+
+// Collect returns everything that arrives until nothing has come for the given time.
+func (g *GatewayClient) Collect(quiet time.Duration) []Frame {
+	var out []Frame
+	for {
+		f, ok := g.next(quiet, true)
+		if !ok {
+			return out
+		}
+		out = append(out, f)
+	}
 }

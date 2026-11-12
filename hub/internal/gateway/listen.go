@@ -183,7 +183,7 @@ func (h *Hub) deliver(ctx context.Context) {
 			if o.closed {
 				data := envelope{UserID: o.userID, Data: map[string]any{"id": o.id, "status": o.status}}
 				h.each(func(sess *Session) bool { return sess.principal.CredentialID == o.channel && sess.wants("deliveries") }, func(sess *Session) {
-					sess.box.post(func(m *mailbox) { m.frames = append(m.frames, loose{"delivery.closed", data}) })
+					sess.box.post(func(m *mailbox) { m.frames = append(m.frames, loose{event: "delivery.closed", data: data}) })
 				})
 				continue
 			}
@@ -207,13 +207,17 @@ func (h *Hub) deliverOne(ctx context.Context, id uuid.UUID) error {
 	if row.ConnectionID != nil {
 		channel = row.ConnectionID
 	}
-	var targets []*Session
+	type target struct {
+		sess  *Session
+		epoch int
+	}
+	var targets []target
 	h.each(func(sess *Session) bool {
 		return channel != nil && sess.principal.CredentialID == *channel && sess.wants("deliveries") && sess.attached()
 	}, func(sess *Session) {
 		// A session that got it with its login does not get it again.
-		if sess.claim(id) {
-			targets = append(targets, sess)
+		if epoch, ok := sess.claim(id); ok {
+			targets = append(targets, target{sess, epoch})
 		}
 	})
 	// Nobody is listening: the delivery waits, and the attempt is not counted.
@@ -223,14 +227,14 @@ func (h *Hub) deliverOne(ctx context.Context, id uuid.UUID) error {
 	view, _, sent, err := delivery.Send(ctx, h.d, id)
 	if err != nil || !sent {
 		// It did not go out after all, for one because quiet hours hold it back.
-		for _, sess := range targets {
-			sess.unclaim(id)
+		for _, t := range targets {
+			t.sess.unclaim(id, t.epoch)
 		}
 		return err
 	}
 	data := envelope{UserID: view.User.ID, Data: view}
-	for _, sess := range targets {
-		sess.box.post(func(m *mailbox) { m.frames = append(m.frames, loose{"delivery.created", data}) })
+	for _, t := range targets {
+		t.sess.box.post(func(m *mailbox) { m.frames = append(m.frames, loose{"delivery.created", data, t.epoch}) })
 	}
 	return nil
 }

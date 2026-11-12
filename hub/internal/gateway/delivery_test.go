@@ -2,6 +2,7 @@ package gateway_test
 
 import (
 	"context"
+	"math/rand"
 	"testing"
 	"time"
 
@@ -9,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
 
+	"github.com/rayakame/plsremind/hub/internal/api"
 	"github.com/rayakame/plsremind/hub/internal/events"
 	"github.com/rayakame/plsremind/hub/internal/gateway"
 	"github.com/rayakame/plsremind/hub/internal/testkit"
@@ -247,4 +249,56 @@ func TestSignalArrivingAfterLoginDoesNotRepeatTheDelivery(t *testing.T) {
 	again := e.ResumeGateway(t, bot.Token, gw.SessionID, gw.LastSeq)
 	again.Expect(t, gateway.EventResumed)
 	require.Equal(t, int64(2), again.Expect(t, "delivery.created").Get("data.attempt").Int())
+}
+
+func TestResumeWhileADeliveryIsOnItsWayDoesNotRepeatIt(t *testing.T) {
+	e := testkit.New(t)
+	e.Deps.RateConn = api.NewLimiter(1000000, time.Minute, e.Clock.Now)
+	bot := e.Connection(t, "discord")
+	mia := testkit.Linked(t, e, "mia", "111")
+	gw := e.Gateway(t, bot.Token, "deliveries")
+	for round := 0; round < 30; round++ {
+		due := dueIn(e, time.Hour)
+		require.Equal(t, 201, mia.Do(t, "POST", "/users/@me/items", J{"title": "x", "priority": "low", "due_at": due}).Status)
+		e.Clock.Advance(time.Hour)
+		fired := make(chan struct{})
+		go func() {
+			time.Sleep(time.Duration(rand.Intn(6000)) * time.Microsecond)
+			e.Fire(t)
+			close(fired)
+		}()
+		time.Sleep(time.Duration(rand.Intn(12000)) * time.Microsecond)
+		// The client lost its connection without the hub noticing, and comes back.
+		back := e.ResumeGateway(t, bot.Token, gw.SessionID, gw.LastSeq)
+		<-fired
+		seen := map[string]int{}
+		for _, f := range back.Collect(200 * time.Millisecond) {
+			if f.T == "delivery.created" {
+				seen[f.Get("data.id").String()]++
+			}
+		}
+		for id, times := range seen {
+			require.Equal(t, 1, times, "round %d: one connection got the same delivery %d times", round, times)
+			require.Equal(t, 200, bot.Do(t, "PUT", "/deliveries/"+id, J{"status": "delivered"}).Status)
+		}
+		gw = back
+	}
+}
+
+func TestOtherAccountActivityIsNotAnnouncedToConnections(t *testing.T) {
+	e := testkit.New(t)
+	bot := e.Connection(t, "discord")
+	mia := testkit.Linked(t, e, "mia", "111")
+	gw := e.Gateway(t, bot.Token, "users")
+	gw.Expect(t, "user.sync")
+
+	// Signals that her access changed, but nothing the bot can see did.
+	created := mia.Do(t, "POST", "/users/@me/tokens", J{"name": "homelab"})
+	require.Equal(t, 201, created.Status)
+	require.Equal(t, 204, mia.Do(t, "DELETE", "/users/@me/tokens/"+created.Get("id").String(), nil).Status)
+	gw.ExpectQuiet(t)
+
+	e.GiveIdentity(t, mia.UserID, "discord", "222")
+	require.NoError(t, events.NotifyUser(context.Background(), e.Deps.Q(), events.SignalUser, uuid.MustParse(mia.UserID)))
+	require.JSONEq(t, `["111","222"]`, gw.Expect(t, "user.updated").Get("data.external_ids").Raw)
 }

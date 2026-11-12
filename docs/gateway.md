@@ -277,7 +277,8 @@ form. A script that runs every few minutes can remind people with that alone.
 | 4013 | Unknown or missing intents | no, fix the intents |
 | 4014 | An intent that the admin does not allow this connection | no, ask for less |
 
-Limits: 10 connected sessions per token, 60 client messages per minute. A client may only
+Limits: 10 connected sessions per token and 25 per user across all of their tokens and
+logins, 60 client messages per minute. A client may only
 send Heartbeat, Identify and Resume.
 
 When you reconnect, pause first and let the pause grow while the hub stays unreachable.

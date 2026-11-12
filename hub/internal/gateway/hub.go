@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"slices"
@@ -158,16 +159,40 @@ func (h *Hub) cover(s *Session, userID uuid.UUID) {
 	h.byUser[userID][s] = struct{}{}
 }
 
-// admit makes room for a new session of a credential, or refuses it. Only
-// connected sessions count against the limit: a client that reconnects with
-// Identify leaves a detached session behind each time, and those give way,
-// oldest first.
-func (h *Hub) admit(credential uuid.UUID) bool {
+// admit registers a new session, or refuses it when its credential or its user
+// has too many already. Only connected sessions count against the limits: a
+// client that reconnects with Identify leaves a detached session behind each
+// time, and those give way, oldest first.
+func (h *Hub) admit(s *Session) bool {
 	h.mu.Lock()
+	sameCredential := func(o *Session) bool { return o.principal.CredentialID == s.principal.CredentialID }
+	// A connection acts for many users and belongs to none of them.
+	sameUser := func(o *Session) bool {
+		return s.principal.Kind != auth.KindConnection && o.principal.Kind != auth.KindConnection && o.principal.UserID == s.principal.UserID
+	}
+	evicted, ok := h.makeRoom(sameCredential, h.d.Gateway.MaxSessions)
+	if ok {
+		var more []*Session
+		more, ok = h.makeRoom(sameUser, h.d.Gateway.MaxUserSessions)
+		evicted = append(evicted, more...)
+	}
+	if ok {
+		h.sessions[s.id] = s
+	}
+	h.mu.Unlock()
+	for _, old := range evicted {
+		old.halt()
+	}
+	return ok
+}
+
+// makeRoom reports whether one more of the matching sessions fits under the
+// limit, forgetting detached ones for it if need be. The caller holds h.mu.
+func (h *Hub) makeRoom(match func(*Session) bool, limit int) (evicted []*Session, ok bool) {
 	var attached int
 	var detached []*Session
 	for _, s := range h.sessions {
-		if s.principal.CredentialID != credential {
+		if !match(s) {
 			continue
 		}
 		if s.attached() {
@@ -176,23 +201,16 @@ func (h *Hub) admit(credential uuid.UUID) bool {
 			detached = append(detached, s)
 		}
 	}
-	limit := h.d.Gateway.MaxSessions
 	if attached >= limit {
-		h.mu.Unlock()
-		return false
+		return nil, false
 	}
 	slices.SortFunc(detached, func(a, b *Session) int { return a.createdAt.Compare(b.createdAt) })
-	var evicted []*Session
 	for attached+len(detached) >= limit && len(detached) > 0 {
 		h.forget(detached[0])
 		evicted = append(evicted, detached[0])
 		detached = detached[1:]
 	}
-	h.mu.Unlock()
-	for _, s := range evicted {
-		s.halt()
-	}
-	return true
+	return evicted, true
 }
 
 type verdict int
@@ -273,6 +291,13 @@ func (h *Hub) resume(ctx context.Context, c *conn, raw json.RawMessage, cookie s
 		h.mu.Unlock()
 		return nil, 0, true
 	}
+	// The reaper only comes by now and then; the TTL holds regardless.
+	if s.expired(time.Now()) {
+		h.forget(s)
+		h.mu.Unlock()
+		s.halt()
+		return nil, 0, true
+	}
 	s.mu.Lock()
 	if in.Seq > s.seq {
 		s.mu.Unlock()
@@ -295,6 +320,7 @@ func (h *Hub) resume(ctx context.Context, c *conn, raw json.RawMessage, cookie s
 	s.conn = c
 	// A client that comes back gets every open delivery once more.
 	s.handed = map[uuid.UUID]time.Time{}
+	s.epoch++
 	var missed [][]byte
 	for _, frame := range s.buffer {
 		if frame.seq > in.Seq {
@@ -333,20 +359,17 @@ func (h *Hub) identify(ctx context.Context, c *conn, raw json.RawMessage, cookie
 			return nil, CloseDisallowedIntents
 		}
 	}
-	if !h.admit(p.CredentialID) {
-		return nil, CloseRateLimited
-	}
-
 	id, _ := core.NewToken("")
 	s := &Session{
 		id: id, hub: h, principal: p, intents: intents, token: in.Token, cookie: cookie, conn: c, createdAt: time.Now(),
-		box: newMailbox(), stop: make(chan struct{}), cursors: map[uuid.UUID]int64{}, handed: map[uuid.UUID]time.Time{},
+		box: newMailbox(), stop: make(chan struct{}), cursors: map[uuid.UUID]int64{}, seen: map[uuid.UUID][sha256.Size]byte{},
+		handed: map[uuid.UUID]time.Time{}, epoch: 1,
 	}
 	// Registered before the list of users is read: a grant that changes from
 	// here on finds the session and is looked at again.
-	h.mu.Lock()
-	h.sessions[s.id] = s
-	h.mu.Unlock()
+	if !h.admit(s) {
+		return nil, CloseRateLimited
+	}
 	welcome, err := h.ready(ctx, s)
 	if err != nil {
 		h.drop(s, 0, "")

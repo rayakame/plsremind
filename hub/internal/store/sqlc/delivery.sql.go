@@ -806,9 +806,27 @@ func (q *Queries) LockDueReminders(ctx context.Context, arg LockDueRemindersPara
 	return items, nil
 }
 
+const lockItemsDeliveries = `-- name: LockItemsDeliveries :exec
+SELECT d.id FROM deliveries d
+WHERE d.item_id = ANY($1::uuid[]) AND d.status = 'pending'
+ORDER BY d.id
+FOR UPDATE
+`
+
+// Everything that locks several deliveries takes them in id order. The ticker
+// works item by item, so it takes all it may touch up front.
+func (q *Queries) LockItemsDeliveries(ctx context.Context, itemIds []uuid.UUID) error {
+	_, err := q.db.Exec(ctx, lockItemsDeliveries, itemIds)
+	return err
+}
+
 const releaseHeldDeliveries = `-- name: ReleaseHeldDeliveries :many
 UPDATE deliveries SET held_until = NULL
-WHERE status = 'pending' AND held_until <= $1
+WHERE id IN (
+    SELECT d.id FROM deliveries d
+    WHERE d.status = 'pending' AND d.held_until <= $1
+    ORDER BY d.id
+    FOR UPDATE)
 RETURNING id
 `
 
@@ -834,7 +852,11 @@ func (q *Queries) ReleaseHeldDeliveries(ctx context.Context, now *time.Time) ([]
 
 const releaseUserHeldDeliveries = `-- name: ReleaseUserHeldDeliveries :exec
 UPDATE deliveries SET held_until = $1
-WHERE user_id = $2 AND status = 'pending' AND held_until IS NOT NULL
+WHERE id IN (
+    SELECT d.id FROM deliveries d
+    WHERE d.user_id = $2 AND d.status = 'pending' AND d.held_until IS NOT NULL
+    ORDER BY d.id
+    FOR UPDATE)
 `
 
 type ReleaseUserHeldDeliveriesParams struct {

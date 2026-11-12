@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"log/slog"
 	"strings"
@@ -111,17 +112,37 @@ func (s *Session) recheck(ctx context.Context, userID uuid.UUID) error {
 	case covered && !following:
 		return s.syncUser(ctx, userID)
 	case !covered && following:
-		delete(s.cursors, userID)
-		s.hub.uncover(s, userID)
-		s.emit("user.gone", true, map[string]uuid.UUID{"user_id": userID})
+		s.lose(userID)
 	case covered && s.wants("users"):
 		view, err := s.userView(ctx, q, user)
 		if err != nil {
 			return err
 		}
-		s.emit("user.updated", true, envelope{UserID: userID, Data: view})
+		if s.changed(userID, view) {
+			s.emit("user.updated", true, envelope{UserID: userID, Data: view})
+		}
 	}
 	return nil
+}
+
+// lose ends the session's view of a user.
+func (s *Session) lose(userID uuid.UUID) {
+	delete(s.cursors, userID)
+	delete(s.seen, userID)
+	s.hub.uncover(s, userID)
+	s.emit("user.gone", true, map[string]uuid.UUID{"user_id": userID})
+}
+
+// changed notes what the client is about to be told about a user and reports
+// whether that differs from what it was told last.
+func (s *Session) changed(userID uuid.UUID, view any) bool {
+	raw, _ := json.Marshal(view)
+	sum := sha256.Sum256(raw)
+	if s.seen[userID] == sum {
+		return false
+	}
+	s.seen[userID] = sum
+	return true
 }
 
 // revalidate checks that whoever identified may still be here. It returns a
@@ -212,6 +233,7 @@ func (s *Session) syncUser(ctx context.Context, userID uuid.UUID) error {
 		if first.User, err = s.userView(ctx, q, user); err != nil {
 			return err
 		}
+		s.changed(userID, first.User)
 	}
 	if s.wants("lists") {
 		rows, err := q.ListLists(ctx, userID)
@@ -291,6 +313,18 @@ func (s *Session) pump(ctx context.Context, userID uuid.UUID) error {
 		if err != nil {
 			return err
 		}
+		if len(events) > 0 && s.principal.Kind == auth.KindConnection {
+			// Asked after the events were read: if the grant still holds now, it
+			// held when each of them happened.
+			_, err := q.GetGrantedUser(ctx, sqlc.GetGrantedUserParams{ConnectionID: s.principal.CredentialID, UserID: userID})
+			if store.IsNotFound(err) {
+				s.lose(userID)
+				return nil
+			}
+			if err != nil {
+				return err
+			}
+		}
 		for _, ev := range events {
 			if err := s.dispatch(ctx, q, ev); err != nil {
 				return err
@@ -323,6 +357,7 @@ func (s *Session) dispatch(ctx context.Context, q *sqlc.Queries, ev sqlc.Event) 
 		if data, err = s.userView(ctx, q, user); err != nil {
 			return err
 		}
+		s.changed(ev.UserID, data)
 	}
 	s.emit(ev.Type, true, envelope{UserID: ev.UserID, Actor: &actor{Kind: ev.ActorKind, ID: ev.ActorID}, Data: data})
 	return nil

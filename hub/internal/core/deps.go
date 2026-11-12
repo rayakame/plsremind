@@ -58,8 +58,11 @@ type GatewayConfig struct {
 	SessionTTL   time.Duration
 	WriteTimeout time.Duration
 	// BufferSize is how many events a session keeps for resuming.
-	BufferSize        int
+	BufferSize int
+	// MaxSessions limits the connected sessions of one credential, MaxUserSessions
+	// those of one user across all of their tokens and logins.
 	MaxSessions       int
+	MaxUserSessions   int
 	MaxClientMessages int
 	// SyncChunk is how many items one part of a user.sync carries.
 	SyncChunk int
@@ -84,6 +87,9 @@ func (g GatewayConfig) WithDefaults() GatewayConfig {
 	}
 	if g.MaxSessions == 0 {
 		g.MaxSessions = 10
+	}
+	if g.MaxUserSessions == 0 {
+		g.MaxUserSessions = 25
 	}
 	if g.MaxClientMessages == 0 {
 		g.MaxClientMessages = 60

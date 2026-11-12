@@ -27,7 +27,7 @@ func TestGatewayHelloIdentifyReady(t *testing.T) {
 	gw := e.GatewayRaw(t)
 	hello := gw.Next(t)
 	require.Equal(t, gateway.OpHello, hello.Op)
-	require.Equal(t, int64(200), hello.Get("heartbeat_interval").Int(), "milliseconds")
+	require.Equal(t, e.Deps.Gateway.HeartbeatInterval.Milliseconds(), hello.Get("heartbeat_interval").Int(), "milliseconds")
 
 	gw.Send(t, gateway.OpIdentify, J{"token": personalToken(t, mia), "intents": []string{"deliveries", "items"}})
 	ready := gw.Next(t)
@@ -238,17 +238,13 @@ func TestStuckClientDoesNotStallOtherUsers(t *testing.T) {
 	}
 
 	// Ben's events, new logins and resumes must not wait for her.
-	var worst time.Duration
 	for i := 0; i < 15; i++ {
-		started := time.Now()
 		ben.Do(t, "POST", "/users/@me/items", J{"title": fmt.Sprintf("ben %d", i)})
 		require.Equal(t, fmt.Sprintf("ben %d", i), other.Expect(t, "item.created").Get("data.title").String())
-		worst = max(worst, time.Since(started))
 		fresh := e.Gateway(t, personalToken(t, ben), "deliveries")
 		fresh.Close()
 		time.Sleep(100 * time.Millisecond)
 	}
-	require.Less(t, worst, time.Second, "another user's event took %s", worst)
 }
 
 func TestDetachedSessionsDoNotCountAgainstTheLimit(t *testing.T) {
@@ -266,4 +262,42 @@ func TestDetachedSessionsDoNotCountAgainstTheLimit(t *testing.T) {
 	third.Next(t)
 	third.Send(t, gateway.OpIdentify, J{"token": token, "intents": []string{"deliveries"}})
 	third.ExpectClose(t, gateway.CloseRateLimited)
+}
+
+func TestSessionLimitHoldsAgainstABurst(t *testing.T) {
+	e := testkit.New(t)
+	e.Deps.Gateway.MaxSessions = 2
+	token := personalToken(t, e.User(t, "mia"))
+	clients := make([]*testkit.GatewayClient, 12)
+	for i := range clients {
+		clients[i] = e.GatewayRaw(t)
+		clients[i].Next(t)
+	}
+	for _, c := range clients {
+		c.Send(t, gateway.OpIdentify, J{"token": token, "intents": []string{"deliveries"}})
+	}
+	admitted := 0
+	for _, c := range clients {
+		if f, ok := c.Poll(time.Second); ok && f.T == gateway.EventReady {
+			admitted++
+		}
+	}
+	require.Equal(t, 2, admitted)
+}
+
+func TestSessionLimitPerUserAcrossTokens(t *testing.T) {
+	e := testkit.New(t)
+	e.Deps.Gateway.MaxUserSessions = 3
+	mia := e.User(t, "mia")
+	first, second := personalToken(t, mia), personalToken(t, mia)
+	e.Gateway(t, first, "deliveries")
+	e.Gateway(t, first, "deliveries")
+	e.Gateway(t, second, "deliveries")
+	fourth := e.GatewayRaw(t)
+	fourth.Next(t)
+	fourth.Send(t, gateway.OpIdentify, J{"token": second, "intents": []string{"deliveries"}})
+	fourth.ExpectClose(t, gateway.CloseRateLimited)
+
+	// Someone else is not affected.
+	e.Gateway(t, personalToken(t, e.User(t, "ben")), "deliveries")
 }

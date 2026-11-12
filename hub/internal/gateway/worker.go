@@ -34,6 +34,8 @@ type mailbox struct {
 type loose struct {
 	event string
 	data  any
+	// epoch, if set, is the session's epoch the frame was made for.
+	epoch int
 }
 
 func newMailbox() *mailbox {
@@ -145,6 +147,9 @@ func (s *Session) do(ctx context.Context, w work) error {
 		s.emit(EventResumed, true, struct{}{})
 	}
 	for _, f := range w.frames {
+		if f.epoch != 0 && !s.inEpoch(f.epoch) {
+			continue
+		}
 		s.emit(f.event, false, f.data)
 	}
 	switch {
@@ -168,7 +173,10 @@ func (s *Session) sendPending(ctx context.Context, onlyUnsent bool) error {
 	if err != nil || !ok {
 		return err
 	}
-	views, err := delivery.Pending(ctx, s.hub.d, ch, onlyUnsent, s.claim)
+	views, err := delivery.Pending(ctx, s.hub.d, ch, onlyUnsent, func(id uuid.UUID) bool {
+		_, ok := s.claim(id)
+		return ok
+	})
 	if err != nil {
 		return err
 	}

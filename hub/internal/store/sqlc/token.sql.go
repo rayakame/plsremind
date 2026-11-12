@@ -87,7 +87,7 @@ func (q *Queries) DeleteUserPersonalTokens(ctx context.Context, userID uuid.UUID
 }
 
 const getPersonalToken = `-- name: GetPersonalToken :one
-SELECT id, user_id, name, token_hash, created_at, last_used_at, remind FROM personal_tokens WHERE id = $1 AND user_id = $2 FOR UPDATE
+SELECT id, user_id, name, token_hash, created_at, last_used_at, remind FROM personal_tokens WHERE id = $1 AND user_id = $2 FOR NO KEY UPDATE
 `
 
 type GetPersonalTokenParams struct {

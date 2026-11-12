@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"crypto/sha256"
 	"sync"
 	"time"
 
@@ -35,8 +36,11 @@ type Session struct {
 	bufferBytes int
 	detachedAt  time.Time
 	createdAt   time.Time
-	// handed holds the deliveries the client got since it last identified or resumed.
+	// handed holds the deliveries the client got since it last identified or
+	// resumed. epoch counts those occasions: a delivery that was on its way to
+	// the client when it resumed belongs to the past and is sent afresh instead.
 	handed map[uuid.UUID]time.Time
+	epoch  int
 
 	box  *mailbox
 	stop chan struct{}
@@ -45,6 +49,9 @@ type Session struct {
 	// every user the session follows, the last event of theirs that it sent.
 	initial []uuid.UUID
 	cursors map[uuid.UUID]int64
+	// seen remembers what the client was last told about each user, so that it
+	// is only told again when something it can see has changed.
+	seen map[uuid.UUID][sha256.Size]byte
 }
 
 // halt stops the session's goroutine.
@@ -102,11 +109,11 @@ func (s *Session) emit(event string, numbered bool, data any) {
 // claim reports whether the client still has to get a delivery, and notes that
 // it now does. A delivery reaches a session by two ways, the login and the
 // signal that it is new, and must go out only once.
-func (s *Session) claim(id uuid.UUID) bool {
+func (s *Session) claim(id uuid.UUID) (epoch int, ok bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if _, ok := s.handed[id]; ok {
-		return false
+		return s.epoch, false
 	}
 	now := time.Now()
 	if len(s.handed) >= 1024 {
@@ -117,13 +124,21 @@ func (s *Session) claim(id uuid.UUID) bool {
 		}
 	}
 	s.handed[id] = now
-	return true
+	return s.epoch, true
 }
 
-func (s *Session) unclaim(id uuid.UUID) {
+func (s *Session) unclaim(id uuid.UUID, epoch int) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	delete(s.handed, id)
+	if s.epoch == epoch {
+		delete(s.handed, id)
+	}
+}
+
+func (s *Session) inEpoch(epoch int) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.epoch == epoch
 }
 
 // attached reports whether a client is currently connected.

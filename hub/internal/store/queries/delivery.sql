@@ -164,12 +164,28 @@ DELETE FROM reminder_log WHERE fired_at <= @before;
 
 -- name: ReleaseHeldDeliveries :many
 UPDATE deliveries SET held_until = NULL
-WHERE status = 'pending' AND held_until <= @now
+WHERE id IN (
+    SELECT d.id FROM deliveries d
+    WHERE d.status = 'pending' AND d.held_until <= @now
+    ORDER BY d.id
+    FOR UPDATE)
 RETURNING id;
+
+-- name: LockItemsDeliveries :exec
+-- Everything that locks several deliveries takes them in id order. The ticker
+-- works item by item, so it takes all it may touch up front.
+SELECT d.id FROM deliveries d
+WHERE d.item_id = ANY(@item_ids::uuid[]) AND d.status = 'pending'
+ORDER BY d.id
+FOR UPDATE;
 
 -- name: GetDeliveryChannel :one
 SELECT connection_id, token_id FROM deliveries WHERE id = @id AND status = 'pending';
 
 -- name: ReleaseUserHeldDeliveries :exec
 UPDATE deliveries SET held_until = @now
-WHERE user_id = @user_id AND status = 'pending' AND held_until IS NOT NULL;
+WHERE id IN (
+    SELECT d.id FROM deliveries d
+    WHERE d.user_id = @user_id AND d.status = 'pending' AND d.held_until IS NOT NULL
+    ORDER BY d.id
+    FOR UPDATE);
