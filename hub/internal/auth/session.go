@@ -10,6 +10,7 @@ import (
 	"github.com/rayakame/plsremind/hub/internal/db/sqlc"
 	"github.com/rayakame/plsremind/hub/internal/deps"
 	"github.com/rayakame/plsremind/hub/internal/secret"
+	"github.com/rayakame/plsremind/hub/internal/signal"
 )
 
 const (
@@ -52,8 +53,15 @@ func StartSession(c fiber.Ctx, d *deps.Deps, q *sqlc.Queries, userID uuid.UUID) 
 // EndSession deletes the current session, if any, and clears the cookie.
 func EndSession(c fiber.Ctx, d *deps.Deps) error {
 	if value := c.Cookies(SessionCookie); value != "" {
-		if err := d.Q().DeleteSessionByHash(c.Context(), secret.Hash(value)); err != nil {
+		q := d.Q()
+		if err := q.DeleteSessionByHash(c.Context(), secret.Hash(value)); err != nil {
 			return err
+		}
+		// A gateway connection opened with this session must not outlive it.
+		if p, ok := From(c); ok && p.Kind == KindSession {
+			if err := signal.ForUser(c.Context(), q, signal.User, p.UserID); err != nil {
+				return err
+			}
 		}
 	}
 	c.Cookie(sessionCookie(d, "", time.Unix(0, 0)))

@@ -18,8 +18,10 @@ import (
 	"github.com/rayakame/plsremind/hub/internal/db"
 	"github.com/rayakame/plsremind/hub/internal/db/sqlc"
 	"github.com/rayakame/plsremind/hub/internal/deps"
+	"github.com/rayakame/plsremind/hub/internal/eventlog"
 	"github.com/rayakame/plsremind/hub/internal/httpx"
 	"github.com/rayakame/plsremind/hub/internal/secret"
+	"github.com/rayakame/plsremind/hub/internal/signal"
 )
 
 var providerPattern = regexp.MustCompile(`^[a-z0-9_-]{1,32}$`)
@@ -197,7 +199,11 @@ func setGrant(d *deps.Deps) fiber.Handler {
 					out = userView(row)
 				}
 			}
-			return nil
+			p, _ := auth.From(c)
+			if err := eventlog.Append(c.Context(), q, d.Now(), userID, eventlog.ActorFrom(p), "connection.updated", out); err != nil {
+				return err
+			}
+			return signal.Send(c.Context(), q, signal.Signal{Type: signal.Grant, UserID: &userID, ConnectionID: &id})
 		})
 		if err != nil {
 			return err
@@ -331,7 +337,10 @@ func update(d *deps.Deps) fiber.Handler {
 				return apierr.Validation(fields)
 			}
 			updated, err = q.UpdateConnection(c.Context(), params)
-			return err
+			if err != nil {
+				return err
+			}
+			return signal.ForConnection(c.Context(), q, id)
 		})
 		if err != nil {
 			return err
@@ -346,12 +355,18 @@ func remove(d *deps.Deps) fiber.Handler {
 		if err != nil {
 			return err
 		}
-		n, err := d.Q().DeleteConnection(c.Context(), id)
+		err = db.Tx(c.Context(), d.Pool, func(q *sqlc.Queries) error {
+			n, err := q.DeleteConnection(c.Context(), id)
+			if err != nil {
+				return err
+			}
+			if n == 0 {
+				return apierr.NotFound()
+			}
+			return signal.ForConnection(c.Context(), q, id)
+		})
 		if err != nil {
 			return err
-		}
-		if n == 0 {
-			return apierr.NotFound()
 		}
 		return c.SendStatus(http.StatusNoContent)
 	}
@@ -364,10 +379,17 @@ func rotate(d *deps.Deps) fiber.Handler {
 			return err
 		}
 		plain, hash := secret.NewToken(secret.PrefixConnection)
-		row, err := d.Q().SetConnectionToken(c.Context(), sqlc.SetConnectionTokenParams{ID: id, TokenHash: hash})
-		if db.IsNotFound(err) {
-			return apierr.NotFound()
-		}
+		var row sqlc.Connection
+		err = db.Tx(c.Context(), d.Pool, func(q *sqlc.Queries) error {
+			row, err = q.SetConnectionToken(c.Context(), sqlc.SetConnectionTokenParams{ID: id, TokenHash: hash})
+			if db.IsNotFound(err) {
+				return apierr.NotFound()
+			}
+			if err != nil {
+				return err
+			}
+			return signal.ForConnection(c.Context(), q, id)
+		})
 		if err != nil {
 			return err
 		}

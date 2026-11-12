@@ -168,7 +168,7 @@ func remove(d *deps.Deps) fiber.Handler {
 			if err := schedule.SyncItem(c.Context(), q, d.Now(), itemID); err != nil {
 				return err
 			}
-			return eventlog.Append(c.Context(), q, d.Now(), userID, eventlog.ActorFrom(p), "reminder.deleted", eventlog.Deleted{ID: id})
+			return eventlog.Append(c.Context(), q, d.Now(), userID, eventlog.ActorFrom(p), "reminder.deleted", eventlog.Deleted{ID: id, ItemID: &itemID})
 		})
 		if err != nil {
 			return err

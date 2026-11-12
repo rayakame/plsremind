@@ -158,7 +158,7 @@ func remove(d *deps.Deps) fiber.Handler {
 			if err := q.DeleteSubitem(c.Context(), row.ID); err != nil {
 				return err
 			}
-			return log("subitem.deleted", eventlog.Deleted{ID: row.ID})
+			return log("subitem.deleted", eventlog.Deleted{ID: row.ID, ItemID: &itemID})
 		})
 		if err != nil {
 			return err

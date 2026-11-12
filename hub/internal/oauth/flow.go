@@ -20,6 +20,7 @@ import (
 	"github.com/rayakame/plsremind/hub/internal/db/sqlc"
 	"github.com/rayakame/plsremind/hub/internal/deps"
 	"github.com/rayakame/plsremind/hub/internal/secret"
+	"github.com/rayakame/plsremind/hub/internal/signal"
 )
 
 const (
@@ -187,7 +188,11 @@ func finish(c fiber.Ctx, d *deps.Deps, used sqlc.LoginProvider, stored sqlc.Oaut
 				ProviderToken: token,
 				CreatedAt:     now,
 			})
-			return err
+			if err != nil {
+				return err
+			}
+			// A new identity can bring the user into reach of a connection.
+			return signal.ForUser(c.Context(), q, signal.User, userID)
 		}
 		refresh := func() error {
 			return q.RefreshIdentity(c.Context(), sqlc.RefreshIdentityParams{ID: identity.ID, DisplayName: profile.DisplayName, ProviderToken: token})

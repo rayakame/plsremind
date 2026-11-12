@@ -10,6 +10,7 @@ import (
 
 	"github.com/rayakame/plsremind/hub/internal/auth"
 	"github.com/rayakame/plsremind/hub/internal/db/sqlc"
+	"github.com/rayakame/plsremind/hub/internal/signal"
 )
 
 type Actor struct {
@@ -28,9 +29,11 @@ func ActorFrom(p auth.Principal) Actor {
 	return Actor{Kind: kind, ID: p.CredentialID}
 }
 
-// Deleted is the payload of every *.deleted event.
+// Deleted is the payload of every *.deleted event. ItemID names the parent of a
+// subitem or manual reminder, so a client can find what to drop without searching.
 type Deleted struct {
-	ID uuid.UUID `json:"id"`
+	ID     uuid.UUID  `json:"id"`
+	ItemID *uuid.UUID `json:"item_id,omitempty"`
 }
 
 // Append writes one event with the user's next sequence number. It must run in the
@@ -44,7 +47,7 @@ func Append(ctx context.Context, q *sqlc.Queries, now time.Time, userID uuid.UUI
 	if err != nil {
 		return err
 	}
-	return q.InsertEvent(ctx, sqlc.InsertEventParams{
+	err = q.InsertEvent(ctx, sqlc.InsertEventParams{
 		UserID:    userID,
 		Seq:       seq,
 		Type:      typ,
@@ -53,4 +56,8 @@ func Append(ctx context.Context, q *sqlc.Queries, now time.Time, userID uuid.UUI
 		ActorID:   a.ID,
 		CreatedAt: now,
 	})
+	if err != nil {
+		return err
+	}
+	return signal.ForUser(ctx, q, signal.Event, userID)
 }

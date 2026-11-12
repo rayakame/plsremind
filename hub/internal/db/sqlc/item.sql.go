@@ -384,6 +384,44 @@ func (q *Queries) ListItemsByPriority(ctx context.Context, arg ListItemsByPriori
 	return items, nil
 }
 
+const listOpenAllDayItems = `-- name: ListOpenAllDayItems :many
+SELECT id, user_id, list_id, title, note, priority, due_at, due_date, status, completed_at, reminder_override, created_at, updated_at FROM items WHERE user_id = $1 AND status = 'open' AND due_date IS NOT NULL ORDER BY id
+`
+
+func (q *Queries) ListOpenAllDayItems(ctx context.Context, userID uuid.UUID) ([]Item, error) {
+	rows, err := q.db.Query(ctx, listOpenAllDayItems, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Item
+	for rows.Next() {
+		var i Item
+		if err := rows.Scan(
+			&i.ID,
+			&i.UserID,
+			&i.ListID,
+			&i.Title,
+			&i.Note,
+			&i.Priority,
+			&i.DueAt,
+			&i.DueDate,
+			&i.Status,
+			&i.CompletedAt,
+			&i.ReminderOverride,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const lockItem = `-- name: LockItem :one
 SELECT id, user_id, list_id, title, note, priority, due_at, due_date, status, completed_at, reminder_override, created_at, updated_at FROM items WHERE id = $1 AND user_id = $2 FOR UPDATE
 `

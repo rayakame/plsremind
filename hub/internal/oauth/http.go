@@ -11,6 +11,7 @@ import (
 	"github.com/rayakame/plsremind/hub/internal/db/sqlc"
 	"github.com/rayakame/plsremind/hub/internal/deps"
 	"github.com/rayakame/plsremind/hub/internal/httpx"
+	"github.com/rayakame/plsremind/hub/internal/signal"
 )
 
 func Register(api, user, admin fiber.Router, d *deps.Deps, svc *Service) {
@@ -53,7 +54,10 @@ func unlink(d *deps.Deps, svc *Service) fiber.Handler {
 			if usable == 0 {
 				return apierr.Conflict("last_identity", "Without this you could no longer log in. Link another account that allows login first.")
 			}
-			return q.DeleteIdentity(c.Context(), id)
+			if err := q.DeleteIdentity(c.Context(), id); err != nil {
+				return err
+			}
+			return signal.ForUser(c.Context(), q, signal.User, userID)
 		})
 		if err != nil {
 			return err

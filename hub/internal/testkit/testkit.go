@@ -121,6 +121,7 @@ type Env struct {
 	Clock *FakeClock
 
 	admin *Client
+	dbURL string
 }
 
 // New returns an environment with its own freshly migrated database.
@@ -143,7 +144,7 @@ func New(t *testing.T) *Env {
 		Now:  clock.Now,
 		HTTP: &http.Client{Timeout: 5 * time.Second},
 	}
-	return &Env{App: httpapi.New(d), Pool: pool, Deps: d, Clock: clock}
+	return &Env{App: httpapi.New(d), Pool: pool, Deps: d, Clock: clock, dbURL: urlFor(name)}
 }
 
 // Listen serves the app on a real socket and returns its base URL.

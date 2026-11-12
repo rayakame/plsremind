@@ -90,3 +90,13 @@ func MoveAll(ctx context.Context, q *sqlc.Queries, now time.Time, from, to uuid.
 	slices.SortFunc(rows, func(a, b sqlc.Item) int { return slices.Compare(a.ID[:], b.ID[:]) })
 	return Views(ctx, q, rows)
 }
+
+// OpenAllDay returns the user's open all-day items. Their due time depends on
+// the user's time zone, so they change when the zone does.
+func OpenAllDay(ctx context.Context, q *sqlc.Queries, userID uuid.UUID) ([]Item, error) {
+	rows, err := q.ListOpenAllDayItems(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	return Views(ctx, q, rows)
+}

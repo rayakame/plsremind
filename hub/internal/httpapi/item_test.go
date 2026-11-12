@@ -74,7 +74,14 @@ func TestAllDayDueFollowsTimezone(t *testing.T) {
 
 	u.Do(t, "PATCH", "/users/@me", J{"timezone": "America/New_York"})
 	require.Equal(t, "2024-11-14T04:59:59Z", get())
-	require.Len(t, e.Events(t, u.UserID), 2, "a timezone change writes no item events")
+	var types []string
+	events := e.Events(t, u.UserID)
+	for _, ev := range events {
+		types = append(types, ev.Type)
+	}
+	require.Equal(t, []string{"user.updated", "item.created", "item.created", "user.updated", "item.updated", "item.updated"}, types,
+		"all-day items are announced again when the zone moves their due time")
+	require.Equal(t, "2024-11-14T04:59:59Z", events[4].Payload.Get("due_at").String())
 
 	before := u.Do(t, "GET", "/users/@me/items?due_before=2024-11-14T04:00:00Z", nil)
 	require.Empty(t, ids(before, "data.#.id"), "filters use the due time in the current timezone")

@@ -15,6 +15,7 @@ import (
 	"github.com/rayakame/plsremind/hub/internal/deps"
 	"github.com/rayakame/plsremind/hub/internal/httpx"
 	"github.com/rayakame/plsremind/hub/internal/secret"
+	"github.com/rayakame/plsremind/hub/internal/signal"
 )
 
 func errLastAdmin() error {
@@ -79,8 +80,10 @@ func DeleteUser(ctx context.Context, d *deps.Deps, revoker Revoker, id uuid.UUID
 		if err != nil {
 			return err
 		}
-		_, err = q.DeleteUser(ctx, id)
-		return err
+		if _, err = q.DeleteUser(ctx, id); err != nil {
+			return err
+		}
+		return signal.ForUser(ctx, q, signal.User, id)
 	})
 	if err != nil {
 		return err
@@ -214,7 +217,10 @@ func patchUserAccess(d *deps.Deps) fiber.Handler {
 				}
 			}
 			updated, err = q.UpdateUserAccess(c.Context(), params)
-			return err
+			if err != nil {
+				return err
+			}
+			return signal.ForUser(c.Context(), q, signal.User, id)
 		})
 		if err != nil {
 			return err
@@ -261,7 +267,10 @@ func resetPassword(d *deps.Deps) fiber.Handler {
 			if err := q.DeleteUserPersonalTokens(c.Context(), id); err != nil {
 				return err
 			}
-			return q.DeleteUserSessions(c.Context(), id)
+			if err := q.DeleteUserSessions(c.Context(), id); err != nil {
+				return err
+			}
+			return signal.ForUser(c.Context(), q, signal.User, id)
 		})
 		if err != nil {
 			return err

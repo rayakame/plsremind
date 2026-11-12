@@ -17,6 +17,7 @@ import (
 	"github.com/rayakame/plsremind/hub/internal/deps"
 	"github.com/rayakame/plsremind/hub/internal/httpx"
 	"github.com/rayakame/plsremind/hub/internal/secret"
+	"github.com/rayakame/plsremind/hub/internal/signal"
 )
 
 const maxPerUser = 25
@@ -152,7 +153,10 @@ func update(d *deps.Deps) fiber.Handler {
 				params.Remind = *in.Remind
 			}
 			updated, err = q.UpdatePersonalToken(c.Context(), params)
-			return err
+			if err != nil {
+				return err
+			}
+			return signal.ForUser(c.Context(), q, signal.User, updated.UserID)
 		})
 		if err != nil {
 			return err
@@ -167,12 +171,19 @@ func remove(d *deps.Deps) fiber.Handler {
 		if err != nil {
 			return err
 		}
-		n, err := d.Q().DeletePersonalToken(c.Context(), sqlc.DeletePersonalTokenParams{ID: id, UserID: auth.Target(c)})
+		userID := auth.Target(c)
+		err = db.Tx(c.Context(), d.Pool, func(q *sqlc.Queries) error {
+			n, err := q.DeletePersonalToken(c.Context(), sqlc.DeletePersonalTokenParams{ID: id, UserID: userID})
+			if err != nil {
+				return err
+			}
+			if n == 0 {
+				return apierr.NotFound()
+			}
+			return signal.ForUser(c.Context(), q, signal.User, userID)
+		})
 		if err != nil {
 			return err
-		}
-		if n == 0 {
-			return apierr.NotFound()
 		}
 		return c.SendStatus(http.StatusNoContent)
 	}

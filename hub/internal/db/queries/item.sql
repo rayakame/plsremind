@@ -101,3 +101,6 @@ SELECT i.id, item_due(i.due_at, i.due_date, u.timezone)::timestamptz AS due
 FROM items i
 JOIN users u ON u.id = i.user_id
 WHERE i.id = ANY(@item_ids::uuid[]) AND i.due_date IS NOT NULL;
+
+-- name: ListOpenAllDayItems :many
+SELECT * FROM items WHERE user_id = @user_id AND status = 'open' AND due_date IS NOT NULL ORDER BY id;

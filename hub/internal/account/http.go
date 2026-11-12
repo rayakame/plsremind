@@ -15,9 +15,12 @@ import (
 	"github.com/rayakame/plsremind/hub/internal/db"
 	"github.com/rayakame/plsremind/hub/internal/db/sqlc"
 	"github.com/rayakame/plsremind/hub/internal/deps"
+	"github.com/rayakame/plsremind/hub/internal/eventlog"
 	"github.com/rayakame/plsremind/hub/internal/httpx"
+	"github.com/rayakame/plsremind/hub/internal/item"
 	"github.com/rayakame/plsremind/hub/internal/schedule"
 	"github.com/rayakame/plsremind/hub/internal/secret"
+	"github.com/rayakame/plsremind/hub/internal/signal"
 )
 
 // Register mounts the public account routes on api and the profile routes on user.
@@ -218,14 +221,36 @@ func patchProfile(d *deps.Deps) fiber.Handler {
 		if len(fields) > 0 {
 			return apierr.Validation(fields)
 		}
+		before := user
 		retime := params.Timezone != user.Timezone || params.QuietStart != user.QuietStart || params.QuietEnd != user.QuietEnd
 		err = db.Tx(c.Context(), d.Pool, func(q *sqlc.Queries) error {
 			user, err = q.UpdateUserProfile(c.Context(), params)
-			if err != nil || !retime {
+			if err != nil {
 				return err
 			}
+			now := d.Now()
+			p, _ := auth.From(c)
+			if err := eventlog.Append(c.Context(), q, now, user.ID, eventlog.ActorFrom(p), "user.updated", View(user)); err != nil {
+				return err
+			}
+			if !retime {
+				return nil
+			}
+			if params.Timezone != before.Timezone {
+				// An all-day deadline ends with the day in the user's zone, so its due
+				// time just moved. Clients that keep items in memory need to hear that.
+				moved, err := item.OpenAllDay(c.Context(), q, user.ID)
+				if err != nil {
+					return err
+				}
+				for _, it := range moved {
+					if err := eventlog.Append(c.Context(), q, now, user.ID, eventlog.ActorFrom(p), "item.updated", it); err != nil {
+						return err
+					}
+				}
+			}
 			// All-day deadlines and quiet hours are reckoned in the user's own time.
-			return schedule.SyncUser(c.Context(), q, d.Now(), user.ID)
+			return schedule.SyncUser(c.Context(), q, now, user.ID)
 		})
 		if err != nil {
 			return err
@@ -327,7 +352,10 @@ func setPassword(d *deps.Deps) fiber.Handler {
 			if err := q.DeleteUserPersonalTokens(c.Context(), userID); err != nil {
 				return err
 			}
-			return q.DeleteOtherSessions(c.Context(), sqlc.DeleteOtherSessionsParams{UserID: userID, KeepID: p.CredentialID})
+			if err := q.DeleteOtherSessions(c.Context(), sqlc.DeleteOtherSessionsParams{UserID: userID, KeepID: p.CredentialID}); err != nil {
+				return err
+			}
+			return signal.ForUser(c.Context(), q, signal.User, userID)
 		})
 		if err != nil {
 			return err
