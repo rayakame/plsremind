@@ -60,6 +60,10 @@ func NotifyConnection(ctx context.Context, q *sqlc.Queries, connectionID uuid.UU
 // DeliveriesClosed tells the gateway which deliveries were closed without being confirmed.
 func DeliveriesClosed(ctx context.Context, q *sqlc.Queries, rows []sqlc.Delivery) error {
 	for _, row := range rows {
+		// Nobody was ever handed this one, so nobody needs to take it back.
+		if row.Attempts == 0 {
+			continue
+		}
 		err := SendSignal(ctx, q, Signal{
 			Type:         SignalClosed,
 			DeliveryID:   &row.ID,

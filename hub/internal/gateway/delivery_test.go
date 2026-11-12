@@ -145,16 +145,10 @@ func TestQuietHoldReleases(t *testing.T) {
 	gw.ExpectQuiet(t)
 	e.Clock.Advance(time.Minute) // 14:00, the window is over
 	e.Fire(t)
-	// Yesterday's follow-up gives way to today's, which was scheduled for the end of the window.
-	var created int
-	for i := 0; i < 2; i++ {
-		f := gw.NextEvent(t)
-		if f.T == "delivery.created" {
-			created++
-			require.Equal(t, "follow_up", f.Get("data.reminder.kind").String())
-		}
-	}
-	require.Equal(t, 1, created)
+	// Yesterday's follow-up gives way to today's, which was scheduled for the end of
+	// the window. The bot never got yesterday's, so it is not told that it is gone.
+	require.Equal(t, "follow_up", gw.Expect(t, "delivery.created").Get("data.reminder.kind").String())
+	gw.ExpectQuiet(t)
 }
 
 func TestHeldDeliveryIsReleasedWhenTheWindowEnds(t *testing.T) {
@@ -212,4 +206,20 @@ func TestAllSessionsOfAChannelGetIt(t *testing.T) {
 	require.Equal(t, first.Get("data.id").String(), second.Get("data.id").String())
 	require.Equal(t, int64(1), first.Get("data.attempt").Int())
 	require.Equal(t, 1, e.Deliveries(t, mia.UserID)[0].Attempts)
+}
+
+func TestClosedIsNotAnnouncedForWhatWasNeverSent(t *testing.T) {
+	e := testkit.New(t)
+	bot := e.Connection(t, "discord")
+	mia := testkit.Linked(t, e, "mia", "111")
+	item := mia.Do(t, "POST", "/users/@me/items", J{"title": "overdue", "due_at": "2026-11-10T13:00:00Z"}).Get("id").String()
+	e.Clock.Advance(time.Hour)
+	e.Fire(t)
+	mia.Do(t, "PATCH", "/users/@me", J{"quiet_hours": J{"start": "12:30", "end": "18:00"}})
+	gw := e.Gateway(t, bot.Token, "deliveries")
+	gw.ExpectQuiet(t)
+
+	// The delivery is held back by quiet hours, so the bot has never heard of it.
+	mia.Do(t, "PATCH", "/users/@me/items/"+item, J{"status": "done"})
+	gw.ExpectQuiet(t)
 }

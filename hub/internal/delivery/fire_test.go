@@ -118,11 +118,12 @@ func TestExpiry(t *testing.T) {
 
 func TestDoneAndDeleteCancel(t *testing.T) {
 	e := testkit.New(t)
-	mia, _ := testkit.Reminded(t, e, "mia")
+	mia, token := testkit.Reminded(t, e, "mia")
 	first := mia.Do(t, "POST", "/users/@me/items", J{"title": "x", "priority": "low", "due_at": "2026-11-11T13:00:00Z"}).Get("id").String()
 	second := mia.Do(t, "POST", "/users/@me/items", J{"title": "y", "priority": "low", "due_at": "2026-11-11T13:00:00Z"}).Get("id").String()
 	e.Clock.Advance(time.Hour)
 	e.Fire(t)
+	require.Equal(t, int64(2), e.Do(t, "GET", "/deliveries", nil, token).Get("#").Int())
 	tap := e.Signals(t)
 
 	mia.Do(t, "PATCH", "/users/@me/items/"+first, J{"status": "done"})

@@ -250,6 +250,9 @@ An open delivery was withdrawn. `status` is `superseded` (a newer reminder for t
 item replaced it), `cancelled` (the item was completed or deleted, or reminders through
 you were switched off) or `expired`. If you have not reminded yet, don't.
 
+You are only told about deliveries you were sent at least once. One that was withdrawn
+before it ever reached you, while you were offline or during quiet hours, just never arrives.
+
 Delivery events carry `s: null`. They are not part of the sequence that Resume replays,
 because open deliveries are sent again after every login anyway.
 
