@@ -14,6 +14,7 @@ import (
 	"github.com/rayakame/plsremind/hub/internal/auth"
 	"github.com/rayakame/plsremind/hub/internal/db"
 	"github.com/rayakame/plsremind/hub/internal/db/sqlc"
+	"github.com/rayakame/plsremind/hub/internal/delivery"
 	"github.com/rayakame/plsremind/hub/internal/deps"
 	"github.com/rayakame/plsremind/hub/internal/httpx"
 	"github.com/rayakame/plsremind/hub/internal/secret"
@@ -156,6 +157,11 @@ func update(d *deps.Deps) fiber.Handler {
 			if err != nil {
 				return err
 			}
+			if !updated.Remind {
+				if err := delivery.CancelForToken(c.Context(), q, d.Now(), id); err != nil {
+					return err
+				}
+			}
 			return signal.ForUser(c.Context(), q, signal.User, updated.UserID)
 		})
 		if err != nil {
@@ -173,6 +179,9 @@ func remove(d *deps.Deps) fiber.Handler {
 		}
 		userID := auth.Target(c)
 		err = db.Tx(c.Context(), d.Pool, func(q *sqlc.Queries) error {
+			if err := delivery.CancelForToken(c.Context(), q, d.Now(), id); err != nil {
+				return err
+			}
 			n, err := q.DeletePersonalToken(c.Context(), sqlc.DeletePersonalTokenParams{ID: id, UserID: userID})
 			if err != nil {
 				return err

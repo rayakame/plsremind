@@ -30,6 +30,22 @@ type ConnectionGrant struct {
 	Remind       *bool
 }
 
+type Delivery struct {
+	ID           uuid.UUID
+	ReminderID   uuid.UUID
+	UserID       uuid.UUID
+	ItemID       uuid.UUID
+	ConnectionID *uuid.UUID
+	TokenID      *uuid.UUID
+	Status       string
+	Reason       string
+	Attempts     int32
+	HeldUntil    *time.Time
+	CreatedAt    time.Time
+	ExpiresAt    time.Time
+	ClosedAt     *time.Time
+}
+
 type Event struct {
 	UserID    uuid.UUID
 	Seq       int64
@@ -129,6 +145,17 @@ type PersonalToken struct {
 	CreatedAt  time.Time
 	LastUsedAt *time.Time
 	Remind     bool
+}
+
+type ReminderLog struct {
+	ID            uuid.UUID
+	UserID        uuid.UUID
+	ItemID        uuid.UUID
+	Kind          string
+	OffsetSeconds *int32
+	ScheduledFor  time.Time
+	FiredAt       time.Time
+	Outcome       string
 }
 
 type ReminderPlan struct {

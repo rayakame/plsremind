@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -17,6 +18,7 @@ import (
 	"github.com/rayakame/plsremind/hub/internal/auth"
 	"github.com/rayakame/plsremind/hub/internal/db"
 	"github.com/rayakame/plsremind/hub/internal/db/sqlc"
+	"github.com/rayakame/plsremind/hub/internal/delivery"
 	"github.com/rayakame/plsremind/hub/internal/deps"
 	"github.com/rayakame/plsremind/hub/internal/eventlog"
 	"github.com/rayakame/plsremind/hub/internal/httpx"
@@ -200,7 +202,11 @@ func setGrant(d *deps.Deps) fiber.Handler {
 				}
 			}
 			p, _ := auth.From(c)
-			if err := eventlog.Append(c.Context(), q, d.Now(), userID, eventlog.ActorFrom(p), "connection.updated", out); err != nil {
+			now := d.Now()
+			if err := eventlog.Append(c.Context(), q, now, userID, eventlog.ActorFrom(p), "connection.updated", out); err != nil {
+				return err
+			}
+			if err := delivery.SyncConnection(c.Context(), q, now, id, userID); err != nil {
 				return err
 			}
 			return signal.Send(c.Context(), q, signal.Signal{Type: signal.Grant, UserID: &userID, ConnectionID: &id})
@@ -340,6 +346,11 @@ func update(d *deps.Deps) fiber.Handler {
 			if err != nil {
 				return err
 			}
+			if !updated.Enabled || !slices.Contains(updated.AllowedIntents, "deliveries") {
+				if err := delivery.CancelForConnection(c.Context(), q, d.Now(), id, nil); err != nil {
+					return err
+				}
+			}
 			return signal.ForConnection(c.Context(), q, id)
 		})
 		if err != nil {
@@ -356,6 +367,9 @@ func remove(d *deps.Deps) fiber.Handler {
 			return err
 		}
 		err = db.Tx(c.Context(), d.Pool, func(q *sqlc.Queries) error {
+			if err := delivery.CancelForConnection(c.Context(), q, d.Now(), id, nil); err != nil {
+				return err
+			}
 			n, err := q.DeleteConnection(c.Context(), id)
 			if err != nil {
 				return err

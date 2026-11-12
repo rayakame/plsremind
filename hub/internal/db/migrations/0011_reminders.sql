@@ -33,7 +33,47 @@ CREATE TABLE scheduled_reminders (
 CREATE INDEX scheduled_reminders_fire_at_idx ON scheduled_reminders (fire_at);
 CREATE INDEX scheduled_reminders_item_id_idx ON scheduled_reminders (item_id);
 
+-- What the hub did when a reminder's time came.
+CREATE TABLE reminder_log (
+    id uuid PRIMARY KEY,
+    user_id uuid NOT NULL REFERENCES users ON DELETE CASCADE,
+    item_id uuid NOT NULL REFERENCES items ON DELETE CASCADE,
+    kind text NOT NULL CHECK (kind IN ('before', 'due', 'follow_up', 'manual')),
+    offset_seconds integer,
+    scheduled_for timestamptz NOT NULL,
+    fired_at timestamptz NOT NULL,
+    outcome text NOT NULL CHECK (outcome IN ('fired', 'missed', 'superseded'))
+);
+CREATE INDEX reminder_log_user_idx ON reminder_log (user_id, id);
+CREATE INDEX reminder_log_item_idx ON reminder_log (item_id);
+
+-- One fired reminder on one way of reaching the user, until that way confirms it.
+CREATE TABLE deliveries (
+    id uuid PRIMARY KEY,
+    reminder_id uuid NOT NULL REFERENCES reminder_log ON DELETE CASCADE,
+    user_id uuid NOT NULL REFERENCES users ON DELETE CASCADE,
+    item_id uuid NOT NULL REFERENCES items ON DELETE CASCADE,
+    connection_id uuid REFERENCES connections ON DELETE CASCADE,
+    token_id uuid REFERENCES personal_tokens ON DELETE CASCADE,
+    status text NOT NULL DEFAULT 'pending'
+        CHECK (status IN ('pending', 'delivered', 'failed', 'superseded', 'cancelled', 'expired')),
+    reason text NOT NULL DEFAULT '',
+    attempts integer NOT NULL DEFAULT 0,
+    held_until timestamptz,
+    created_at timestamptz NOT NULL,
+    expires_at timestamptz NOT NULL,
+    closed_at timestamptz,
+    CHECK ((connection_id IS NULL) <> (token_id IS NULL))
+);
+CREATE INDEX deliveries_pending_idx ON deliveries (expires_at) WHERE status = 'pending';
+CREATE INDEX deliveries_connection_idx ON deliveries (connection_id) WHERE status = 'pending';
+CREATE INDEX deliveries_token_idx ON deliveries (token_id) WHERE status = 'pending';
+CREATE INDEX deliveries_reminder_idx ON deliveries (reminder_id);
+CREATE INDEX deliveries_item_idx ON deliveries (item_id);
+
 -- +goose Down
+DROP TABLE deliveries;
+DROP TABLE reminder_log;
 DROP TABLE scheduled_reminders;
 ALTER TABLE personal_tokens DROP COLUMN remind;
 ALTER TABLE connection_grants DROP COLUMN remind;

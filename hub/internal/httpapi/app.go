@@ -10,6 +10,7 @@ import (
 	"github.com/rayakame/plsremind/hub/internal/apierr"
 	"github.com/rayakame/plsremind/hub/internal/auth"
 	"github.com/rayakame/plsremind/hub/internal/connection"
+	"github.com/rayakame/plsremind/hub/internal/delivery"
 	"github.com/rayakame/plsremind/hub/internal/deps"
 	"github.com/rayakame/plsremind/hub/internal/item"
 	"github.com/rayakame/plsremind/hub/internal/list"
@@ -93,7 +94,7 @@ func New(d *deps.Deps) *fiber.App {
 	token.Register(user, d)
 	list.Register(user, d)
 	plan.Register(user, d, schedule.SyncUser)
-	item.Register(user, d)
+	item.Register(user, d, delivery.CancelForItem)
 	subitem.Register(user, d)
 	reminder.Register(user, d)
 	connection.Register(api, user, admin, d)

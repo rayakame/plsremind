@@ -1,6 +1,7 @@
 package item
 
 import (
+	"context"
 	"net/http"
 	"strconv"
 	"time"
@@ -18,13 +19,17 @@ import (
 	"github.com/rayakame/plsremind/hub/internal/schedule"
 )
 
-func Register(user fiber.Router, d *deps.Deps) {
+// Closed is called in the transaction that completes or deletes an item, so
+// that reminders still waiting to be delivered for it can be withdrawn.
+type Closed func(ctx context.Context, q *sqlc.Queries, now time.Time, itemID uuid.UUID) error
+
+func Register(user fiber.Router, d *deps.Deps, closed Closed) {
 	items := user.Group("/items")
 	items.Get("", index(d))
 	items.Post("", create(d))
 	items.Get("/:id", show(d))
-	items.Patch("/:id", update(d))
-	items.Delete("/:id", remove(d))
+	items.Patch("/:id", update(d, closed))
+	items.Delete("/:id", remove(d, closed))
 }
 
 func actor(c fiber.Ctx) eventlog.Actor {
@@ -113,7 +118,7 @@ func show(d *deps.Deps) fiber.Handler {
 	}
 }
 
-func update(d *deps.Deps) fiber.Handler {
+func update(d *deps.Deps, closed Closed) fiber.Handler {
 	return func(c fiber.Ctx) error {
 		id, err := httpx.ParamUUID(c, "id")
 		if err != nil {
@@ -160,6 +165,11 @@ func update(d *deps.Deps) fiber.Handler {
 			if err := schedule.SyncItem(c.Context(), q, now, id); err != nil {
 				return err
 			}
+			if row.Status == "done" {
+				if err := closed(c.Context(), q, now, id); err != nil {
+					return err
+				}
+			}
 			updated, err = Load(c.Context(), q, userID, id)
 			if err != nil {
 				return err
@@ -173,7 +183,7 @@ func update(d *deps.Deps) fiber.Handler {
 	}
 }
 
-func remove(d *deps.Deps) fiber.Handler {
+func remove(d *deps.Deps, closed Closed) fiber.Handler {
 	return func(c fiber.Ctx) error {
 		id, err := httpx.ParamUUID(c, "id")
 		if err != nil {
@@ -182,6 +192,9 @@ func remove(d *deps.Deps) fiber.Handler {
 		userID := auth.Target(c)
 		err = db.Tx(c.Context(), d.Pool, func(q *sqlc.Queries) error {
 			if _, err := Lock(c.Context(), q, userID, id); err != nil {
+				return err
+			}
+			if err := closed(c.Context(), q, d.Now(), id); err != nil {
 				return err
 			}
 			if err := q.DeleteItem(c.Context(), id); err != nil {
