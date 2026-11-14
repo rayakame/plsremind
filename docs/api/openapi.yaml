@@ -1021,6 +1021,31 @@ paths:
           description: The subitem is gone.
         default:
           $ref: "#/components/responses/Error"
+  /users/{user}/items/{id}/schedule:
+    parameters:
+      - $ref: "#/components/parameters/User"
+      - $ref: "#/components/parameters/Nonce"
+      - $ref: "#/components/parameters/Id"
+    get:
+      tags: [Items]
+      operationId: getItemSchedule
+      summary: List the reminders an item still has ahead
+      description: |
+        Everything the hub is going to send for this item: reminders from the plan of its
+        priority or its override, the one at the due time, follow-ups and manual reminders.
+        This is the hub's own schedule, so it already accounts for the user's quiet hours.
+        An item that is done has nothing ahead.
+      responses:
+        "200":
+          description: The reminders, earliest first.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ScheduledReminder"
+        default:
+          $ref: "#/components/responses/Error"
   /users/{user}/items/{id}/reminders:
     parameters:
       - $ref: "#/components/parameters/User"
@@ -2037,6 +2062,31 @@ components:
         updated_at:
           type: string
           format: date-time
+    ScheduledReminder:
+      type: object
+      required: [kind, offset, reminder_id, scheduled_for, fire_at]
+      properties:
+        kind:
+          $ref: "#/components/schemas/ReminderKind"
+        offset:
+          description: For `before`, how long ahead of the due time. Null otherwise.
+          oneOf:
+            - type: "null"
+            - $ref: "#/components/schemas/Duration"
+        reminder_id:
+          description: For `manual`, the ID of the manual reminder. Null otherwise.
+          oneOf:
+            - type: "null"
+            - type: string
+              format: uuid
+        scheduled_for:
+          type: string
+          format: date-time
+          description: The moment the reminder is meant for.
+        fire_at:
+          type: string
+          format: date-time
+          description: When it goes out. Later than `scheduled_for` if quiet hours hold it back.
     ManualReminder:
       type: object
       required: [id, item_id, remind_at, created_at]

@@ -22,6 +22,7 @@ func registerItems(user fiber.Router, d *core.Deps) {
 	items.Get("", listItems(d))
 	items.Post("", createItem(d))
 	items.Get("/:id", showItem(d))
+	items.Get("/:id/schedule", showSchedule(d))
 	items.Patch("/:id", updateItem(d))
 	items.Delete("/:id", removeItem(d))
 }
