@@ -321,7 +321,11 @@ func TestTwoQuickResumesDoNotRepeatADelivery(t *testing.T) {
 	gw := e.Gateway(t, bot.Token, "deliveries")
 	gw.Collect(200 * time.Millisecond)
 	for round := 0; round < 15; round++ {
-		e.ResumeGateway(t, bot.Token, gw.SessionID, gw.LastSeq)
+		first := e.ResumeGateway(t, bot.Token, gw.SessionID, gw.LastSeq)
+		// The hub must have taken the first resume before the second is sent, or
+		// it may take them the other way round and close the second.
+		for first.NextEvent(t).T != gateway.EventResumed {
+		}
 		time.Sleep(time.Duration(rand.Intn(10000)) * time.Microsecond)
 		second := e.ResumeGateway(t, bot.Token, gw.SessionID, gw.LastSeq)
 		seen := map[string]int{}
