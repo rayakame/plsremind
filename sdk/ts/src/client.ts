@@ -42,6 +42,7 @@ export class Client {
   readonly #internals: ClientInternals;
   #status: ClientStatus = "idle";
   #principal: Principal | undefined;
+  #intents: readonly Intent[] | undefined;
   #gateway: Gateway | undefined;
   #connecting: Promise<void> | undefined;
   #settle: { resolve: () => void; reject: (error: unknown) => void } | undefined;
@@ -59,6 +60,11 @@ export class Client {
   /** Who the client is logged in as. Set once the gateway said READY. */
   get principal(): Principal | undefined {
     return this.#principal;
+  }
+
+  /** The intents of the session, or the ones asked for while there is none yet. */
+  get intents(): readonly Intent[] {
+    return this.#intents ?? this.#options.intents ?? [];
   }
 
   get status(): ClientStatus {
@@ -145,6 +151,7 @@ export class Client {
     if (name === "READY") {
       const ready = fromWire<ReadyEvent>(data);
       this.#principal = ready.principal;
+      this.#intents = ready.intents;
       this.#ready = { principal: ready.principal, users: ready.users, intents: ready.intents };
       this.#waiting = new Set(ready.users);
       const self = "userId" in ready.principal ? ready.principal.userId : undefined;
