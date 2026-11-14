@@ -108,7 +108,9 @@ type resume struct {
 }
 
 type readyPrincipal struct {
-	Kind       string           `json:"kind"`
+	Kind string `json:"kind"`
+	// ID is the credential, the same value that events carry as the actor's id.
+	ID         string           `json:"id"`
 	UserID     *string          `json:"user_id,omitempty"`
 	Connection *readyConnection `json:"connection,omitempty"`
 }

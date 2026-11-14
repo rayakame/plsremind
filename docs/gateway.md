@@ -53,12 +53,13 @@ JSON text frame of this shape:
    {"op": 0, "t": "READY", "s": 1, "d": {
      "session_id": "f3Zk...",
      "intents": ["items", "deliveries"],
-     "principal": {"kind": "personal_token", "user_id": "0193..."},
+     "principal": {"kind": "personal_token", "id": "0195...", "user_id": "0193..."},
      "users": ["0193..."]
    }}
    ```
 
-   `principal.kind` is `personal_token`, `connection` or `session`. A connection gets
+   `principal.kind` is `personal_token`, `connection` or `session`, and `principal.id`
+   identifies the token, connection or login you came with. A connection gets
    `principal.connection` with its `id`, `name` and `provider` instead of `user_id`.
    `users` lists the users whose state follows.
 
@@ -156,7 +157,8 @@ counterparts of Discord's `GUILD_DELETE` and `GUILD_CREATE`.
 - `data` is always the whole object after the change, so you replace your copy. For
   `*.deleted` it is `{"id": "..."}`, with `item_id` added for subitems and reminders.
 - `actor` says who made the change: `kind` is `session`, `personal_token` or `connection`,
-  and `id` identifies it. Compare it with your own to recognise your own changes. It is
+  and `id` identifies it. Compare it with `principal.id` from `READY` to recognise changes
+  made with your own token or login. It is
   `null` when the hub tells a connection that something about a user's access changed,
   for example that they switched reminders through it off.
 - `nonce` is the `X-Request-Nonce` header of the request that made the change, or `null`

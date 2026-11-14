@@ -304,3 +304,33 @@ func TestSessionLimitPerUserAcrossTokens(t *testing.T) {
 	// Someone else is not affected.
 	e.Gateway(t, personalToken(t, e.User(t, "ben")), "deliveries")
 }
+
+func TestReadyNamesTheCredentialThatActorsCarry(t *testing.T) {
+	e := testkit.New(t)
+	bot := e.Connection(t, "discord")
+	mia := testkit.Linked(t, e, "mia", "111")
+	token := personalToken(t, mia)
+
+	own := e.Gateway(t, token, "items")
+	own.Expect(t, "user.sync")
+	require.Equal(t, "personal_token", own.Ready.Get("principal.kind").String())
+	r := e.Do(t, "POST", "/users/@me/items", J{"title": "by token"}, testkit.Bearer(token))
+	require.Equal(t, 201, r.Status)
+	require.Equal(t, own.Ready.Get("principal.id").String(), own.Expect(t, "item.created").Get("actor.id").String())
+
+	gw := e.Gateway(t, bot.Token, "items")
+	gw.Expect(t, "user.sync")
+	require.Equal(t, bot.ID, gw.Ready.Get("principal.id").String())
+	require.Equal(t, bot.ID, gw.Ready.Get("principal.connection.id").String())
+	require.Equal(t, 201, bot.Do(t, "POST", "/users/"+mia.UserID+"/items", J{"title": "by bot"}).Status)
+	require.Equal(t, bot.ID, gw.Expect(t, "item.created").Get("actor.id").String())
+
+	session := e.GatewayRaw(t, testkit.Cookie("plsr_session", mia.Session), testkit.Header("Origin", testkit.PublicURL))
+	session.Next(t)
+	session.Send(t, gateway.OpIdentify, J{"intents": []string{"items"}})
+	ready := session.Expect(t, gateway.EventReady)
+	session.Expect(t, "user.sync")
+	require.Equal(t, 201, mia.Do(t, "POST", "/users/@me/items", J{"title": "by session"}).Status)
+	require.NotEmpty(t, ready.Get("principal.id").String())
+	require.Equal(t, ready.Get("principal.id").String(), session.Expect(t, "item.created").Get("actor.id").String())
+}
