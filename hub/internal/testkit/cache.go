@@ -132,6 +132,7 @@ func byKey(arr gjson.Result, key string) map[string]any {
 }
 
 // collectDone adds every done item from the cursor on to into, newest completion first.
+// What into already holds is left as it is, so that a wrong cached value still shows.
 func collectDone(t *testing.T, client *Client, base, cursor string, into map[string]any) {
 	t.Helper()
 	for {
@@ -141,7 +142,12 @@ func collectDone(t *testing.T, client *Client, base, cursor string, into map[str
 		}
 		r := client.Do(t, "GET", path, nil)
 		require.Equal(t, 200, r.Status, string(r.Body))
-		r.Get("data").ForEach(func(_, it gjson.Result) bool { into[it.Get("id").String()] = decode(it.Raw); return true })
+		r.Get("data").ForEach(func(_, it gjson.Result) bool {
+			if _, held := into[it.Get("id").String()]; !held {
+				into[it.Get("id").String()] = decode(it.Raw)
+			}
+			return true
+		})
 		cursor = r.Get("next_cursor").String()
 		if cursor == "" {
 			return

@@ -42,6 +42,15 @@ func View(u sqlc.User) User {
 	}
 }
 
+// Logged is the profile as the event log keeps it. A user.updated event is
+// rendered anew for whoever receives it, so the preferences are not copied
+// into every entry of the log.
+func Logged(u sqlc.User) User {
+	view := View(u)
+	view.Preferences = json.RawMessage("{}")
+	return view
+}
+
 // ViewQuietHours returns the user's quiet hours, or nil when they are off.
 func ViewQuietHours(u sqlc.User) *QuietHours {
 	if !u.QuietStart.Valid || !u.QuietEnd.Valid {

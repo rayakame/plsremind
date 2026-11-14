@@ -1,6 +1,7 @@
 package account_test
 
 import (
+	"context"
 	"encoding/json"
 	"strings"
 	"testing"
@@ -94,10 +95,10 @@ func TestRegisterAndSetupTakeLocale(t *testing.T) {
 	require.Equal(t, gjson.Null, none.Get("locale").Type)
 }
 
-func TestPreferencesTheDatabaseCannotStoreAreRefused(t *testing.T) {
+func TestPreferencesWithNumbersNoClientCanReadAreRefused(t *testing.T) {
 	e := testkit.New(t)
 	mia := e.User(t, "mia")
-	for _, bad := range []string{`{"a":"\ud800"}`, `{"a":1e999999}`} {
+	for _, bad := range []string{`{"a":1e999999}`, `{"a":[{"b":-1e400}]}`} {
 		r := mia.Do(t, "PATCH", "/users/@me", testkit.Raw(`{"preferences":`+bad+`}`))
 		require.Equal(t, 422, r.Status, bad)
 		require.NotEmpty(t, r.Get("error.fields.preferences").String(), bad)
@@ -130,4 +131,22 @@ func TestLocaleAcceptsExtensionSubtags(t *testing.T) {
 	for _, bad := range []string{"-de", "de-", "de--DE", "abcdefghi", "de-abcdefghi"} {
 		require.Equal(t, 422, mia.Do(t, "PATCH", "/users/@me", J{"locale": bad}).Status, bad)
 	}
+}
+
+func TestPreferencesComeBackNoLargerThanTheyWereSent(t *testing.T) {
+	e := testkit.New(t)
+	mia := e.User(t, "mia")
+	// Numbers that a database could write out digit by digit, three hundred each.
+	sent := `{"a":[` + strings.TrimSuffix(strings.Repeat("1e300,", 2000), ",") + `],"b":"\ud800"}`
+	r := mia.Do(t, "PATCH", "/users/@me", testkit.Raw(`{"preferences":`+sent+`}`))
+	require.Equal(t, 200, r.Status)
+	require.Less(t, len(r.Body), 2*len(sent))
+	require.JSONEq(t, sent, r.Get("preferences").Raw)
+
+	got := mia.Do(t, "GET", "/users/@me", nil)
+	require.Less(t, len(got.Body), 2*len(sent))
+	var size int
+	require.NoError(t, e.Pool.QueryRow(context.Background(),
+		`SELECT coalesce(max(pg_column_size(payload)), 0) FROM events WHERE user_id = $1`, mia.UserID).Scan(&size))
+	require.Less(t, size, 4096, "the event log does not keep a copy of the preferences")
 }

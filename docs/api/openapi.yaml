@@ -247,7 +247,8 @@ paths:
                   type: object
                   description: |
                     Replaces the stored preferences as a whole. Any JSON object of at most
-                    16384 bytes, counted on the JSON text as it is sent.
+                    16384 bytes, counted on the JSON text as it is sent, in which every
+                    number fits a double. It is stored and returned as it was sent.
                 quiet_hours:
                   description: Send null to turn quiet hours off.
                   oneOf:

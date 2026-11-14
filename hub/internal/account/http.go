@@ -261,15 +261,12 @@ func patchProfile(d *core.Deps) fiber.Handler {
 				params.Preferences = in.Preferences.Val
 			}
 			user, err = q.UpdateUserProfile(c.Context(), params)
-			if in.Preferences.Set && store.IsUnstorableJSON(err) {
-				return api.Field("preferences", "Must be a JSON object of at most 16 kB.")
-			}
 			if err != nil {
 				return err
 			}
 			now := d.Now()
 			actor := auth.Actor(c)
-			if err := events.Append(c.Context(), q, now, user.ID, actor, "user.updated", View(user)); err != nil {
+			if err := events.Append(c.Context(), q, now, user.ID, actor, "user.updated", Logged(user)); err != nil {
 				return err
 			}
 			rezoned := user.Timezone != before.Timezone

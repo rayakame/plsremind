@@ -1,8 +1,10 @@
 package account
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"regexp"
 	"strings"
 	"time"
@@ -131,8 +133,26 @@ const maxPreferencesLen = 16 << 10
 
 func checkPreferences(fields map[string]string, raw json.RawMessage) {
 	var object map[string]json.RawMessage
-	if len(raw) > maxPreferencesLen || json.Unmarshal(raw, &object) != nil || object == nil {
+	if len(raw) > maxPreferencesLen || json.Unmarshal(raw, &object) != nil || object == nil || !plainNumbers(raw) {
 		fields["preferences"] = "Must be a JSON object of at most 16 kB."
+	}
+}
+
+// plainNumbers reports whether every number in the document fits a double.
+// One that does not is valid JSON that most clients cannot read back.
+func plainNumbers(raw json.RawMessage) bool {
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.UseNumber()
+	for {
+		token, err := dec.Token()
+		if err != nil {
+			return err == io.EOF
+		}
+		if n, ok := token.(json.Number); ok {
+			if _, err := n.Float64(); err != nil {
+				return false
+			}
+		}
 	}
 }
 
