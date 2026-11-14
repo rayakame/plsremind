@@ -12,3 +12,4 @@ export type {
   UserOptions,
   WriteOptions,
 } from "./rest.js";
+export type { Cache, CacheChange, CacheKind, UserState } from "./cache.js";
