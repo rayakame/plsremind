@@ -812,10 +812,13 @@ paths:
             format: date-time
         - name: sort
           in: query
-          description: With `due`, items without a due time always come last.
+          description: |
+            With `due`, items without a due time always come last. `completed` orders done
+            items by when they were completed and is only allowed together with
+            `status=done`; with `order=desc` the most recently completed come first.
           schema:
             type: string
-            enum: [created, due, priority]
+            enum: [created, due, priority, completed]
             default: created
         - name: order
           in: query

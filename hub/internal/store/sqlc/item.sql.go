@@ -150,6 +150,84 @@ func (q *Queries) ListAllDayDue(ctx context.Context, itemIds []uuid.UUID) ([]Lis
 	return items, nil
 }
 
+const listItemsByCompleted = `-- name: ListItemsByCompleted :many
+SELECT i.id, i.user_id, i.list_id, i.title, i.note, i.priority, i.due_at, i.due_date, i.status, i.completed_at, i.reminder_override, i.created_at, i.updated_at
+FROM items i
+JOIN users u ON u.id = i.user_id
+WHERE i.user_id = $1
+  AND i.status = 'done'
+  AND ($2::uuid IS NULL OR i.list_id = $2)
+  AND ($3::boolean IS NULL OR (item_due(i.due_at, i.due_date, u.timezone) IS NOT NULL) = $3)
+  AND ($4::timestamptz IS NULL OR item_due(i.due_at, i.due_date, u.timezone) < $4)
+  AND ($5::timestamptz IS NULL OR item_due(i.due_at, i.due_date, u.timezone) > $5)
+  AND ($6::uuid IS NULL OR CASE
+        WHEN $7::boolean THEN (i.completed_at, i.id) < ($8::timestamptz, $6)
+        ELSE (i.completed_at, i.id) > ($8::timestamptz, $6)
+      END)
+ORDER BY
+  CASE WHEN NOT $7::boolean THEN i.completed_at END ASC,
+  CASE WHEN $7::boolean THEN i.completed_at END DESC,
+  CASE WHEN NOT $7::boolean THEN i.id END ASC,
+  CASE WHEN $7::boolean THEN i.id END DESC
+LIMIT $9
+`
+
+type ListItemsByCompletedParams struct {
+	UserID          uuid.UUID
+	ListID          *uuid.UUID
+	HasDue          *bool
+	DueBefore       *time.Time
+	DueAfter        *time.Time
+	CursorID        *uuid.UUID
+	Descending      bool
+	CursorCompleted *time.Time
+	PageSize        int32
+}
+
+func (q *Queries) ListItemsByCompleted(ctx context.Context, arg ListItemsByCompletedParams) ([]Item, error) {
+	rows, err := q.db.Query(ctx, listItemsByCompleted,
+		arg.UserID,
+		arg.ListID,
+		arg.HasDue,
+		arg.DueBefore,
+		arg.DueAfter,
+		arg.CursorID,
+		arg.Descending,
+		arg.CursorCompleted,
+		arg.PageSize,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Item
+	for rows.Next() {
+		var i Item
+		if err := rows.Scan(
+			&i.ID,
+			&i.UserID,
+			&i.ListID,
+			&i.Title,
+			&i.Note,
+			&i.Priority,
+			&i.DueAt,
+			&i.DueDate,
+			&i.Status,
+			&i.CompletedAt,
+			&i.ReminderOverride,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listItemsByCreated = `-- name: ListItemsByCreated :many
 SELECT i.id, i.user_id, i.list_id, i.title, i.note, i.priority, i.due_at, i.due_date, i.status, i.completed_at, i.reminder_override, i.created_at, i.updated_at
 FROM items i
