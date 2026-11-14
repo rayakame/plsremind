@@ -1,0 +1,35 @@
+name: sdk-ts
+
+on:
+  push:
+    branches: [main]
+    paths: ["sdk/ts/**", "hub/**", "docs/**", "package*.json", ".github/workflows/sdk-ts.yml"]
+  pull_request:
+    paths: ["sdk/ts/**", "hub/**", "docs/**", "package*.json", ".github/workflows/sdk-ts.yml"]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [22, current]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: hub/go.mod
+          cache-dependency-path: hub/go.sum
+      - run: npm ci
+      - run: npm run check
+        working-directory: sdk/ts
+      - run: npm run build
+        working-directory: sdk/ts
+      - run: npm test
+        working-directory: sdk/ts
+      - run: npm run test:hub
+        working-directory: sdk/ts
