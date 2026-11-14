@@ -71,7 +71,7 @@ func register(d *core.Deps) fiber.Handler {
 			if err != nil {
 				return err
 			}
-			user, err = CreateUser(c.Context(), q, now, NewUser{DisplayName: in.DisplayName, Timezone: in.Timezone})
+			user, err = CreateUser(c.Context(), q, now, NewUser{DisplayName: in.DisplayName, Timezone: in.Timezone, Locale: in.Locale})
 			if err != nil {
 				return err
 			}

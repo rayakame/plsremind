@@ -22,13 +22,13 @@ func registerItems(user fiber.Router, d *core.Deps) {
 	items.Get("", listItems(d))
 	items.Post("", createItem(d))
 	items.Get("/:id", showItem(d))
+	items.Get("/:id/schedule", showSchedule(d))
 	items.Patch("/:id", updateItem(d))
 	items.Delete("/:id", removeItem(d))
 }
 
 func actor(c fiber.Ctx) events.Actor {
-	p, _ := auth.From(c)
-	return auth.ActorFrom(p)
+	return auth.Actor(c)
 }
 
 func createItem(d *core.Deps) fiber.Handler {
@@ -254,8 +254,14 @@ func parseItemFilter(c fiber.Ctx) (itemFilter, error) {
 	switch sort := c.Query("sort", "created"); sort {
 	case "created", "due", "priority":
 		f.sort = sort
+	case "completed":
+		f.sort = sort
+		// Open items have no completion time to be ordered by.
+		if f.status == nil || *f.status != "done" {
+			fields["sort"] = `"completed" needs status=done.`
+		}
 	default:
-		fields["sort"] = `Must be "created", "due" or "priority".`
+		fields["sort"] = `Must be "created", "due", "priority" or "completed".`
 	}
 	switch c.Query("order", "asc") {
 	case "asc":
@@ -319,6 +325,14 @@ func listItems(d *core.Deps) fiber.Handler {
 				UserID: userID, ListID: f.listID, Status: f.status, HasDue: f.hasDue, DueBefore: f.dueBefore, DueAfter: f.dueAfter,
 				CursorID: cursorID, CursorRank: cursorRank, Descending: f.desc, PageSize: size,
 			})
+		case "completed":
+			if cursorID != nil && after.Completed == nil {
+				return api.ErrCursor()
+			}
+			rows, err = q.ListItemsByCompleted(c.Context(), sqlc.ListItemsByCompletedParams{
+				UserID: userID, ListID: f.listID, HasDue: f.hasDue, DueBefore: f.dueBefore, DueAfter: f.dueAfter,
+				CursorID: cursorID, CursorCompleted: after.Completed, Descending: f.desc, PageSize: size,
+			})
 		default:
 			rows, err = q.ListItemsByCreated(c.Context(), sqlc.ListItemsByCreatedParams{
 				UserID: userID, ListID: f.listID, Status: f.status, HasDue: f.hasDue, DueBefore: f.dueBefore, DueAfter: f.dueAfter,
@@ -340,6 +354,8 @@ func listItems(d *core.Deps) fiber.Handler {
 			case "priority":
 				r := priorityRank(last.Priority)
 				next.Rank = &r
+			case "completed":
+				next.Completed = last.CompletedAt
 			}
 			return next
 		}))

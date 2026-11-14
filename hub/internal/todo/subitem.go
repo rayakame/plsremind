@@ -33,7 +33,6 @@ func changeSubitems(c fiber.Ctx, d *core.Deps, fn func(q *sqlc.Queries, itemID u
 		return err
 	}
 	userID := auth.Target(c)
-	p, _ := auth.From(c)
 	return store.UserTx(c.Context(), d.Pool, userID, func(q *sqlc.Queries) error {
 		if _, err := LockItem(c.Context(), q, userID, itemID); err != nil {
 			return err
@@ -42,7 +41,7 @@ func changeSubitems(c fiber.Ctx, d *core.Deps, fn func(q *sqlc.Queries, itemID u
 		if err := TouchItem(c.Context(), q, now, itemID); err != nil {
 			return err
 		}
-		actor := auth.ActorFrom(p)
+		actor := auth.Actor(c)
 		err := fn(q, itemID, func(typ string, payload any) error {
 			return events.Append(c.Context(), q, now, userID, actor, typ, payload)
 		})

@@ -15,6 +15,10 @@ type UserState struct {
 	Lists map[string]any
 	Items map[string]any
 	Plans map[string]any
+	// History holds done items, for sessions with the history intent. HistoryCursor
+	// is where the REST API continues, empty when the sync said there is nothing older.
+	History       map[string]any
+	HistoryCursor string
 }
 
 // Cache is the state a client would hold after applying every dispatch it received,
@@ -56,6 +60,15 @@ func (c *Cache) apply(f Frame) {
 			}
 			items.ForEach(func(_, it gjson.Result) bool { state.Items[it.Get("id").String()] = decode(it.Raw); return true })
 		}
+		if history := f.Get("history"); history.Exists() {
+			if state.History == nil {
+				state.History = map[string]any{}
+			}
+			history.ForEach(func(_, it gjson.Result) bool { state.History[it.Get("id").String()] = decode(it.Raw); return true })
+		}
+		if cursor := f.Get("history_cursor"); cursor.Exists() {
+			state.HistoryCursor = cursor.String()
+		}
 		return
 	case "user.gone":
 		delete(c.Users, userID)
@@ -73,14 +86,19 @@ func (c *Cache) apply(f Frame) {
 	case "list.deleted":
 		delete(state.Lists, id)
 	case "item.created", "item.updated":
-		// Only open items are kept, as in user.sync.
+		// Done items move to the history, if the session keeps one.
 		if data.Get("status").String() == "done" {
 			delete(state.Items, id)
+			if state.History != nil {
+				state.History[id] = decode(data.Raw)
+			}
 		} else {
+			delete(state.History, id)
 			state.Items[id] = decode(data.Raw)
 		}
 	case "item.deleted":
 		delete(state.Items, id)
+		delete(state.History, id)
 	case "plan.updated":
 		state.Plans[data.Get("priority").String()] = decode(data.Raw)
 	}
@@ -113,6 +131,30 @@ func byKey(arr gjson.Result, key string) map[string]any {
 	return out
 }
 
+// collectDone adds every done item from the cursor on to into, newest completion first.
+// What into already holds is left as it is, so that a wrong cached value still shows.
+func collectDone(t *testing.T, client *Client, base, cursor string, into map[string]any) {
+	t.Helper()
+	for {
+		path := base + "/items?status=done&sort=completed&order=desc&limit=100"
+		if cursor != "" {
+			path += "&cursor=" + cursor
+		}
+		r := client.Do(t, "GET", path, nil)
+		require.Equal(t, 200, r.Status, string(r.Body))
+		r.Get("data").ForEach(func(_, it gjson.Result) bool {
+			if _, held := into[it.Get("id").String()]; !held {
+				into[it.Get("id").String()] = decode(it.Raw)
+			}
+			return true
+		})
+		cursor = r.Get("next_cursor").String()
+		if cursor == "" {
+			return
+		}
+	}
+}
+
 func requireSameJSON(t *testing.T, want, got any, what string) {
 	t.Helper()
 	w, _ := json.Marshal(want)
@@ -136,6 +178,20 @@ func (c *Cache) RequireMatchesREST(t *testing.T, client *Client, base, userID st
 		require.Equal(t, 200, r.Status)
 		require.False(t, r.Get("next_cursor").Exists() && r.Get("next_cursor").String() != "", "too many items for one page")
 		requireSameJSON(t, byKey(r.Get("data"), "id"), state.Items, "items")
+	}
+	if state.History != nil {
+		// The cache holds everything newer than where the sync stopped; the REST
+		// API continues from there. Together they are every done item.
+		known := map[string]any{}
+		for id, item := range state.History {
+			known[id] = item
+		}
+		if state.HistoryCursor != "" {
+			collectDone(t, client, base, state.HistoryCursor, known)
+		}
+		all := map[string]any{}
+		collectDone(t, client, base, "", all)
+		requireSameJSON(t, all, known, "history")
 	}
 	if state.Plans != nil {
 		r := client.Do(t, "GET", base+"/reminder-plans", nil)

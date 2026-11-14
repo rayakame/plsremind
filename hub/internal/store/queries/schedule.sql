@@ -19,3 +19,6 @@ SELECT kind, scheduled_for FROM reminder_log WHERE item_id = @item_id;
 
 -- name: ListItemSchedule :many
 SELECT * FROM scheduled_reminders WHERE item_id = @item_id FOR UPDATE;
+
+-- name: ListItemScheduleByTime :many
+SELECT * FROM scheduled_reminders WHERE item_id = @item_id ORDER BY fire_at, kind, id;

@@ -5,8 +5,8 @@ SELECT pg_advisory_xact_lock(1);
 SELECT count(*) FROM users;
 
 -- name: CreateUser :one
-INSERT INTO users (id, display_name, role, timezone, created_at)
-VALUES (@id, @display_name, @role, @timezone, @created_at)
+INSERT INTO users (id, display_name, role, timezone, locale, created_at)
+VALUES (@id, @display_name, @role, @timezone, @locale, @created_at)
 RETURNING *;
 
 -- name: GetUser :one
@@ -14,7 +14,8 @@ SELECT * FROM users WHERE id = @id;
 
 -- name: UpdateUserProfile :one
 UPDATE users
-SET display_name = @display_name, timezone = @timezone, quiet_start = @quiet_start, quiet_end = @quiet_end
+SET display_name = @display_name, timezone = @timezone, quiet_start = @quiet_start, quiet_end = @quiet_end,
+    locale = @locale, preferences = @preferences
 WHERE id = @id
 RETURNING *;
 

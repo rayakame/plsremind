@@ -122,9 +122,9 @@ func (q *Queries) CreateInvite(ctx context.Context, arg CreateInviteParams) (Inv
 }
 
 const createUser = `-- name: CreateUser :one
-INSERT INTO users (id, display_name, role, timezone, created_at)
-VALUES ($1, $2, $3, $4, $5)
-RETURNING id, display_name, role, timezone, quiet_start, quiet_end, disabled, event_seq, created_at
+INSERT INTO users (id, display_name, role, timezone, locale, created_at)
+VALUES ($1, $2, $3, $4, $5, $6)
+RETURNING id, display_name, role, timezone, quiet_start, quiet_end, disabled, event_seq, created_at, locale, preferences
 `
 
 type CreateUserParams struct {
@@ -132,6 +132,7 @@ type CreateUserParams struct {
 	DisplayName string
 	Role        string
 	Timezone    string
+	Locale      *string
 	CreatedAt   time.Time
 }
 
@@ -141,6 +142,7 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 		arg.DisplayName,
 		arg.Role,
 		arg.Timezone,
+		arg.Locale,
 		arg.CreatedAt,
 	)
 	var i User
@@ -154,6 +156,8 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 		&i.Disabled,
 		&i.EventSeq,
 		&i.CreatedAt,
+		&i.Locale,
+		&i.Preferences,
 	)
 	return i, err
 }
@@ -254,7 +258,7 @@ func (q *Queries) GetUsableInvite(ctx context.Context, arg GetUsableInviteParams
 }
 
 const getUser = `-- name: GetUser :one
-SELECT id, display_name, role, timezone, quiet_start, quiet_end, disabled, event_seq, created_at FROM users WHERE id = $1
+SELECT id, display_name, role, timezone, quiet_start, quiet_end, disabled, event_seq, created_at, locale, preferences FROM users WHERE id = $1
 `
 
 func (q *Queries) GetUser(ctx context.Context, id uuid.UUID) (User, error) {
@@ -270,6 +274,8 @@ func (q *Queries) GetUser(ctx context.Context, id uuid.UUID) (User, error) {
 		&i.Disabled,
 		&i.EventSeq,
 		&i.CreatedAt,
+		&i.Locale,
+		&i.Preferences,
 	)
 	return i, err
 }
@@ -340,7 +346,7 @@ func (q *Queries) ListInvites(ctx context.Context) ([]Invite, error) {
 }
 
 const listUsers = `-- name: ListUsers :many
-SELECT id, display_name, role, timezone, quiet_start, quiet_end, disabled, event_seq, created_at FROM users
+SELECT id, display_name, role, timezone, quiet_start, quiet_end, disabled, event_seq, created_at, locale, preferences FROM users
 WHERE id > $1
 ORDER BY id
 LIMIT $2
@@ -370,6 +376,8 @@ func (q *Queries) ListUsers(ctx context.Context, arg ListUsersParams) ([]User, e
 			&i.Disabled,
 			&i.EventSeq,
 			&i.CreatedAt,
+			&i.Locale,
+			&i.Preferences,
 		); err != nil {
 			return nil, err
 		}
@@ -417,7 +425,7 @@ func (q *Queries) UpdatePasswordHash(ctx context.Context, arg UpdatePasswordHash
 
 const updateUserAccess = `-- name: UpdateUserAccess :one
 UPDATE users SET role = $1, disabled = $2 WHERE id = $3
-RETURNING id, display_name, role, timezone, quiet_start, quiet_end, disabled, event_seq, created_at
+RETURNING id, display_name, role, timezone, quiet_start, quiet_end, disabled, event_seq, created_at, locale, preferences
 `
 
 type UpdateUserAccessParams struct {
@@ -439,15 +447,18 @@ func (q *Queries) UpdateUserAccess(ctx context.Context, arg UpdateUserAccessPara
 		&i.Disabled,
 		&i.EventSeq,
 		&i.CreatedAt,
+		&i.Locale,
+		&i.Preferences,
 	)
 	return i, err
 }
 
 const updateUserProfile = `-- name: UpdateUserProfile :one
 UPDATE users
-SET display_name = $1, timezone = $2, quiet_start = $3, quiet_end = $4
-WHERE id = $5
-RETURNING id, display_name, role, timezone, quiet_start, quiet_end, disabled, event_seq, created_at
+SET display_name = $1, timezone = $2, quiet_start = $3, quiet_end = $4,
+    locale = $5, preferences = $6
+WHERE id = $7
+RETURNING id, display_name, role, timezone, quiet_start, quiet_end, disabled, event_seq, created_at, locale, preferences
 `
 
 type UpdateUserProfileParams struct {
@@ -455,6 +466,8 @@ type UpdateUserProfileParams struct {
 	Timezone    string
 	QuietStart  pgtype.Time
 	QuietEnd    pgtype.Time
+	Locale      *string
+	Preferences []byte
 	ID          uuid.UUID
 }
 
@@ -464,6 +477,8 @@ func (q *Queries) UpdateUserProfile(ctx context.Context, arg UpdateUserProfilePa
 		arg.Timezone,
 		arg.QuietStart,
 		arg.QuietEnd,
+		arg.Locale,
+		arg.Preferences,
 		arg.ID,
 	)
 	var i User
@@ -477,6 +492,8 @@ func (q *Queries) UpdateUserProfile(ctx context.Context, arg UpdateUserProfilePa
 		&i.Disabled,
 		&i.EventSeq,
 		&i.CreatedAt,
+		&i.Locale,
+		&i.Preferences,
 	)
 	return i, err
 }

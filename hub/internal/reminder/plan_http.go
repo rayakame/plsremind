@@ -84,8 +84,7 @@ func changedPlan(c fiber.Ctx, d *core.Deps, q *sqlc.Queries, userID uuid.UUID, p
 		}
 	}
 	now := d.Now()
-	principal, _ := auth.From(c)
-	if err := events.Append(c.Context(), q, now, userID, auth.ActorFrom(principal), "plan.updated", current); err != nil {
+	if err := events.Append(c.Context(), q, now, userID, auth.Actor(c), "plan.updated", current); err != nil {
 		return planView{}, err
 	}
 	return current, SyncUser(c.Context(), q, now, userID)

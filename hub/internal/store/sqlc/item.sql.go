@@ -13,6 +13,24 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const countDoneItems = `-- name: CountDoneItems :one
+SELECT count(*) FROM (
+    SELECT 1 FROM items WHERE user_id = $1 AND status = 'done' LIMIT $2
+) capped
+`
+
+type CountDoneItemsParams struct {
+	UserID uuid.UUID
+	AtMost int32
+}
+
+func (q *Queries) CountDoneItems(ctx context.Context, arg CountDoneItemsParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countDoneItems, arg.UserID, arg.AtMost)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const countOpenItems = `-- name: CountOpenItems :one
 SELECT count(*) FROM items WHERE user_id = $1 AND status = 'open'
 `
@@ -140,6 +158,189 @@ func (q *Queries) ListAllDayDue(ctx context.Context, itemIds []uuid.UUID) ([]Lis
 	for rows.Next() {
 		var i ListAllDayDueRow
 		if err := rows.Scan(&i.ID, &i.Due); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listAllDayItemsInReach = `-- name: ListAllDayItemsInReach :many
+SELECT id, user_id, list_id, title, note, priority, due_at, due_date, status, completed_at, reminder_override, created_at, updated_at FROM items i
+WHERE i.user_id = $1 AND i.due_date IS NOT NULL
+  AND (i.status = 'open' OR i.id IN (
+        SELECT d.id FROM items d WHERE d.user_id = $1 AND d.status = 'done'
+        ORDER BY d.completed_at DESC, d.id DESC LIMIT $2
+      ))
+ORDER BY i.id
+`
+
+type ListAllDayItemsInReachParams struct {
+	UserID  uuid.UUID
+	History int32
+}
+
+// Open ones, and done ones among the most recently completed: those a client can hold from a sync.
+func (q *Queries) ListAllDayItemsInReach(ctx context.Context, arg ListAllDayItemsInReachParams) ([]Item, error) {
+	rows, err := q.db.Query(ctx, listAllDayItemsInReach, arg.UserID, arg.History)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Item
+	for rows.Next() {
+		var i Item
+		if err := rows.Scan(
+			&i.ID,
+			&i.UserID,
+			&i.ListID,
+			&i.Title,
+			&i.Note,
+			&i.Priority,
+			&i.DueAt,
+			&i.DueDate,
+			&i.Status,
+			&i.CompletedAt,
+			&i.ReminderOverride,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listDoneItemsNewestFirst = `-- name: ListDoneItemsNewestFirst :many
+SELECT id, user_id, list_id, title, note, priority, due_at, due_date, status, completed_at, reminder_override, created_at, updated_at FROM items
+WHERE user_id = $1 AND status = 'done'
+  AND ($2::uuid IS NULL OR (completed_at, id) < ($3::timestamptz, $2))
+ORDER BY completed_at DESC, id DESC
+LIMIT $4
+`
+
+type ListDoneItemsNewestFirstParams struct {
+	UserID         uuid.UUID
+	AfterID        *uuid.UUID
+	AfterCompleted *time.Time
+	PageSize       int32
+}
+
+// The plain ordering lets items_user_completed_idx serve it whatever plan is chosen.
+func (q *Queries) ListDoneItemsNewestFirst(ctx context.Context, arg ListDoneItemsNewestFirstParams) ([]Item, error) {
+	rows, err := q.db.Query(ctx, listDoneItemsNewestFirst,
+		arg.UserID,
+		arg.AfterID,
+		arg.AfterCompleted,
+		arg.PageSize,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Item
+	for rows.Next() {
+		var i Item
+		if err := rows.Scan(
+			&i.ID,
+			&i.UserID,
+			&i.ListID,
+			&i.Title,
+			&i.Note,
+			&i.Priority,
+			&i.DueAt,
+			&i.DueDate,
+			&i.Status,
+			&i.CompletedAt,
+			&i.ReminderOverride,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listItemsByCompleted = `-- name: ListItemsByCompleted :many
+SELECT i.id, i.user_id, i.list_id, i.title, i.note, i.priority, i.due_at, i.due_date, i.status, i.completed_at, i.reminder_override, i.created_at, i.updated_at
+FROM items i
+JOIN users u ON u.id = i.user_id
+WHERE i.user_id = $1
+  AND i.status = 'done'
+  AND ($2::uuid IS NULL OR i.list_id = $2)
+  AND ($3::boolean IS NULL OR (item_due(i.due_at, i.due_date, u.timezone) IS NOT NULL) = $3)
+  AND ($4::timestamptz IS NULL OR item_due(i.due_at, i.due_date, u.timezone) < $4)
+  AND ($5::timestamptz IS NULL OR item_due(i.due_at, i.due_date, u.timezone) > $5)
+  AND ($6::uuid IS NULL OR CASE
+        WHEN $7::boolean THEN (i.completed_at, i.id) < ($8::timestamptz, $6)
+        ELSE (i.completed_at, i.id) > ($8::timestamptz, $6)
+      END)
+ORDER BY
+  CASE WHEN NOT $7::boolean THEN i.completed_at END ASC,
+  CASE WHEN $7::boolean THEN i.completed_at END DESC,
+  CASE WHEN NOT $7::boolean THEN i.id END ASC,
+  CASE WHEN $7::boolean THEN i.id END DESC
+LIMIT $9
+`
+
+type ListItemsByCompletedParams struct {
+	UserID          uuid.UUID
+	ListID          *uuid.UUID
+	HasDue          *bool
+	DueBefore       *time.Time
+	DueAfter        *time.Time
+	CursorID        *uuid.UUID
+	Descending      bool
+	CursorCompleted *time.Time
+	PageSize        int32
+}
+
+func (q *Queries) ListItemsByCompleted(ctx context.Context, arg ListItemsByCompletedParams) ([]Item, error) {
+	rows, err := q.db.Query(ctx, listItemsByCompleted,
+		arg.UserID,
+		arg.ListID,
+		arg.HasDue,
+		arg.DueBefore,
+		arg.DueAfter,
+		arg.CursorID,
+		arg.Descending,
+		arg.CursorCompleted,
+		arg.PageSize,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Item
+	for rows.Next() {
+		var i Item
+		if err := rows.Scan(
+			&i.ID,
+			&i.UserID,
+			&i.ListID,
+			&i.Title,
+			&i.Note,
+			&i.Priority,
+			&i.DueAt,
+			&i.DueDate,
+			&i.Status,
+			&i.CompletedAt,
+			&i.ReminderOverride,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -363,44 +564,6 @@ func (q *Queries) ListItemsByPriority(ctx context.Context, arg ListItemsByPriori
 		arg.CursorRank,
 		arg.PageSize,
 	)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []Item
-	for rows.Next() {
-		var i Item
-		if err := rows.Scan(
-			&i.ID,
-			&i.UserID,
-			&i.ListID,
-			&i.Title,
-			&i.Note,
-			&i.Priority,
-			&i.DueAt,
-			&i.DueDate,
-			&i.Status,
-			&i.CompletedAt,
-			&i.ReminderOverride,
-			&i.CreatedAt,
-			&i.UpdatedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listOpenAllDayItems = `-- name: ListOpenAllDayItems :many
-SELECT id, user_id, list_id, title, note, priority, due_at, due_date, status, completed_at, reminder_override, created_at, updated_at FROM items WHERE user_id = $1 AND status = 'open' AND due_date IS NOT NULL ORDER BY id
-`
-
-func (q *Queries) ListOpenAllDayItems(ctx context.Context, userID uuid.UUID) ([]Item, error) {
-	rows, err := q.db.Query(ctx, listOpenAllDayItems, userID)
 	if err != nil {
 		return nil, err
 	}

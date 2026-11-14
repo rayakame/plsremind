@@ -53,12 +53,13 @@ JSON text frame of this shape:
    {"op": 0, "t": "READY", "s": 1, "d": {
      "session_id": "f3Zk...",
      "intents": ["items", "deliveries"],
-     "principal": {"kind": "personal_token", "user_id": "0193..."},
+     "principal": {"kind": "personal_token", "id": "0195...", "user_id": "0193..."},
      "users": ["0193..."]
    }}
    ```
 
-   `principal.kind` is `personal_token`, `connection` or `session`. A connection gets
+   `principal.kind` is `personal_token`, `connection` or `session`, and `principal.id`
+   identifies the token, connection or login you came with. A connection gets
    `principal.connection` with its `id`, `name` and `provider` instead of `user_id`.
    `users` lists the users whose state follows.
 
@@ -81,12 +82,16 @@ You only get what you ask for. `intents` in Identify is required and must not be
 | `lists` | `lists` | `list.created`, `list.updated`, `list.deleted` |
 | `items` | `items` | `item.created`, `item.updated`, `item.deleted`, `subitem.created`, `subitem.updated`, `subitem.deleted`, `reminder.created`, `reminder.deleted` |
 | `plans` | `plans` | `plan.updated` |
+| `history` | `history`, `history_cursor` | none of its own |
 | `deliveries` | none | `delivery.created`, `delivery.closed` |
 
 - An adapter that only reminds asks for `deliveries` and keeps no state at all. Every
   delivery carries the item and the user it is about.
 - Without any of `users`, `lists`, `items` and `plans` there is no `user.sync` and no
   `user.gone`, and `READY.users` is empty.
+- `history` adds the most recently completed items to the state, for clients that want to
+  show or search them. It only works together with `items`; asking for it alone closes the
+  connection with code 4013.
 - Intents hold for the whole session. To change them, identify again.
 
 For a connection, the admin decides which intents it may have at all. Asking for one that
@@ -112,7 +117,7 @@ REST only to change things.
 {"op": 0, "t": "user.sync", "s": 2, "d": {
   "user_id": "0193...",
   "chunk": {"index": 0, "count": 1},
-  "user": {"id": "0193...", "display_name": "Mia", "timezone": "Europe/Berlin", "quiet_hours": null},
+  "user": {"id": "0193...", "display_name": "Mia", "timezone": "Europe/Berlin", "quiet_hours": null, "locale": "de", "preferences": {}},
   "lists": [{"id": "...", "name": "Inbox", "position": 0, "is_inbox": true}],
   "items": [{"id": "...", "title": "Hand in the report", "status": "open", "subitems": [], "reminders": []}],
   "plans": [{"priority": "low", "before": ["1d"], "follow_up": "never", "is_default": true}]
@@ -121,13 +126,25 @@ REST only to change things.
 
 - Only the parts of your intents are present. The objects are the same as in the REST API.
 - `items` holds all **open** items, each with its subitems and manual reminders. Completed
-  items are not part of the state; fetch them over REST if you need them.
+  items are not part of it. Ask for the `history` intent to get the recent ones, or fetch
+  them over REST.
 - A user with many items is sent in several parts of at most 500 items. `chunk` tells you
   which part this is. `user`, `lists` and `plans` come in part 0. Part 0 replaces whatever
   you knew about the user; later parts add items.
+- With the `history` intent, `history` holds the user's 1000 most recently completed
+  items, newest completion first, in the same form as `items`. They come in parts of their
+  own after the parts with open items, again at most 500 each. A user without completed
+  items gets `"history": []` in part 0.
+- `history_cursor` comes with the last part that carries `history`. It is `null` if the
+  user has no older completed items. Otherwise pass it as `cursor` to
+  `GET /users/{user}/items?status=done&sort=completed&order=desc` and the API continues
+  exactly where the state ends. The cursor marks a position, so it keeps working when
+  the item it was made after is opened again or deleted.
 - For a connection, `user` is a reduced profile: `id`, `display_name`, `timezone`,
-  `quiet_hours`, the user's `external_ids` at the connection's provider, and `remind`
-  (whether the user wants reminders through this connection).
+  `quiet_hours`, `locale` (the language the user wants to be addressed in, or `null`),
+  the user's `external_ids` at the connection's provider, and `remind` (whether the user
+  wants reminders through this connection). A connection never sees the user's
+  `preferences` and is not told when they change.
 
 ### `user.gone`
 
@@ -148,6 +165,7 @@ counterparts of Discord's `GUILD_DELETE` and `GUILD_CREATE`.
 {"op": 0, "t": "item.updated", "s": 18, "d": {
   "user_id": "0193...",
   "actor": {"kind": "session", "id": "0193..."},
+  "nonce": null,
   "data": {"id": "...", "title": "Hand in the report", "status": "done"}
 }}
 ```
@@ -155,15 +173,38 @@ counterparts of Discord's `GUILD_DELETE` and `GUILD_CREATE`.
 - `data` is always the whole object after the change, so you replace your copy. For
   `*.deleted` it is `{"id": "..."}`, with `item_id` added for subitems and reminders.
 - `actor` says who made the change: `kind` is `session`, `personal_token` or `connection`,
-  and `id` identifies it. Compare it with your own to recognise your own changes. It is
+  and `id` identifies it. Compare it with `principal.id` from `READY` to recognise changes
+  made with your own token or login. It is
   `null` when the hub tells a connection that something about a user's access changed,
   for example that they switched reminders through it off.
+- `nonce` is the `X-Request-Nonce` header of the request that made the change, or `null`
+  if it sent none. Send a random one with a request and you can tell exactly which change
+  events are the result of that call, however many it writes. Every client that receives
+  the event sees the value. It is 1 to 64 printable ASCII characters without spaces.
+  Events without an actor never carry one, and neither do `delivery.created` and
+  `delivery.closed`. Several logins can share a credential, for example two tabs of one
+  dashboard session: `actor.id` is the same for both, only the nonce tells them apart.
 - Every change to a subitem or a manual reminder is followed by `item.updated` with the
   whole item. If you keep items in memory you can ignore the `subitem.*` and `reminder.*`
   events and just replace the item.
-- An item that is completed arrives as `item.updated` with `status: "done"`. Since the
-  state only holds open items, remove it from your cache.
-- `user.updated` carries the profile, in the same form as in `user.sync`.
+- An item that is completed arrives as `item.updated` with `status: "done"`. Remove it
+  from your open items. If you keep a history, store it there and keep the history ordered
+  by `completed_at`, then `id`, both descending: that is the order of `user.sync` and of
+  `sort=completed&order=desc`. Timestamps have microsecond precision and are written
+  without trailing zeros, so compare them as instants at full precision, not as text and
+  not rounded to milliseconds; compare IDs as lowercase text. An item that is opened
+  again arrives the same way with `status: "open"` and moves back.
+- A completed item can also change, which arrives as `item.updated` with `status: "done"`
+  and the same `completed_at`, or be deleted. If it is older than your history reaches you
+  will not have it yet; taking it in is fine. When you then load older items over REST,
+  expect to meet it again and go by its `id`.
+- When a user changes their time zone, the due time of every all-day item moves. The hub
+  announces that as `item.updated` for the open ones and for the completed ones a sync
+  can carry. Completed all-day items older than that are not announced: if you hold any,
+  fetch them again after a `user.updated` with a new `timezone`.
+- `user.updated` carries the profile, in the same form as in `user.sync`. Unlike the other
+  events it shows the profile as it is when the event is sent, not as that one change
+  left it: after two quick changes, the first event can already show both.
 - `plan.updated` carries one reminder plan. `connection.updated` tells a user's own stream
   that they changed what a connection may do; connections never receive it.
 
@@ -199,13 +240,14 @@ with `remind`. Each delivery waits until that channel confirms it.
 {"op": 0, "t": "delivery.created", "s": null, "d": {
   "user_id": "0193...",
   "actor": null,
+  "nonce": null,
   "data": {
     "id": "0193...",
     "attempt": 1,
     "late": false,
     "reminder": {"id": "...", "kind": "before", "offset": "1d", "scheduled_for": "2026-11-12T18:00:00Z"},
     "item": {"id": "...", "title": "Hand in the report", "due_at": "2026-11-13T18:00:00Z"},
-    "user": {"id": "0193...", "display_name": "Mia", "timezone": "Europe/Berlin", "external_ids": ["1234"]}
+    "user": {"id": "0193...", "display_name": "Mia", "timezone": "Europe/Berlin", "locale": "de", "external_ids": ["1234"]}
   }
 }}
 ```
@@ -219,7 +261,8 @@ with `remind`. Each delivery waits until that channel confirms it.
 
 What to do with a delivery:
 
-1. Remind the person. For a connection, `user.external_ids` says whom to address.
+1. Remind the person. For a connection, `user.external_ids` says whom to address, and
+   `user.locale` in which language if they chose one.
 2. Once the reminder has actually reached them, confirm it:
    `PUT /api/v1/deliveries/{id}` with `{"status": "delivered"}`.
 3. If it cannot reach them, say so: `{"status": "failed", "reason": "direct messages are closed"}`.
@@ -246,7 +289,7 @@ a growing `attempt`. It is not repeated while you stay connected. After 24 hours
 ### `delivery.closed`
 
 ```json
-{"op": 0, "t": "delivery.closed", "s": null, "d": {"user_id": "0193...", "actor": null, "data": {"id": "0193...", "status": "cancelled"}}}
+{"op": 0, "t": "delivery.closed", "s": null, "d": {"user_id": "0193...", "actor": null, "nonce": null, "data": {"id": "0193...", "status": "cancelled"}}}
 ```
 
 An open delivery was withdrawn. `status` is `superseded` (a newer reminder for the same
@@ -299,7 +342,7 @@ is closed with 4014.
 |---|---|---|
 | `READY` | always | see the handshake |
 | `RESUMED` | always | `{}` |
-| `user.sync` | any state intent | see above |
+| `user.sync` | any state intent | see above; `history` adds completed items to it |
 | `user.gone` | any state intent | none, only `user_id` |
 | `user.updated` | `users` | the profile |
 | `connection.updated` | `users`, user streams only | the connection as the user sees it |

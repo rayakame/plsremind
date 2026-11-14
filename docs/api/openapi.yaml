@@ -16,6 +16,25 @@ info:
     A write with any other `Origin` is refused with `403` and the code `csrf_failed`, unless
     it uses a bearer token.
 
+    ## Recognising your own changes
+
+    A request may carry an `X-Request-Nonce` header: 1 to 64 printable ASCII characters
+    without spaces, chosen by you. Every change event the request writes carries the same
+    value as `nonce`, for every client that receives the event. These are the events that
+    name an `actor`: changes to lists, items, subitems, manual reminders, reminder plans,
+    the profile and what a connection may do. One request can write several of them, for
+    example deleting a list that still holds items, and none at all if it changes nothing:
+    setting an order only announces what moved.
+
+    What the hub does as a consequence carries no nonce: `delivery.created` and
+    `delivery.closed`, and what a connection is told when a user's access to it changes
+    (`user.sync`, `user.gone`, and a `user.updated` without an actor).
+
+    The hub does not interpret the value and does not require it to be unique, so use a
+    random one per request if you want to tell requests apart. Several logins and tabs can
+    share one credential; only the nonce separates them. A header that does not fit is
+    refused with `400` and the code `invalid_nonce`.
+
     ## Rate limits
 
     Every response carries `X-RateLimit-Limit`, `X-RateLimit-Remaining` and
@@ -174,6 +193,7 @@ paths:
   /users/{user}:
     parameters:
       - $ref: "#/components/parameters/User"
+      - $ref: "#/components/parameters/Nonce"
     get:
       tags: [Account]
       operationId: getUser
@@ -218,6 +238,17 @@ paths:
                   type: string
                   description: IANA time zone name.
                   examples: [Europe/Berlin]
+                locale:
+                  description: A language tag such as `de` or `en-GB`. Send null to clear it.
+                  oneOf:
+                    - type: "null"
+                    - type: string
+                preferences:
+                  type: object
+                  description: |
+                    Replaces the stored preferences as a whole. Any JSON object of at most
+                    16384 bytes, counted on the JSON text as it is sent, in which every
+                    number fits a double. It is stored and returned as it was sent.
                 quiet_hours:
                   description: Send null to turn quiet hours off.
                   oneOf:
@@ -262,6 +293,7 @@ paths:
   /users/{user}/identities:
     parameters:
       - $ref: "#/components/parameters/User"
+      - $ref: "#/components/parameters/Nonce"
     get:
       tags: [Account]
       operationId: listIdentities
@@ -280,6 +312,7 @@ paths:
   /users/{user}/password:
     parameters:
       - $ref: "#/components/parameters/User"
+      - $ref: "#/components/parameters/Nonce"
     put:
       tags: [Account]
       operationId: setPassword
@@ -438,6 +471,7 @@ paths:
   /admin/users/{id}:
     parameters:
       - $ref: "#/components/parameters/Id"
+      - $ref: "#/components/parameters/Nonce"
     patch:
       tags: [Admin]
       operationId: updateUserAccess
@@ -504,6 +538,7 @@ paths:
   /users/{user}/tokens:
     parameters:
       - $ref: "#/components/parameters/User"
+      - $ref: "#/components/parameters/Nonce"
     get:
       tags: [Account]
       operationId: listTokens
@@ -555,6 +590,7 @@ paths:
   /users/{user}/tokens/{id}:
     parameters:
       - $ref: "#/components/parameters/User"
+      - $ref: "#/components/parameters/Nonce"
       - $ref: "#/components/parameters/Id"
     patch:
       tags: [Account]
@@ -596,6 +632,7 @@ paths:
   /users/{user}/lists:
     parameters:
       - $ref: "#/components/parameters/User"
+      - $ref: "#/components/parameters/Nonce"
     get:
       tags: [Lists]
       operationId: listLists
@@ -633,10 +670,14 @@ paths:
   /users/{user}/lists/order:
     parameters:
       - $ref: "#/components/parameters/User"
+      - $ref: "#/components/parameters/Nonce"
     put:
       tags: [Lists]
       operationId: reorderLists
       summary: Set the display order of all lists
+      description: |
+        Only the lists whose position changes are announced on the gateway, each as
+        `list.updated`. Setting the order they already have announces nothing.
       requestBody:
         required: true
         content:
@@ -657,6 +698,7 @@ paths:
   /users/{user}/lists/{id}:
     parameters:
       - $ref: "#/components/parameters/User"
+      - $ref: "#/components/parameters/Nonce"
       - $ref: "#/components/parameters/Id"
     patch:
       tags: [Lists]
@@ -690,6 +732,7 @@ paths:
   /users/{user}/reminder-plans:
     parameters:
       - $ref: "#/components/parameters/User"
+      - $ref: "#/components/parameters/Nonce"
     get:
       tags: [Reminder plans]
       operationId: listReminderPlans
@@ -708,6 +751,7 @@ paths:
   /users/{user}/reminder-plans/{priority}:
     parameters:
       - $ref: "#/components/parameters/User"
+      - $ref: "#/components/parameters/Nonce"
       - name: priority
         in: path
         required: true
@@ -749,6 +793,7 @@ paths:
   /users/{user}/items:
     parameters:
       - $ref: "#/components/parameters/User"
+      - $ref: "#/components/parameters/Nonce"
     get:
       tags: [Items]
       operationId: listItems
@@ -782,10 +827,13 @@ paths:
             format: date-time
         - name: sort
           in: query
-          description: With `due`, items without a due time always come last.
+          description: |
+            With `due`, items without a due time always come last. `completed` orders done
+            items by when they were completed and is only allowed together with
+            `status=done`; with `order=desc` the most recently completed come first.
           schema:
             type: string
-            enum: [created, due, priority]
+            enum: [created, due, priority, completed]
             default: created
         - name: order
           in: query
@@ -839,6 +887,7 @@ paths:
   /users/{user}/items/{id}:
     parameters:
       - $ref: "#/components/parameters/User"
+      - $ref: "#/components/parameters/Nonce"
       - $ref: "#/components/parameters/Id"
     get:
       tags: [Items]
@@ -892,6 +941,7 @@ paths:
   /users/{user}/items/{id}/subitems:
     parameters:
       - $ref: "#/components/parameters/User"
+      - $ref: "#/components/parameters/Nonce"
       - $ref: "#/components/parameters/Id"
     post:
       tags: [Subitems]
@@ -919,6 +969,7 @@ paths:
   /users/{user}/items/{id}/subitems/order:
     parameters:
       - $ref: "#/components/parameters/User"
+      - $ref: "#/components/parameters/Nonce"
       - $ref: "#/components/parameters/Id"
     put:
       tags: [Subitems]
@@ -944,6 +995,7 @@ paths:
   /users/{user}/items/{id}/subitems/{sid}:
     parameters:
       - $ref: "#/components/parameters/User"
+      - $ref: "#/components/parameters/Nonce"
       - $ref: "#/components/parameters/Id"
       - name: sid
         in: path
@@ -984,9 +1036,36 @@ paths:
           description: The subitem is gone.
         default:
           $ref: "#/components/responses/Error"
+  /users/{user}/items/{id}/schedule:
+    parameters:
+      - $ref: "#/components/parameters/User"
+      - $ref: "#/components/parameters/Nonce"
+      - $ref: "#/components/parameters/Id"
+    get:
+      tags: [Items]
+      operationId: getItemSchedule
+      summary: List the reminders an item still has ahead
+      description: |
+        Everything the hub is going to send for this item: reminders from the plan of its
+        priority or its override, the one at the due time, follow-ups and manual reminders.
+        This is the hub's own schedule, so it already accounts for the user's quiet hours.
+        An item that is done has nothing ahead. A reminder whose time has just come can
+        still be listed for a few seconds, until the hub has sent it.
+      responses:
+        "200":
+          description: The reminders, earliest first.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ScheduledReminder"
+        default:
+          $ref: "#/components/responses/Error"
   /users/{user}/items/{id}/reminders:
     parameters:
       - $ref: "#/components/parameters/User"
+      - $ref: "#/components/parameters/Nonce"
       - $ref: "#/components/parameters/Id"
     get:
       tags: [Manual reminders]
@@ -1033,6 +1112,7 @@ paths:
   /users/{user}/items/{id}/reminders/{rid}:
     parameters:
       - $ref: "#/components/parameters/User"
+      - $ref: "#/components/parameters/Nonce"
       - $ref: "#/components/parameters/Id"
       - name: rid
         in: path
@@ -1086,6 +1166,7 @@ paths:
   /users/{user}/connections:
     parameters:
       - $ref: "#/components/parameters/User"
+      - $ref: "#/components/parameters/Nonce"
     get:
       tags: [Connections]
       operationId: listUserConnections
@@ -1104,6 +1185,7 @@ paths:
   /users/{user}/connections/{id}:
     parameters:
       - $ref: "#/components/parameters/User"
+      - $ref: "#/components/parameters/Nonce"
       - $ref: "#/components/parameters/Id"
     put:
       tags: [Connections]
@@ -1316,6 +1398,7 @@ paths:
   /users/{user}/identities/{id}:
     parameters:
       - $ref: "#/components/parameters/User"
+      - $ref: "#/components/parameters/Nonce"
       - $ref: "#/components/parameters/Id"
     delete:
       tags: [Account]
@@ -1482,6 +1565,7 @@ paths:
   /users/{user}/reminder-log:
     parameters:
       - $ref: "#/components/parameters/User"
+      - $ref: "#/components/parameters/Nonce"
     get:
       tags: [Deliveries]
       operationId: listReminderLog
@@ -1544,6 +1628,17 @@ components:
       scheme: bearer
       description: A personal token (`plsr_pat_...`) or a connection token (`plsr_con_...`).
   parameters:
+    Nonce:
+      name: X-Request-Nonce
+      in: header
+      description: |
+        A value of your choosing that comes back as `nonce` in every gateway event this
+        request causes. See "Recognising your own changes".
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 64
+        pattern: "^[!-~]+$"
     User:
       name: user
       in: path
@@ -1657,7 +1752,7 @@ components:
           examples: ["08:00"]
     User:
       type: object
-      required: [id, display_name, role, timezone, quiet_hours, created_at]
+      required: [id, display_name, role, timezone, quiet_hours, locale, preferences, created_at]
       properties:
         id:
           type: string
@@ -1671,12 +1766,29 @@ components:
           type: string
         quiet_hours:
           $ref: "#/components/schemas/OptionalQuietHours"
+        locale:
+          description: |
+            The language the user wants to be addressed in, as a language tag such as `de`
+            or `en-GB`. Null while they have not chosen one. The hub only checks the shape
+            (letters, digits and dashes, at most 35 characters), not that the tag names a
+            real language, so do not hand it to a locale library unchecked.
+          oneOf:
+            - type: "null"
+            - type: string
+              maxLength: 35
+              pattern: "^[A-Za-z]{2,8}(-[A-Za-z0-9]{1,8})*$"
+        preferences:
+          type: object
+          description: |
+            Settings of the user's own clients, for example the dashboard's theme and key
+            bindings. The hub stores the object and does not interpret it. Only the user sees
+            it: connections and admins never do.
         created_at:
           type: string
           format: date-time
     UserSummary:
       type: object
-      required: [id, display_name, timezone, quiet_hours]
+      required: [id, display_name, timezone, quiet_hours, locale]
       properties:
         id:
           type: string
@@ -1687,6 +1799,17 @@ components:
           type: string
         quiet_hours:
           $ref: "#/components/schemas/OptionalQuietHours"
+        locale:
+          description: |
+            The language the user wants to be addressed in, as a language tag such as `de`
+            or `en-GB`. Null while they have not chosen one. The hub only checks the shape
+            (letters, digits and dashes, at most 35 characters), not that the tag names a
+            real language, so do not hand it to a locale library unchecked.
+          oneOf:
+            - type: "null"
+            - type: string
+              maxLength: 35
+              pattern: "^[A-Za-z]{2,8}(-[A-Za-z0-9]{1,8})*$"
     NewPasswordAccount:
       type: object
       required: [username, password]
@@ -1703,6 +1826,9 @@ components:
         timezone:
           type: string
           description: IANA time zone name, defaults to UTC.
+        locale:
+          type: string
+          description: A language tag such as `de` or `en-GB`. Left unset when absent.
     Duration:
       type: string
       description: A span of time made of days, hours and minutes in descending order, without spaces.
@@ -1760,13 +1886,31 @@ components:
           type: [string, "null"]
           format: uuid
     AdminUser:
-      allOf:
-        - $ref: "#/components/schemas/User"
-        - type: object
-          required: [disabled]
-          properties:
-            disabled:
-              type: boolean
+      type: object
+      description: A user as an admin sees them. Their preferences are not part of it.
+      required: [id, display_name, role, timezone, quiet_hours, locale, created_at, disabled]
+      properties:
+        id:
+          type: string
+          format: uuid
+        display_name:
+          type: string
+        role:
+          type: string
+          enum: [user, admin]
+        timezone:
+          type: string
+        quiet_hours:
+          $ref: "#/components/schemas/OptionalQuietHours"
+        locale:
+          oneOf:
+            - type: "null"
+            - type: string
+        created_at:
+          type: string
+          format: date-time
+        disabled:
+          type: boolean
     PersonalToken:
       type: object
       required: [id, name, remind, created_at, last_used_at]
@@ -1960,6 +2104,31 @@ components:
         updated_at:
           type: string
           format: date-time
+    ScheduledReminder:
+      type: object
+      required: [kind, offset, reminder_id, scheduled_for, fire_at]
+      properties:
+        kind:
+          $ref: "#/components/schemas/ReminderKind"
+        offset:
+          description: For `before`, how long ahead of the due time. Null otherwise.
+          oneOf:
+            - type: "null"
+            - $ref: "#/components/schemas/Duration"
+        reminder_id:
+          description: For `manual`, the ID of the manual reminder. Null otherwise.
+          oneOf:
+            - type: "null"
+            - type: string
+              format: uuid
+        scheduled_for:
+          type: string
+          format: date-time
+          description: The moment the reminder is meant for.
+        fire_at:
+          type: string
+          format: date-time
+          description: When it goes out. Later than `scheduled_for` if quiet hours hold it back.
     ManualReminder:
       type: object
       required: [id, item_id, remind_at, created_at]
@@ -2052,12 +2221,14 @@ components:
       type: array
       description: |
         The kinds of data a client can have: `users` (profile), `lists`, `items` (with subitems
-        and manual reminders), `plans` (reminder plans) and `deliveries` (reminders to play out).
-        For a connection the admin decides which of them it may have, and that limit applies to
-        the gateway and to this API alike.
+        and manual reminders), `plans` (reminder plans), `history` (recently completed items in
+        the gateway's state, only together with `items`) and `deliveries` (reminders to play
+        out). For a connection the admin decides which of them it may have, and that limit
+        applies to the gateway and to this API alike. Reading done items through this API only
+        takes `items`.
       items:
         type: string
-        enum: [users, lists, items, plans, deliveries]
+        enum: [users, lists, items, plans, history, deliveries]
     DeliveryStatus:
       type: string
       enum: [pending, delivered, failed, superseded, cancelled, expired]
@@ -2100,7 +2271,7 @@ components:
           $ref: "#/components/schemas/Item"
         user:
           type: object
-          required: [id, display_name, timezone]
+          required: [id, display_name, timezone, locale]
           properties:
             id:
               type: string
@@ -2109,6 +2280,11 @@ components:
               type: string
             timezone:
               type: string
+            locale:
+              description: The language the user wants to be addressed in, or null if they have not chosen.
+              oneOf:
+                - type: "null"
+                - type: string
             external_ids:
               type: array
               description: |

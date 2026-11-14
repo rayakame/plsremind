@@ -15,6 +15,8 @@ import (
 type Actor struct {
 	Kind string
 	ID   uuid.UUID
+	// Nonce is what the client sent with the request, to recognise its own change by.
+	Nonce *string
 }
 
 // Deleted is the payload of every *.deleted event. ItemID names the parent of a
@@ -42,6 +44,7 @@ func Append(ctx context.Context, q *sqlc.Queries, now time.Time, userID uuid.UUI
 		Payload:   raw,
 		ActorKind: a.Kind,
 		ActorID:   a.ID,
+		Nonce:     a.Nonce,
 		CreatedAt: now,
 	})
 	if err != nil {

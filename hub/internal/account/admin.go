@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"github.com/gofiber/fiber/v3"
@@ -95,13 +96,25 @@ func DeleteUser(ctx context.Context, d *core.Deps, svc *OAuth, id uuid.UUID) err
 	return nil
 }
 
+// AdminUser is a user as an admin sees them. It leaves out the preferences,
+// which are the user's own business.
 type AdminUser struct {
-	User
-	Disabled bool `json:"disabled"`
+	ID          uuid.UUID   `json:"id"`
+	DisplayName string      `json:"display_name"`
+	Role        string      `json:"role"`
+	Timezone    string      `json:"timezone"`
+	QuietHours  *QuietHours `json:"quiet_hours"`
+	Locale      *string     `json:"locale"`
+	CreatedAt   time.Time   `json:"created_at"`
+	Disabled    bool        `json:"disabled"`
 }
 
 func adminView(u sqlc.User) AdminUser {
-	return AdminUser{User: View(u), Disabled: u.Disabled}
+	v := View(u)
+	return AdminUser{
+		ID: v.ID, DisplayName: v.DisplayName, Role: v.Role, Timezone: v.Timezone,
+		QuietHours: v.QuietHours, Locale: v.Locale, CreatedAt: v.CreatedAt, Disabled: u.Disabled,
+	}
 }
 
 func getSettings(d *core.Deps) fiber.Handler {
@@ -224,8 +237,7 @@ func patchUserAccess(d *core.Deps) fiber.Handler {
 				return err
 			}
 			// The user's own clients show the role, so they are told like about any other profile change.
-			admin, _ := auth.From(c)
-			if err := events.Append(c.Context(), q, d.Now(), id, auth.ActorFrom(admin), "user.updated", View(updated)); err != nil {
+			if err := events.Append(c.Context(), q, d.Now(), id, auth.Actor(c), "user.updated", Logged(updated)); err != nil {
 				return err
 			}
 			return events.NotifyUser(c.Context(), q, events.SignalUser, id)

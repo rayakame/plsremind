@@ -102,8 +102,15 @@ FROM items i
 JOIN users u ON u.id = i.user_id
 WHERE i.id = ANY(@item_ids::uuid[]) AND i.due_date IS NOT NULL;
 
--- name: ListOpenAllDayItems :many
-SELECT * FROM items WHERE user_id = @user_id AND status = 'open' AND due_date IS NOT NULL ORDER BY id;
+-- name: ListAllDayItemsInReach :many
+-- Open ones, and done ones among the most recently completed: those a client can hold from a sync.
+SELECT * FROM items i
+WHERE i.user_id = @user_id AND i.due_date IS NOT NULL
+  AND (i.status = 'open' OR i.id IN (
+        SELECT d.id FROM items d WHERE d.user_id = @user_id AND d.status = 'done'
+        ORDER BY d.completed_at DESC, d.id DESC LIMIT @history
+      ))
+ORDER BY i.id;
 
 -- name: CountOpenItems :one
 SELECT count(*) FROM items WHERE user_id = @user_id AND status = 'open';
@@ -111,4 +118,38 @@ SELECT count(*) FROM items WHERE user_id = @user_id AND status = 'open';
 -- name: ListOpenItemsAfter :many
 SELECT * FROM items WHERE user_id = @user_id AND status = 'open' AND id > @after
 ORDER BY id
+LIMIT @page_size;
+
+-- name: ListItemsByCompleted :many
+SELECT i.*
+FROM items i
+JOIN users u ON u.id = i.user_id
+WHERE i.user_id = @user_id
+  AND i.status = 'done'
+  AND (sqlc.narg('list_id')::uuid IS NULL OR i.list_id = sqlc.narg('list_id'))
+  AND (sqlc.narg('has_due')::boolean IS NULL OR (item_due(i.due_at, i.due_date, u.timezone) IS NOT NULL) = sqlc.narg('has_due'))
+  AND (sqlc.narg('due_before')::timestamptz IS NULL OR item_due(i.due_at, i.due_date, u.timezone) < sqlc.narg('due_before'))
+  AND (sqlc.narg('due_after')::timestamptz IS NULL OR item_due(i.due_at, i.due_date, u.timezone) > sqlc.narg('due_after'))
+  AND (sqlc.narg('cursor_id')::uuid IS NULL OR CASE
+        WHEN @descending::boolean THEN (i.completed_at, i.id) < (sqlc.narg('cursor_completed')::timestamptz, sqlc.narg('cursor_id'))
+        ELSE (i.completed_at, i.id) > (sqlc.narg('cursor_completed')::timestamptz, sqlc.narg('cursor_id'))
+      END)
+ORDER BY
+  CASE WHEN NOT @descending::boolean THEN i.completed_at END ASC,
+  CASE WHEN @descending::boolean THEN i.completed_at END DESC,
+  CASE WHEN NOT @descending::boolean THEN i.id END ASC,
+  CASE WHEN @descending::boolean THEN i.id END DESC
+LIMIT @page_size;
+
+-- name: CountDoneItems :one
+SELECT count(*) FROM (
+    SELECT 1 FROM items WHERE user_id = @user_id AND status = 'done' LIMIT @at_most
+) capped;
+
+-- name: ListDoneItemsNewestFirst :many
+-- The plain ordering lets items_user_completed_idx serve it whatever plan is chosen.
+SELECT * FROM items
+WHERE user_id = @user_id AND status = 'done'
+  AND (sqlc.narg('after_id')::uuid IS NULL OR (completed_at, id) < (sqlc.narg('after_completed')::timestamptz, sqlc.narg('after_id')))
+ORDER BY completed_at DESC, id DESC
 LIMIT @page_size;

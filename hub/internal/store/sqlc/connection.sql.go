@@ -108,7 +108,7 @@ func (q *Queries) GetConnectionByToken(ctx context.Context, tokenHash []byte) (C
 }
 
 const getGrantedUser = `-- name: GetGrantedUser :one
-SELECT u.id, u.display_name, u.role, u.timezone, u.quiet_start, u.quiet_end, u.disabled, u.event_seq, u.created_at
+SELECT u.id, u.display_name, u.role, u.timezone, u.quiet_start, u.quiet_end, u.disabled, u.event_seq, u.created_at, u.locale, u.preferences
 FROM users u
 JOIN connections c ON c.id = $1
 WHERE u.id = $2
@@ -136,12 +136,14 @@ func (q *Queries) GetGrantedUser(ctx context.Context, arg GetGrantedUserParams) 
 		&i.Disabled,
 		&i.EventSeq,
 		&i.CreatedAt,
+		&i.Locale,
+		&i.Preferences,
 	)
 	return i, err
 }
 
 const getGrantedUserByIdentity = `-- name: GetGrantedUserByIdentity :one
-SELECT u.id, u.display_name, u.role, u.timezone, u.quiet_start, u.quiet_end, u.disabled, u.event_seq, u.created_at
+SELECT u.id, u.display_name, u.role, u.timezone, u.quiet_start, u.quiet_end, u.disabled, u.event_seq, u.created_at, u.locale, u.preferences
 FROM users u
 JOIN connections c ON c.id = $1
 JOIN identities i ON i.user_id = u.id AND i.provider = c.provider
@@ -170,6 +172,8 @@ func (q *Queries) GetGrantedUserByIdentity(ctx context.Context, arg GetGrantedUs
 		&i.Disabled,
 		&i.EventSeq,
 		&i.CreatedAt,
+		&i.Locale,
+		&i.Preferences,
 	)
 	return i, err
 }

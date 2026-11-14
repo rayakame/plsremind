@@ -54,6 +54,7 @@ type Event struct {
 	ActorKind string
 	ActorID   uuid.UUID
 	CreatedAt time.Time
+	Nonce     *string
 }
 
 type Identity struct {
@@ -206,4 +207,6 @@ type User struct {
 	Disabled    bool
 	EventSeq    int64
 	CreatedAt   time.Time
+	Locale      *string
+	Preferences []byte
 }

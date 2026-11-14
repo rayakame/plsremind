@@ -13,8 +13,8 @@ import (
 )
 
 const insertEvent = `-- name: InsertEvent :exec
-INSERT INTO events (user_id, seq, type, payload, actor_kind, actor_id, created_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7)
+INSERT INTO events (user_id, seq, type, payload, actor_kind, actor_id, nonce, created_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 `
 
 type InsertEventParams struct {
@@ -24,6 +24,7 @@ type InsertEventParams struct {
 	Payload   []byte
 	ActorKind string
 	ActorID   uuid.UUID
+	Nonce     *string
 	CreatedAt time.Time
 }
 
@@ -35,6 +36,7 @@ func (q *Queries) InsertEvent(ctx context.Context, arg InsertEventParams) error 
 		arg.Payload,
 		arg.ActorKind,
 		arg.ActorID,
+		arg.Nonce,
 		arg.CreatedAt,
 	)
 	return err

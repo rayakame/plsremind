@@ -16,6 +16,8 @@ type itemCursor struct {
 	ID    uuid.UUID  `json:"id"`
 	Due   *time.Time `json:"due,omitempty"`
 	Rank  *int       `json:"rank,omitempty"`
+	// Completed is called "done" on the wire.
+	Completed *time.Time `json:"done,omitempty"`
 }
 
 func (c itemCursor) encode() string {

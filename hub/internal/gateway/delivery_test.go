@@ -24,10 +24,12 @@ func TestDeliveryArrivesAndIsAcked(t *testing.T) {
 	e := testkit.New(t)
 	bot := e.Connection(t, "discord")
 	mia := testkit.Linked(t, e, "mia", "111")
+	require.Equal(t, 200, mia.Do(t, "PATCH", "/users/@me", J{"locale": "de"}).Status)
 	gw := e.Gateway(t, bot.Token, "deliveries")
 	item := testkit.DueSoon(t, e, mia)
 
 	d := gw.Expect(t, "delivery.created")
+	require.Equal(t, "de", d.Get("data.user.locale").String())
 	require.Equal(t, gjson.Null, gjson.Parse(d.D.Raw).Get("actor").Type)
 	require.Equal(t, int64(0), d.S, "deliveries are not part of the numbered sequence")
 	require.Equal(t, mia.UserID, d.Get("user_id").String())
@@ -321,7 +323,11 @@ func TestTwoQuickResumesDoNotRepeatADelivery(t *testing.T) {
 	gw := e.Gateway(t, bot.Token, "deliveries")
 	gw.Collect(200 * time.Millisecond)
 	for round := 0; round < 15; round++ {
-		e.ResumeGateway(t, bot.Token, gw.SessionID, gw.LastSeq)
+		first := e.ResumeGateway(t, bot.Token, gw.SessionID, gw.LastSeq)
+		// The hub must have taken the first resume before the second is sent, or
+		// it may take them the other way round and close the second.
+		for first.NextEvent(t).T != gateway.EventResumed {
+		}
 		time.Sleep(time.Duration(rand.Intn(10000)) * time.Microsecond)
 		second := e.ResumeGateway(t, bot.Token, gw.SessionID, gw.LastSeq)
 		seen := map[string]int{}

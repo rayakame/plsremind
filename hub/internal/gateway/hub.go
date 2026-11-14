@@ -391,7 +391,7 @@ func (h *Hub) ready(ctx context.Context, s *Session) (ready, error) {
 		if err != nil {
 			return ready{}, err
 		}
-		out.Principal = readyPrincipal{Kind: "connection", Connection: &readyConnection{ID: conn.ID.String(), Name: conn.Name, Provider: conn.Provider}}
+		out.Principal = readyPrincipal{Kind: "connection", ID: conn.ID.String(), Connection: &readyConnection{ID: conn.ID.String(), Name: conn.Name, Provider: conn.Provider}}
 		if s.keepsState() {
 			if s.initial, err = h.d.Q().ListGrantedUsers(ctx, conn.ID); err != nil {
 				return ready{}, err
@@ -403,7 +403,7 @@ func (h *Hub) ready(ctx context.Context, s *Session) (ready, error) {
 			kind = "personal_token"
 		}
 		userID := s.principal.UserID.String()
-		out.Principal = readyPrincipal{Kind: kind, UserID: &userID}
+		out.Principal = readyPrincipal{Kind: kind, ID: s.principal.CredentialID.String(), UserID: &userID}
 		if s.keepsState() {
 			s.initial = []uuid.UUID{s.principal.UserID}
 		}

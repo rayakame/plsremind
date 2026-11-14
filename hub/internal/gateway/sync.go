@@ -30,6 +30,9 @@ func (s *Session) keepsState() bool {
 	return false
 }
 
+// noCursor is an explicit null, where leaving the field out would say nothing.
+var noCursor = json.RawMessage("null")
+
 type chunk struct {
 	Index int `json:"index"`
 	Count int `json:"count"`
@@ -44,12 +47,17 @@ type userSync struct {
 	Lists  any       `json:"lists,omitempty"`
 	Items  any       `json:"items,omitempty"`
 	Plans  any       `json:"plans,omitempty"`
+	// History holds done items, most recently completed first. HistoryCursor
+	// comes with its last part: where the REST API continues, or null.
+	History       any `json:"history,omitempty"`
+	HistoryCursor any `json:"history_cursor,omitempty"`
 }
 
 // envelope wraps every change event.
 type envelope struct {
 	UserID uuid.UUID `json:"user_id"`
 	Actor  *actor    `json:"actor"`
+	Nonce  *string   `json:"nonce"`
 	Data   any       `json:"data"`
 }
 
@@ -65,6 +73,7 @@ type connectionUser struct {
 	DisplayName string              `json:"display_name"`
 	Timezone    string              `json:"timezone"`
 	QuietHours  *account.QuietHours `json:"quiet_hours"`
+	Locale      *string             `json:"locale"`
 	ExternalIDs []string            `json:"external_ids"`
 	Remind      bool                `json:"remind"`
 }
@@ -90,6 +99,7 @@ func (s *Session) userView(ctx context.Context, q *sqlc.Queries, user sqlc.User)
 		DisplayName: user.DisplayName,
 		Timezone:    user.Timezone,
 		QuietHours:  account.ViewQuietHours(user),
+		Locale:      user.Locale,
 		ExternalIDs: externalIDs,
 		Remind:      remind,
 	}, nil
@@ -262,8 +272,21 @@ func (s *Session) syncUser(ctx context.Context, userID uuid.UUID) error {
 		}
 		count = max(1, (int(open)+size-1)/size)
 	}
+	done := 0
+	if s.wants("history") {
+		n, err := q.CountDoneItems(ctx, sqlc.CountDoneItemsParams{UserID: userID, AtMost: int32(s.hub.d.Gateway.SyncHistory)})
+		if err != nil {
+			return err
+		}
+		done = int(n)
+		if done == 0 {
+			first.History, first.HistoryCursor = []todo.Item{}, noCursor
+		}
+	}
+	open := count
+	count += (done + size - 1) / size
 	var after uuid.UUID
-	for index := 0; index < count; index++ {
+	for index := 0; index < open; index++ {
 		part := userSync{UserID: userID}
 		if index == 0 {
 			part = first
@@ -282,6 +305,33 @@ func (s *Session) syncUser(ctx context.Context, userID uuid.UUID) error {
 				after = rows[len(rows)-1].ID
 			}
 			part.Items = items
+		}
+		s.emit("user.sync", true, part)
+	}
+	var reached *todo.HistoryPos
+	for index := open; index < count; index++ {
+		items, err := todo.History(ctx, q, userID, reached, min(size, done))
+		if err != nil {
+			return err
+		}
+		if len(items) == 0 {
+			// Cannot happen inside one snapshot, but an empty part must not loop.
+			items = []todo.Item{}
+		} else {
+			last := items[len(items)-1]
+			reached = &todo.HistoryPos{CompletedAt: *last.CompletedAt, ID: last.ID}
+		}
+		done -= len(items)
+		part := userSync{UserID: userID, Chunk: chunk{Index: index, Count: count}, History: items}
+		if index == count-1 {
+			part.HistoryCursor = noCursor
+			older, err := todo.History(ctx, q, userID, reached, 1)
+			if err != nil {
+				return err
+			}
+			if len(older) > 0 && len(items) > 0 {
+				part.HistoryCursor = todo.HistoryCursor(items[len(items)-1])
+			}
 		}
 		s.emit("user.sync", true, part)
 	}
@@ -371,8 +421,11 @@ func (s *Session) dispatch(ctx context.Context, q *sqlc.Queries, ev sqlc.Event) 
 		if data, err = s.userView(ctx, q, user); err != nil {
 			return err
 		}
-		s.changed(ev.UserID, data)
+		// A connection sees only part of a profile and hears nothing about the rest.
+		if !s.changed(ev.UserID, data) && s.principal.Kind == auth.KindConnection {
+			return nil
+		}
 	}
-	s.emit(ev.Type, true, envelope{UserID: ev.UserID, Actor: &actor{Kind: ev.ActorKind, ID: ev.ActorID}, Data: data})
+	s.emit(ev.Type, true, envelope{UserID: ev.UserID, Actor: &actor{Kind: ev.ActorKind, ID: ev.ActorID}, Nonce: ev.Nonce, Data: data})
 	return nil
 }
