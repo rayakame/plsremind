@@ -133,3 +133,8 @@ ORDER BY
   CASE WHEN NOT @descending::boolean THEN i.id END ASC,
   CASE WHEN @descending::boolean THEN i.id END DESC
 LIMIT @page_size;
+
+-- name: CountDoneItems :one
+SELECT count(*) FROM (
+    SELECT 1 FROM items WHERE user_id = @user_id AND status = 'done' LIMIT @at_most
+) capped;

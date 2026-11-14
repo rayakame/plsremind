@@ -82,12 +82,16 @@ You only get what you ask for. `intents` in Identify is required and must not be
 | `lists` | `lists` | `list.created`, `list.updated`, `list.deleted` |
 | `items` | `items` | `item.created`, `item.updated`, `item.deleted`, `subitem.created`, `subitem.updated`, `subitem.deleted`, `reminder.created`, `reminder.deleted` |
 | `plans` | `plans` | `plan.updated` |
+| `history` | `history`, `history_cursor` | none of its own |
 | `deliveries` | none | `delivery.created`, `delivery.closed` |
 
 - An adapter that only reminds asks for `deliveries` and keeps no state at all. Every
   delivery carries the item and the user it is about.
 - Without any of `users`, `lists`, `items` and `plans` there is no `user.sync` and no
   `user.gone`, and `READY.users` is empty.
+- `history` adds the most recently completed items to the state, for clients that want to
+  show or search them. It only works together with `items`; asking for it alone closes the
+  connection with code 4013.
 - Intents hold for the whole session. To change them, identify again.
 
 For a connection, the admin decides which intents it may have at all. Asking for one that
@@ -122,10 +126,19 @@ REST only to change things.
 
 - Only the parts of your intents are present. The objects are the same as in the REST API.
 - `items` holds all **open** items, each with its subitems and manual reminders. Completed
-  items are not part of the state; fetch them over REST if you need them.
+  items are not part of it. Ask for the `history` intent to get the recent ones, or fetch
+  them over REST.
 - A user with many items is sent in several parts of at most 500 items. `chunk` tells you
   which part this is. `user`, `lists` and `plans` come in part 0. Part 0 replaces whatever
   you knew about the user; later parts add items.
+- With the `history` intent, `history` holds the user's 1000 most recently completed
+  items, newest completion first, in the same form as `items`. They come in parts of their
+  own after the parts with open items, again at most 500 each. A user without completed
+  items gets `"history": []` in part 0.
+- `history_cursor` comes with the last part that carries `history`. It is `null` if the
+  user has no older completed items. Otherwise pass it as `cursor` to
+  `GET /users/{user}/items?status=done&sort=completed&order=desc` and the API continues
+  exactly where the state ends.
 - For a connection, `user` is a reduced profile: `id`, `display_name`, `timezone`,
   `quiet_hours`, `locale` (the language the user wants to be addressed in, or `null`),
   the user's `external_ids` at the connection's provider, and `remind` (whether the user
@@ -170,8 +183,11 @@ counterparts of Discord's `GUILD_DELETE` and `GUILD_CREATE`.
 - Every change to a subitem or a manual reminder is followed by `item.updated` with the
   whole item. If you keep items in memory you can ignore the `subitem.*` and `reminder.*`
   events and just replace the item.
-- An item that is completed arrives as `item.updated` with `status: "done"`. Since the
-  state only holds open items, remove it from your cache.
+- An item that is completed arrives as `item.updated` with `status: "done"`. Remove it
+  from your open items, and if you keep a history, put it at its front. An item that is
+  opened again arrives the same way with `status: "open"` and moves back. A completed item
+  can also change or be deleted; if it is older than your history reaches, you will not
+  have it, and may simply take it in or ignore it.
 - `user.updated` carries the profile, in the same form as in `user.sync`.
 - `plan.updated` carries one reminder plan. `connection.updated` tells a user's own stream
   that they changed what a connection may do; connections never receive it.
@@ -310,7 +326,7 @@ is closed with 4014.
 |---|---|---|
 | `READY` | always | see the handshake |
 | `RESUMED` | always | `{}` |
-| `user.sync` | any state intent | see above |
+| `user.sync` | any state intent | see above; `history` adds completed items to it |
 | `user.gone` | any state intent | none, only `user_id` |
 | `user.updated` | `users` | the profile |
 | `connection.updated` | `users`, user streams only | the connection as the user sees it |

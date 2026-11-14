@@ -30,7 +30,7 @@ type Principal struct {
 }
 
 // Intents are the kinds of data a client can ask for, in canonical order.
-var Intents = []string{"users", "lists", "items", "plans", "deliveries"}
+var Intents = []string{"users", "lists", "items", "plans", "history", "deliveries"}
 
 // HasIntent reports whether the caller may have the given kind of data. Sessions
 // and personal tokens belong to the user and may have everything.
@@ -50,6 +50,10 @@ func NormalizeIntents(in []string) ([]string, bool) {
 		if !slices.Contains(Intents, intent) {
 			return nil, false
 		}
+	}
+	// History is a view of items: done ones on top of the open ones.
+	if slices.Contains(out, "history") && !slices.Contains(out, "items") {
+		return nil, false
 	}
 	return out, len(out) > 0
 }

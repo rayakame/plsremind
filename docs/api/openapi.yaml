@@ -2129,12 +2129,14 @@ components:
       type: array
       description: |
         The kinds of data a client can have: `users` (profile), `lists`, `items` (with subitems
-        and manual reminders), `plans` (reminder plans) and `deliveries` (reminders to play out).
-        For a connection the admin decides which of them it may have, and that limit applies to
-        the gateway and to this API alike.
+        and manual reminders), `plans` (reminder plans), `history` (recently completed items in
+        the gateway's state, only together with `items`) and `deliveries` (reminders to play
+        out). For a connection the admin decides which of them it may have, and that limit
+        applies to the gateway and to this API alike. Reading done items through this API only
+        takes `items`.
       items:
         type: string
-        enum: [users, lists, items, plans, deliveries]
+        enum: [users, lists, items, plans, history, deliveries]
     DeliveryStatus:
       type: string
       enum: [pending, delivered, failed, superseded, cancelled, expired]

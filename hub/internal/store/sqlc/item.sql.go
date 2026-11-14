@@ -13,6 +13,24 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const countDoneItems = `-- name: CountDoneItems :one
+SELECT count(*) FROM (
+    SELECT 1 FROM items WHERE user_id = $1 AND status = 'done' LIMIT $2
+) capped
+`
+
+type CountDoneItemsParams struct {
+	UserID uuid.UUID
+	AtMost int32
+}
+
+func (q *Queries) CountDoneItems(ctx context.Context, arg CountDoneItemsParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countDoneItems, arg.UserID, arg.AtMost)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const countOpenItems = `-- name: CountOpenItems :one
 SELECT count(*) FROM items WHERE user_id = $1 AND status = 'open'
 `

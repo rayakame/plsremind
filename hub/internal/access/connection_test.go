@@ -265,7 +265,7 @@ func TestAdminLimitsConnectionIntents(t *testing.T) {
 	mia := e.User(t, "mia")
 	bot := e.Connection(t, "discord")
 	e.GiveIdentity(t, mia.UserID, "discord", "1234")
-	require.JSONEq(t, `["users","lists","items","plans","deliveries"]`, admin.Do(t, "GET", "/admin/connections", nil).Get("0.allowed_intents").Raw)
+	require.JSONEq(t, `["users","lists","items","plans","history","deliveries"]`, admin.Do(t, "GET", "/admin/connections", nil).Get("0.allowed_intents").Raw)
 
 	r := admin.Do(t, "PATCH", "/admin/connections/"+bot.ID, J{"allowed_intents": []string{"deliveries", "users"}})
 	require.Equal(t, 200, r.Status)

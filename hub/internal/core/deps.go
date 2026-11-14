@@ -66,6 +66,8 @@ type GatewayConfig struct {
 	MaxClientMessages int
 	// SyncChunk is how many items one part of a user.sync carries.
 	SyncChunk int
+	// SyncHistory is how many done items a user.sync carries at most.
+	SyncHistory int
 }
 
 // WithDefaults fills every unset field with its production value.
@@ -96,6 +98,9 @@ func (g GatewayConfig) WithDefaults() GatewayConfig {
 	}
 	if g.SyncChunk == 0 {
 		g.SyncChunk = 500
+	}
+	if g.SyncHistory == 0 {
+		g.SyncHistory = 1000
 	}
 	return g
 }
