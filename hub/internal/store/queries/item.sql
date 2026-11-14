@@ -138,3 +138,11 @@ LIMIT @page_size;
 SELECT count(*) FROM (
     SELECT 1 FROM items WHERE user_id = @user_id AND status = 'done' LIMIT @at_most
 ) capped;
+
+-- name: ListDoneItemsNewestFirst :many
+-- The plain ordering lets items_user_completed_idx serve it whatever plan is chosen.
+SELECT * FROM items
+WHERE user_id = @user_id AND status = 'done'
+  AND (sqlc.narg('after_id')::uuid IS NULL OR (completed_at, id) < (sqlc.narg('after_completed')::timestamptz, sqlc.narg('after_id')))
+ORDER BY completed_at DESC, id DESC
+LIMIT @page_size;

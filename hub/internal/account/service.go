@@ -115,7 +115,7 @@ func ValidateTimezone(tz string) error {
 
 // checkTimezone requires a name that both Go and the database know: the database
 // computes due times with it.
-var localePattern = regexp.MustCompile(`^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*$`)
+var localePattern = regexp.MustCompile(`^[A-Za-z]{2,8}(-[A-Za-z0-9]{1,8})*$`)
 
 const maxLocaleLen = 35
 

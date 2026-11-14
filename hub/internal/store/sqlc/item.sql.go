@@ -168,6 +168,61 @@ func (q *Queries) ListAllDayDue(ctx context.Context, itemIds []uuid.UUID) ([]Lis
 	return items, nil
 }
 
+const listDoneItemsNewestFirst = `-- name: ListDoneItemsNewestFirst :many
+SELECT id, user_id, list_id, title, note, priority, due_at, due_date, status, completed_at, reminder_override, created_at, updated_at FROM items
+WHERE user_id = $1 AND status = 'done'
+  AND ($2::uuid IS NULL OR (completed_at, id) < ($3::timestamptz, $2))
+ORDER BY completed_at DESC, id DESC
+LIMIT $4
+`
+
+type ListDoneItemsNewestFirstParams struct {
+	UserID         uuid.UUID
+	AfterID        *uuid.UUID
+	AfterCompleted *time.Time
+	PageSize       int32
+}
+
+// The plain ordering lets items_user_completed_idx serve it whatever plan is chosen.
+func (q *Queries) ListDoneItemsNewestFirst(ctx context.Context, arg ListDoneItemsNewestFirstParams) ([]Item, error) {
+	rows, err := q.db.Query(ctx, listDoneItemsNewestFirst,
+		arg.UserID,
+		arg.AfterID,
+		arg.AfterCompleted,
+		arg.PageSize,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Item
+	for rows.Next() {
+		var i Item
+		if err := rows.Scan(
+			&i.ID,
+			&i.UserID,
+			&i.ListID,
+			&i.Title,
+			&i.Note,
+			&i.Priority,
+			&i.DueAt,
+			&i.DueDate,
+			&i.Status,
+			&i.CompletedAt,
+			&i.ReminderOverride,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listItemsByCompleted = `-- name: ListItemsByCompleted :many
 SELECT i.id, i.user_id, i.list_id, i.title, i.note, i.priority, i.due_at, i.due_date, i.status, i.completed_at, i.reminder_override, i.created_at, i.updated_at
 FROM items i

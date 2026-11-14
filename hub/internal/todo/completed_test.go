@@ -111,3 +111,14 @@ func TestHistoryCursorContinuesAfterAnItem(t *testing.T) {
 	require.Equal(t, 200, rest.Status, string(rest.Body))
 	require.Equal(t, []string{"c"}, testkit.Strings(rest, "data.#.title"))
 }
+
+func TestDoneItemsAlwaysHaveACompletionTime(t *testing.T) {
+	e := testkit.New(t)
+	mia := e.User(t, "mia")
+	id := mia.Do(t, "POST", "/users/@me/items", J{"title": "x"}).Get("id").String()
+	ctx := context.Background()
+	_, err := e.Pool.Exec(ctx, `UPDATE items SET status = 'done' WHERE id = $1`, id)
+	require.Error(t, err, "a done item without a completion time cannot be ordered by it")
+	_, err = e.Pool.Exec(ctx, `UPDATE items SET completed_at = now() WHERE id = $1`, id)
+	require.Error(t, err)
+}

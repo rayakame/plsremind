@@ -261,6 +261,9 @@ func patchProfile(d *core.Deps) fiber.Handler {
 				params.Preferences = in.Preferences.Val
 			}
 			user, err = q.UpdateUserProfile(c.Context(), params)
+			if in.Preferences.Set && store.IsUnstorableJSON(err) {
+				return api.Field("preferences", "Must be a JSON object of at most 16 kB.")
+			}
 			if err != nil {
 				return err
 			}

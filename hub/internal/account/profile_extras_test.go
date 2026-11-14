@@ -39,7 +39,7 @@ func TestProfileCarriesLocaleAndPreferences(t *testing.T) {
 func TestProfileRejectsBadLocaleAndPreferences(t *testing.T) {
 	e := testkit.New(t)
 	mia := e.User(t, "mia")
-	for _, bad := range []string{"", "d", "deutsch!", "de_DE", "en-" + strings.Repeat("abcdefgh-", 4)} {
+	for _, bad := range []string{"", "d", "deutsch!!", "de_DE", "en-" + strings.Repeat("abcdefgh-", 4) + "x"} {
 		r := mia.Do(t, "PATCH", "/users/@me", J{"locale": bad})
 		require.Equal(t, 422, r.Status, bad)
 		require.NotEmpty(t, r.Get("error.fields.locale").String(), bad)
@@ -92,4 +92,42 @@ func TestRegisterAndSetupTakeLocale(t *testing.T) {
 	none := register("ben", nil)
 	require.Equal(t, 201, none.Status, string(none.Body))
 	require.Equal(t, gjson.Null, none.Get("locale").Type)
+}
+
+func TestPreferencesTheDatabaseCannotStoreAreRefused(t *testing.T) {
+	e := testkit.New(t)
+	mia := e.User(t, "mia")
+	for _, bad := range []string{`{"a":"\ud800"}`, `{"a":1e999999}`} {
+		r := mia.Do(t, "PATCH", "/users/@me", testkit.Raw(`{"preferences":`+bad+`}`))
+		require.Equal(t, 422, r.Status, bad)
+		require.NotEmpty(t, r.Get("error.fields.preferences").String(), bad)
+	}
+	require.JSONEq(t, `{}`, mia.Do(t, "GET", "/users/@me", nil).Get("preferences").Raw)
+}
+
+func TestAdminsDoNotSeePreferences(t *testing.T) {
+	e := testkit.New(t)
+	mia := e.User(t, "mia")
+	require.Equal(t, 200, mia.Do(t, "PATCH", "/users/@me", J{"locale": "de", "preferences": J{"secret": "mine"}}).Status)
+
+	list := e.Admin(t).Do(t, "GET", "/admin/users", nil)
+	require.Equal(t, 200, list.Status)
+	require.NotContains(t, string(list.Body), "mine")
+	require.NotContains(t, string(list.Body), "preferences")
+	require.Contains(t, string(list.Body), `"locale":"de"`)
+
+	changed := e.Admin(t).Do(t, "PATCH", "/admin/users/"+mia.UserID, J{"role": "admin"})
+	require.Equal(t, 200, changed.Status)
+	require.False(t, changed.Get("preferences").Exists())
+}
+
+func TestLocaleAcceptsExtensionSubtags(t *testing.T) {
+	e := testkit.New(t)
+	mia := e.User(t, "mia")
+	for _, tag := range []string{"en-u-ca-gregory", "de-x-private", "zh-Hant-TW", "de-DE-1996"} {
+		require.Equal(t, tag, mia.Do(t, "PATCH", "/users/@me", J{"locale": tag}).Get("locale").String())
+	}
+	for _, bad := range []string{"-de", "de-", "de--DE", "abcdefghi", "de-abcdefghi"} {
+		require.Equal(t, 422, mia.Do(t, "PATCH", "/users/@me", J{"locale": bad}).Status, bad)
+	}
 }

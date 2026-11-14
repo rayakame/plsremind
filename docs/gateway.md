@@ -184,10 +184,14 @@ counterparts of Discord's `GUILD_DELETE` and `GUILD_CREATE`.
   whole item. If you keep items in memory you can ignore the `subitem.*` and `reminder.*`
   events and just replace the item.
 - An item that is completed arrives as `item.updated` with `status: "done"`. Remove it
-  from your open items, and if you keep a history, put it at its front. An item that is
-  opened again arrives the same way with `status: "open"` and moves back. A completed item
-  can also change or be deleted; if it is older than your history reaches, you will not
-  have it, and may simply take it in or ignore it.
+  from your open items. If you keep a history, store it there and keep the history ordered
+  by `completed_at`, then `id`, both descending: that is the order of `user.sync` and of
+  `sort=completed&order=desc`. An item that is opened again arrives the same way with
+  `status: "open"` and moves back.
+- A completed item can also change, which arrives as `item.updated` with `status: "done"`
+  and the same `completed_at`, or be deleted. If it is older than your history reaches you
+  will not have it yet; taking it in is fine. When you then load older items over REST,
+  expect to meet it again and go by its `id`.
 - `user.updated` carries the profile, in the same form as in `user.sync`.
 - `plan.updated` carries one reminder plan. `connection.updated` tells a user's own stream
   that they changed what a connection may do; connections never receive it.

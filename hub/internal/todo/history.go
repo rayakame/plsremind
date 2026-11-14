@@ -17,11 +17,11 @@ type HistoryPos struct {
 
 // History returns the user's done items after the given place, most recently completed first.
 func History(ctx context.Context, q *sqlc.Queries, userID uuid.UUID, after *HistoryPos, size int) ([]Item, error) {
-	params := sqlc.ListItemsByCompletedParams{UserID: userID, Descending: true, PageSize: int32(size)}
+	params := sqlc.ListDoneItemsNewestFirstParams{UserID: userID, PageSize: int32(size)}
 	if after != nil {
-		params.CursorID, params.CursorCompleted = &after.ID, &after.CompletedAt
+		params.AfterID, params.AfterCompleted = &after.ID, &after.CompletedAt
 	}
-	rows, err := q.ListItemsByCompleted(ctx, params)
+	rows, err := q.ListDoneItemsNewestFirst(ctx, params)
 	if err != nil {
 		return nil, err
 	}

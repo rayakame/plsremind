@@ -1762,7 +1762,7 @@ components:
           description: |
             Settings of the user's own clients, for example the dashboard's theme and key
             bindings. The hub stores the object and does not interpret it. Only the user sees
-            it: connections never do.
+            it: connections and admins never do.
         created_at:
           type: string
           format: date-time
@@ -1862,13 +1862,31 @@ components:
           type: [string, "null"]
           format: uuid
     AdminUser:
-      allOf:
-        - $ref: "#/components/schemas/User"
-        - type: object
-          required: [disabled]
-          properties:
-            disabled:
-              type: boolean
+      type: object
+      description: A user as an admin sees them. Their preferences are not part of it.
+      required: [id, display_name, role, timezone, quiet_hours, locale, created_at, disabled]
+      properties:
+        id:
+          type: string
+          format: uuid
+        display_name:
+          type: string
+        role:
+          type: string
+          enum: [user, admin]
+        timezone:
+          type: string
+        quiet_hours:
+          $ref: "#/components/schemas/OptionalQuietHours"
+        locale:
+          oneOf:
+            - type: "null"
+            - type: string
+        created_at:
+          type: string
+          format: date-time
+        disabled:
+          type: boolean
     PersonalToken:
       type: object
       required: [id, name, remind, created_at, last_used_at]

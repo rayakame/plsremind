@@ -240,7 +240,7 @@ func checkText(fields map[string]string, name, value string, min, max int) {
 func checkIntents(fields map[string]string, in []string) []string {
 	intents, ok := auth.NormalizeIntents(in)
 	if !ok {
-		fields["allowed_intents"] = "Must be a non-empty list of: " + strings.Join(auth.Intents, ", ") + "."
+		fields["allowed_intents"] = "Must be a non-empty list of: " + strings.Join(auth.Intents, ", ") + "; history needs items."
 	}
 	return intents
 }

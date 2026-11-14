@@ -158,7 +158,7 @@ func TestHistoryNeedsItems(t *testing.T) {
 
 	r := e.Admin(t).Do(t, "POST", "/admin/connections", J{"name": "x", "provider": "discord", "allowed_intents": []string{"users", "history"}})
 	require.Equal(t, 422, r.Status)
-	require.NotEmpty(t, r.Get("error.fields.allowed_intents").String())
+	require.Contains(t, r.Get("error.fields.allowed_intents").String(), "history needs items")
 }
 
 func TestConnectionNeedsHistoryAllowed(t *testing.T) {
