@@ -19,11 +19,21 @@ info:
     ## Recognising your own changes
 
     A request may carry an `X-Request-Nonce` header: 1 to 64 printable ASCII characters
-    without spaces, chosen by you. Every gateway event the request causes carries the same
-    value as `nonce`, for every client that receives the event. One request can cause
-    several events, for example deleting a list that still holds items. The hub does not
-    interpret the value and does not require it to be unique. A header that does not fit
-    is refused with `400` and the code `invalid_nonce`.
+    without spaces, chosen by you. Every change event the request writes carries the same
+    value as `nonce`, for every client that receives the event. These are the events that
+    name an `actor`: changes to lists, items, subitems, manual reminders, reminder plans,
+    the profile and what a connection may do. One request can write several of them, for
+    example deleting a list that still holds items, and none at all if it changes nothing:
+    setting an order only announces what moved.
+
+    What the hub does as a consequence carries no nonce: `delivery.created` and
+    `delivery.closed`, and what a connection is told when a user's access to it changes
+    (`user.sync`, `user.gone`, and a `user.updated` without an actor).
+
+    The hub does not interpret the value and does not require it to be unique, so use a
+    random one per request if you want to tell requests apart. Several logins and tabs can
+    share one credential; only the nonce separates them. A header that does not fit is
+    refused with `400` and the code `invalid_nonce`.
 
     ## Rate limits
 
@@ -237,7 +247,7 @@ paths:
                   type: object
                   description: |
                     Replaces the stored preferences as a whole. Any JSON object of at most
-                    16 kB.
+                    16384 bytes, counted on the JSON text as it is sent.
                 quiet_hours:
                   description: Send null to turn quiet hours off.
                   oneOf:
@@ -460,6 +470,7 @@ paths:
   /admin/users/{id}:
     parameters:
       - $ref: "#/components/parameters/Id"
+      - $ref: "#/components/parameters/Nonce"
     patch:
       tags: [Admin]
       operationId: updateUserAccess
@@ -663,6 +674,9 @@ paths:
       tags: [Lists]
       operationId: reorderLists
       summary: Set the display order of all lists
+      description: |
+        Only the lists whose position changes are announced on the gateway, each as
+        `list.updated`. Setting the order they already have announces nothing.
       requestBody:
         required: true
         content:
@@ -1034,7 +1048,8 @@ paths:
         Everything the hub is going to send for this item: reminders from the plan of its
         priority or its override, the one at the due time, follow-ups and manual reminders.
         This is the hub's own schedule, so it already accounts for the user's quiet hours.
-        An item that is done has nothing ahead.
+        An item that is done has nothing ahead. A reminder whose time has just come can
+        still be listed for a few seconds, until the hub has sent it.
       responses:
         "200":
           description: The reminders, earliest first.
@@ -1753,10 +1768,14 @@ components:
         locale:
           description: |
             The language the user wants to be addressed in, as a language tag such as `de`
-            or `en-GB`. Null while they have not chosen one.
+            or `en-GB`. Null while they have not chosen one. The hub only checks the shape
+            (letters, digits and dashes, at most 35 characters), not that the tag names a
+            real language, so do not hand it to a locale library unchecked.
           oneOf:
             - type: "null"
             - type: string
+              maxLength: 35
+              pattern: "^[A-Za-z]{2,8}(-[A-Za-z0-9]{1,8})*$"
         preferences:
           type: object
           description: |
@@ -1782,10 +1801,14 @@ components:
         locale:
           description: |
             The language the user wants to be addressed in, as a language tag such as `de`
-            or `en-GB`. Null while they have not chosen one.
+            or `en-GB`. Null while they have not chosen one. The hub only checks the shape
+            (letters, digits and dashes, at most 35 characters), not that the tag names a
+            real language, so do not hand it to a locale library unchecked.
           oneOf:
             - type: "null"
             - type: string
+              maxLength: 35
+              pattern: "^[A-Za-z]{2,8}(-[A-Za-z0-9]{1,8})*$"
     NewPasswordAccount:
       type: object
       required: [username, password]

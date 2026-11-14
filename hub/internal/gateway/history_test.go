@@ -223,3 +223,19 @@ func TestCacheWithHistoryMatchesRESTUnderWrites(t *testing.T) {
 		})
 	}
 }
+
+func TestTimezoneChangeReachesDoneAllDayItems(t *testing.T) {
+	e := testkit.New(t)
+	mia := e.User(t, "mia")
+	id := mia.Do(t, "POST", "/users/@me/items", J{"title": "all day", "due_date": "2026-11-20"}).Get("id").String()
+	require.Equal(t, 200, mia.Do(t, "PATCH", "/users/@me/items/"+id, J{"status": "done"}).Status)
+	gw := e.Gateway(t, personalToken(t, mia), "items", "history")
+	syncParts(t, gw)
+
+	require.Equal(t, 200, mia.Do(t, "PATCH", "/users/@me", J{"timezone": "Asia/Tokyo"}).Status)
+	moved := gw.Expect(t, "item.updated")
+	require.Equal(t, id, moved.Get("data.id").String())
+	require.Equal(t, "done", moved.Get("data.status").String())
+	require.Equal(t, "2026-11-20T14:59:59Z", moved.Get("data.due_at").String())
+	gw.Cache(t).RequireMatchesREST(t, mia, "/users/@me", mia.UserID)
+}

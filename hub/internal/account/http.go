@@ -277,7 +277,7 @@ func patchProfile(d *core.Deps) fiber.Handler {
 			if rezoned {
 				// An all-day deadline ends with the day in the user's zone, so its due
 				// time just moved. Clients that keep items in memory need to hear that.
-				moved, err := todo.OpenAllDayItems(c.Context(), q, user.ID)
+				moved, err := todo.AllDayItems(c.Context(), q, user.ID, d.Gateway.SyncHistory)
 				if err != nil {
 					return err
 				}

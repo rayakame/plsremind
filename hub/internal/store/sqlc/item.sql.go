@@ -168,6 +168,56 @@ func (q *Queries) ListAllDayDue(ctx context.Context, itemIds []uuid.UUID) ([]Lis
 	return items, nil
 }
 
+const listAllDayItemsInReach = `-- name: ListAllDayItemsInReach :many
+SELECT id, user_id, list_id, title, note, priority, due_at, due_date, status, completed_at, reminder_override, created_at, updated_at FROM items i
+WHERE i.user_id = $1 AND i.due_date IS NOT NULL
+  AND (i.status = 'open' OR i.id IN (
+        SELECT d.id FROM items d WHERE d.user_id = $1 AND d.status = 'done'
+        ORDER BY d.completed_at DESC, d.id DESC LIMIT $2
+      ))
+ORDER BY i.id
+`
+
+type ListAllDayItemsInReachParams struct {
+	UserID  uuid.UUID
+	History int32
+}
+
+// Open ones, and done ones among the most recently completed: those a client can hold from a sync.
+func (q *Queries) ListAllDayItemsInReach(ctx context.Context, arg ListAllDayItemsInReachParams) ([]Item, error) {
+	rows, err := q.db.Query(ctx, listAllDayItemsInReach, arg.UserID, arg.History)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Item
+	for rows.Next() {
+		var i Item
+		if err := rows.Scan(
+			&i.ID,
+			&i.UserID,
+			&i.ListID,
+			&i.Title,
+			&i.Note,
+			&i.Priority,
+			&i.DueAt,
+			&i.DueDate,
+			&i.Status,
+			&i.CompletedAt,
+			&i.ReminderOverride,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listDoneItemsNewestFirst = `-- name: ListDoneItemsNewestFirst :many
 SELECT id, user_id, list_id, title, note, priority, due_at, due_date, status, completed_at, reminder_override, created_at, updated_at FROM items
 WHERE user_id = $1 AND status = 'done'
@@ -514,44 +564,6 @@ func (q *Queries) ListItemsByPriority(ctx context.Context, arg ListItemsByPriori
 		arg.CursorRank,
 		arg.PageSize,
 	)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []Item
-	for rows.Next() {
-		var i Item
-		if err := rows.Scan(
-			&i.ID,
-			&i.UserID,
-			&i.ListID,
-			&i.Title,
-			&i.Note,
-			&i.Priority,
-			&i.DueAt,
-			&i.DueDate,
-			&i.Status,
-			&i.CompletedAt,
-			&i.ReminderOverride,
-			&i.CreatedAt,
-			&i.UpdatedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listOpenAllDayItems = `-- name: ListOpenAllDayItems :many
-SELECT id, user_id, list_id, title, note, priority, due_at, due_date, status, completed_at, reminder_override, created_at, updated_at FROM items WHERE user_id = $1 AND status = 'open' AND due_date IS NOT NULL ORDER BY id
-`
-
-func (q *Queries) ListOpenAllDayItems(ctx context.Context, userID uuid.UUID) ([]Item, error) {
-	rows, err := q.db.Query(ctx, listOpenAllDayItems, userID)
 	if err != nil {
 		return nil, err
 	}

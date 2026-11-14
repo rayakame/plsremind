@@ -102,10 +102,11 @@ func MoveItems(ctx context.Context, q *sqlc.Queries, now time.Time, from, to uui
 	return ViewItems(ctx, q, rows)
 }
 
-// OpenAllDayItems returns the user's open all-day items. Their due time depends on
-// the user's time zone, so they change when the zone does.
-func OpenAllDayItems(ctx context.Context, q *sqlc.Queries, userID uuid.UUID) ([]Item, error) {
-	rows, err := q.ListOpenAllDayItems(ctx, userID)
+// AllDayItems returns the user's all-day items that a gateway client can hold:
+// the open ones and those among the history most recently completed items.
+// Their due time depends on the user's time zone, so they change when the zone does.
+func AllDayItems(ctx context.Context, q *sqlc.Queries, userID uuid.UUID, history int) ([]Item, error) {
+	rows, err := q.ListAllDayItemsInReach(ctx, sqlc.ListAllDayItemsInReachParams{UserID: userID, History: int32(history)})
 	if err != nil {
 		return nil, err
 	}

@@ -138,7 +138,8 @@ REST only to change things.
 - `history_cursor` comes with the last part that carries `history`. It is `null` if the
   user has no older completed items. Otherwise pass it as `cursor` to
   `GET /users/{user}/items?status=done&sort=completed&order=desc` and the API continues
-  exactly where the state ends.
+  exactly where the state ends. The cursor marks a position, so it keeps working when
+  the item it was made after is opened again or deleted.
 - For a connection, `user` is a reduced profile: `id`, `display_name`, `timezone`,
   `quiet_hours`, `locale` (the language the user wants to be addressed in, or `null`),
   the user's `external_ids` at the connection's provider, and `remind` (whether the user
@@ -177,22 +178,33 @@ counterparts of Discord's `GUILD_DELETE` and `GUILD_CREATE`.
   `null` when the hub tells a connection that something about a user's access changed,
   for example that they switched reminders through it off.
 - `nonce` is the `X-Request-Nonce` header of the request that made the change, or `null`
-  if it sent none. Send one with a request and you can tell exactly which events are the
-  result of that call, however many it causes. Every client that receives the event sees
-  the value. It is 1 to 64 printable ASCII characters without spaces.
+  if it sent none. Send a random one with a request and you can tell exactly which change
+  events are the result of that call, however many it writes. Every client that receives
+  the event sees the value. It is 1 to 64 printable ASCII characters without spaces.
+  Events without an actor never carry one, and neither do `delivery.created` and
+  `delivery.closed`. Several logins can share a credential, for example two tabs of one
+  dashboard session: `actor.id` is the same for both, only the nonce tells them apart.
 - Every change to a subitem or a manual reminder is followed by `item.updated` with the
   whole item. If you keep items in memory you can ignore the `subitem.*` and `reminder.*`
   events and just replace the item.
 - An item that is completed arrives as `item.updated` with `status: "done"`. Remove it
   from your open items. If you keep a history, store it there and keep the history ordered
   by `completed_at`, then `id`, both descending: that is the order of `user.sync` and of
-  `sort=completed&order=desc`. An item that is opened again arrives the same way with
-  `status: "open"` and moves back.
+  `sort=completed&order=desc`. Timestamps have microsecond precision and are written
+  without trailing zeros, so compare them as instants at full precision, not as text and
+  not rounded to milliseconds; compare IDs as lowercase text. An item that is opened
+  again arrives the same way with `status: "open"` and moves back.
 - A completed item can also change, which arrives as `item.updated` with `status: "done"`
   and the same `completed_at`, or be deleted. If it is older than your history reaches you
   will not have it yet; taking it in is fine. When you then load older items over REST,
   expect to meet it again and go by its `id`.
-- `user.updated` carries the profile, in the same form as in `user.sync`.
+- When a user changes their time zone, the due time of every all-day item moves. The hub
+  announces that as `item.updated` for the open ones and for the completed ones a sync
+  can carry. Completed all-day items older than that are not announced: if you hold any,
+  fetch them again after a `user.updated` with a new `timezone`.
+- `user.updated` carries the profile, in the same form as in `user.sync`. Unlike the other
+  events it shows the profile as it is when the event is sent, not as that one change
+  left it: after two quick changes, the first event can already show both.
 - `plan.updated` carries one reminder plan. `connection.updated` tells a user's own stream
   that they changed what a connection may do; connections never receive it.
 

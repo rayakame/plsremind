@@ -102,8 +102,15 @@ FROM items i
 JOIN users u ON u.id = i.user_id
 WHERE i.id = ANY(@item_ids::uuid[]) AND i.due_date IS NOT NULL;
 
--- name: ListOpenAllDayItems :many
-SELECT * FROM items WHERE user_id = @user_id AND status = 'open' AND due_date IS NOT NULL ORDER BY id;
+-- name: ListAllDayItemsInReach :many
+-- Open ones, and done ones among the most recently completed: those a client can hold from a sync.
+SELECT * FROM items i
+WHERE i.user_id = @user_id AND i.due_date IS NOT NULL
+  AND (i.status = 'open' OR i.id IN (
+        SELECT d.id FROM items d WHERE d.user_id = @user_id AND d.status = 'done'
+        ORDER BY d.completed_at DESC, d.id DESC LIMIT @history
+      ))
+ORDER BY i.id;
 
 -- name: CountOpenItems :one
 SELECT count(*) FROM items WHERE user_id = @user_id AND status = 'open';
