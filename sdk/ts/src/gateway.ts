@@ -16,7 +16,6 @@ export interface GatewayOptions {
   createSocket: (url: string) => SocketLike;
   random: () => number;
   onDispatch: (name: string, data: unknown) => void;
-  onInvalidated: () => void;
   onDisconnected: (code: number | undefined, reason: string) => void;
   onClosed: (error: GatewayError) => void;
   onStatus: (status: "connecting" | "connected" | "reconnecting") => void;
@@ -40,7 +39,8 @@ const fatal = new Set([4004, 4013, 4014]);
 const firstWait = 1000;
 const longestWait = 60_000;
 const waitAfterTooMany = 5000;
-const helloWithin = 15_000;
+const silenceWhileLoggingIn = 15_000;
+const answerProbeWithin = 5000;
 
 /** One gateway session kept alive across drops. It knows nothing about what the events mean. */
 export class Gateway {
@@ -56,7 +56,10 @@ export class Gateway {
   #acked = true;
   #heartbeat: ReturnType<typeof setTimeout> | undefined;
   #wait: ReturnType<typeof setTimeout> | undefined;
-  #hello: ReturnType<typeof setTimeout> | undefined;
+  #login: ReturnType<typeof setTimeout> | undefined;
+  #probe: ReturnType<typeof setTimeout> | undefined;
+  #online = false;
+  #greeted = false;
 
   constructor(options: GatewayOptions) {
     this.#options = options;
@@ -78,6 +81,7 @@ export class Gateway {
     this.#session = undefined;
     this.#seq = null;
     this.#established = false;
+    this.#online = false;
     this.#attempts = 0;
   }
 
@@ -88,9 +92,20 @@ export class Gateway {
       clearTimeout(this.#wait);
       this.#wait = undefined;
       void this.#open();
-    } else if (this.#hello !== undefined && this.#established) {
+    } else if (this.#login !== undefined && !this.#greeted && this.#established) {
       this.#release(closeResuming);
       void this.#open();
+    } else if (this.#socket && this.#login === undefined && this.#probe === undefined) {
+      // After sleep or a network change the socket may be dead without a close event.
+      const socket = this.#socket;
+      this.#acked = false;
+      this.#send(socket, opHeartbeat, this.#seq);
+      this.#probe = setTimeout(() => {
+        this.#probe = undefined;
+        if (this.#socket !== socket || this.#acked) return;
+        this.#release(closeResuming);
+        this.#lost(undefined, "The hub stopped answering heartbeats.");
+      }, answerProbeWithin);
     }
   }
 
@@ -109,12 +124,8 @@ export class Gateway {
       return;
     }
     this.#socket = socket;
-    // A socket that opens but stays silent would otherwise be waited on forever.
-    this.#hello = setTimeout(() => {
-      if (this.#socket !== socket) return;
-      this.#release(closeResuming);
-      this.#lost(undefined, "The hub did not start the handshake.");
-    }, helloWithin);
+    this.#greeted = false;
+    this.#expectLogin(socket);
     socket.onmessage = (event) => {
       if (this.#socket === socket) this.#receive(socket, event.data);
     };
@@ -127,8 +138,9 @@ export class Gateway {
 
   #release(code?: number): void {
     clearTimeout(this.#heartbeat);
-    clearTimeout(this.#hello);
-    this.#heartbeat = this.#hello = undefined;
+    clearTimeout(this.#login);
+    clearTimeout(this.#probe);
+    this.#heartbeat = this.#login = this.#probe = undefined;
     const socket = this.#socket;
     this.#socket = undefined;
     if (!socket) return;
@@ -164,13 +176,25 @@ export class Gateway {
     }, wait);
   }
 
-  /** Reports the drop. False if the callback stopped the gateway. */
+  /** Reports the start of an outage. False if the callback stopped the gateway. */
   #disconnected(code: number | undefined, reason: string): boolean {
+    if (!this.#online) return true;
+    this.#online = false;
     const generation = this.#generation;
-    this.#options.onDisconnected(code, reason);
-    if (!this.#running || generation !== this.#generation) return false;
     this.#options.onStatus("reconnecting");
-    return true;
+    this.#options.onDisconnected(code, reason);
+    return this.#running && generation === this.#generation;
+  }
+
+  // A socket that goes quiet before the session stands would otherwise be waited on forever.
+  #expectLogin(socket: SocketLike): void {
+    clearTimeout(this.#login);
+    this.#login = setTimeout(() => {
+      this.#login = undefined;
+      if (this.#socket !== socket) return;
+      this.#release(closeResuming);
+      this.#lost(undefined, "The hub did not finish the handshake.");
+    }, silenceWhileLoggingIn);
   }
 
   #end(error: GatewayError): void {
@@ -191,12 +215,12 @@ export class Gateway {
       return;
     }
     if (frame === null || typeof frame !== "object") return;
+    if (this.#login !== undefined) this.#expectLogin(socket);
     switch (frame.op) {
       case opHello:
-        clearTimeout(this.#hello);
-        this.#hello = undefined;
+        this.#greeted = true;
         this.#beat(socket, (frame.d as { heartbeat_interval: number }).heartbeat_interval);
-        this.#login(socket);
+        this.#identify(socket);
         break;
       case opHeartbeatAck:
         this.#acked = true;
@@ -207,8 +231,8 @@ export class Gateway {
         break;
       case opInvalidSession:
         this.#forget();
-        this.#options.onInvalidated();
-        if (this.#socket === socket) this.#login(socket);
+        this.#expectLogin(socket);
+        this.#identify(socket);
         break;
       case opDispatch:
         if (typeof frame.t === "string") this.#dispatch(frame.t, frame.d, frame.s);
@@ -222,14 +246,17 @@ export class Gateway {
       this.#session = (data as { session_id: string }).session_id;
     }
     if (name === "READY" || name === "RESUMED") {
+      clearTimeout(this.#login);
+      this.#login = undefined;
       this.#established = true;
+      this.#online = true;
       this.#attempts = 0;
       this.#options.onStatus("connected");
     }
     this.#options.onDispatch(name, data);
   }
 
-  #login(socket: SocketLike): void {
+  #identify(socket: SocketLike): void {
     const token = this.#options.token === undefined ? {} : { token: this.#options.token };
     if (this.#session === undefined) {
       this.#send(socket, opIdentify, { ...token, intents: this.#options.intents });
@@ -243,6 +270,10 @@ export class Gateway {
     this.#acked = true;
     const beat = () => {
       if (this.#socket !== socket) return;
+      if (this.#probe !== undefined) {
+        this.#heartbeat = setTimeout(beat, interval);
+        return;
+      }
       if (!this.#acked) {
         this.#release(closeResuming);
         this.#lost(undefined, "The hub stopped answering heartbeats.");

@@ -94,9 +94,13 @@ The client adds events of its own:
 | `ready`        | after every new login, once the state is complete                                         |
 | `user.ready`   | one user's state is complete                                                              |
 | `resumed`      | a dropped connection was picked up again and missed nothing                               |
-| `disconnected` | the connection is gone and is being opened again                                          |
+| `disconnected` | the connection is gone and is being opened again; once per outage                         |
 | `closed`       | the client gave up: the first connect failed, or the hub refuses the token or the intents |
 | `error`        | a handler threw or its promise rejected                                                   |
+
+`client.status` is `idle`, `connecting`, `connected`, `reconnecting` or `closed`.
+`client.close()` ends the session and every retry; the cache stays readable and
+`connect()` starts over.
 
 A failing handler never ends the connection. Without an `error` handler the failure is
 written to the console.
@@ -105,6 +109,7 @@ written to the console.
 
 ```ts
 const me = client.cache.user(); // the user of a personal token or a login
+if (!me) throw new Error("not connected yet");
 me.profile;
 me.lists();
 me.items(); // every open item, with subitems and manual reminders
@@ -121,6 +126,11 @@ const off = client.cache.subscribe(({ userId, kinds }) => {
   `items` and `plans` their parts, `history` the completed items.
 - Reading is synchronous. An array stays the very same array until something of its kind
   changes for that user, which makes it safe to use as a snapshot in UI frameworks.
+- `user()` hands out one object per user for as long as the user is in the cache, so it
+  is not a snapshot itself: take the arrays or `profile`. After `user.gone`, ask for the
+  user again instead of keeping the old object.
+- The listener of `subscribe` gets `{ userId, kinds, cause }`. `cause` names the event
+  behind the change (`name`, `nonce` and the object's `id`), or is undefined for a sync.
 - The cache does not filter or sort beyond that. Build views like "overdue" on top.
 - `history()` starts with the 1000 most recently completed items and grows with every
   item completed while connected. `historyCursor` continues it over REST:
@@ -214,6 +224,12 @@ await view.apply(
 - A change creates, updates or removes an `item` or a `list`, or updates a `plan` or the
   `profile`. For a new object, take an id from `view.tempId()`; `view.resolveId(tempId)`
   gives the real one once it is known.
+  It answers once the real object has taken the draft's place. Several new objects of
+  one kind in a single `apply` are matched to the hub's events in the order they arrive.
+- Read the view from `view.subscribe`, not from a listener on `client.cache`: only the
+  view's own listeners are called after it has taken a change in.
+- `apply` is for the caller's own user unless you pass `{ user }` as the third argument.
+  A user the cache does not hold shows nothing; the call still runs.
 - If the call rejects, exactly its changes are taken back and the error is rethrown.
 - If it succeeds, a change stays until the event with its nonce arrived, or the confirmed
   state already shows it, and for five seconds at most. Pass the nonce on to REST as in
@@ -222,10 +238,10 @@ await view.apply(
 ## The example
 
 [`examples/remind.ts`](examples/remind.ts) is a complete reminder adapter. It imports the
-built package, so build once first:
+built package, which `npm install` builds, and Node runs the TypeScript file directly
+from version 22.18 on:
 
 ```sh
-npm run build
 PLSREMIND_URL=https://todo.example.com PLSREMIND_TOKEN=plsr_pat_... node examples/remind.ts
 ```
 
@@ -235,8 +251,9 @@ The token must be a personal token marked for reminders, or a connection token. 
 ## Development
 
 ```sh
-npm install            # in the repository root
+npm install            # in the repository root; also builds the package
 cd sdk/ts
+npm run dev            # rebuild on every change, for apps in the workspace
 npm run check          # types and formatting
 npm test               # unit tests
 npm run test:hub       # against a real hub; needs Docker and Go

@@ -23,6 +23,8 @@
   ],
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
+    "dev": "tsc -p tsconfig.build.json --watch",
+    "prepare": "tsc -p tsconfig.build.json",
     "check": "tsc --noEmit && prettier --check .",
     "format": "prettier --write .",
     "test": "vitest run --project unit",

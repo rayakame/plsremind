@@ -96,7 +96,6 @@ export class Client {
           this.#failed(name, error);
         }
       },
-      onInvalidated: () => {},
       onDisconnected: (code, reason) => {
         this.#emit("disconnected", { code, reason });
       },
@@ -188,9 +187,9 @@ export class Client {
     if (this.#waiting.size > 0 || !this.#ready) return;
     const ready = this.#ready;
     this.#ready = undefined;
-    this.#emit("ready", ready);
     this.#settle?.resolve();
     this.#settle = undefined;
+    this.#emit("ready", ready);
   }
 
   #emit<K extends keyof EventMap>(name: K, event: EventMap[K]): void {

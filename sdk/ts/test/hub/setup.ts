@@ -63,20 +63,25 @@ async function until(what: string, attempt: () => Promise<boolean>, seconds = 60
 export default async function setup(project: TestProject): Promise<() => Promise<void>> {
   const work = mkdtempSync(join(tmpdir(), "plsremind-hub-"));
   const binary = join(work, "plsremind");
-  run("go", ["build", "-o", binary, "./cmd/plsremind"], hubSource);
-
-  const container = run("docker", [
-    "run",
-    "-d",
-    "--rm",
-    "-e",
-    "POSTGRES_PASSWORD=plsremind",
-    "-e",
-    "POSTGRES_DB=plsremind",
-    "-p",
-    "127.0.0.1::5432",
-    "postgres:18",
-  ]).trim();
+  let container = "";
+  try {
+    run("go", ["build", "-o", binary, "./cmd/plsremind"], hubSource);
+    container = run("docker", [
+      "run",
+      "-d",
+      "--rm",
+      "-e",
+      "POSTGRES_PASSWORD=plsremind",
+      "-e",
+      "POSTGRES_DB=plsremind",
+      "-p",
+      "127.0.0.1::5432",
+      "postgres:18",
+    ]).trim();
+  } catch (error) {
+    rmSync(work, { recursive: true, force: true });
+    throw error;
+  }
   const stopDatabase = () => {
     try {
       execFileSync("docker", ["rm", "-f", "-v", container], { stdio: "ignore" });

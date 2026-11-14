@@ -103,6 +103,14 @@ function completedAt(item: Item): number {
   return item.completedAt?.getTime() ?? Number.POSITIVE_INFINITY;
 }
 
+/** The array from before if nothing in it changed, so that readers see the same snapshot. */
+function kept<T>(before: readonly T[] | undefined, now: T[]): readonly T[] {
+  if (before && before.length === now.length && before.every((value, i) => value === now[i])) {
+    return before;
+  }
+  return Object.freeze(now);
+}
+
 interface Memo {
   base: unknown;
   stamp: number;
@@ -176,7 +184,13 @@ class ViewUser implements UserState {
       const current = finals.has(entry.id) ? finals.get(entry.id) : confirmed(entry.id);
       if (entry.create) finals.set(entry.id, entry.create as unknown as T);
       else if (!entry.update) finals.set(entry.id, null);
-      else if (current) finals.set(entry.id, (entry.update as (value: T) => T)(current));
+      else if (current) {
+        try {
+          finals.set(entry.id, (entry.update as (value: T) => T)(current));
+        } catch (error) {
+          console.error("plsremind: a pending change could not be applied", error);
+        }
+      }
     }
     for (const [id, result] of finals) {
       const key = `${kind}:${id}`;
@@ -237,8 +251,8 @@ class ViewUser implements UserState {
       baseHistory,
       stamp,
       finals,
-      items: Object.freeze(items),
-      history: Object.freeze(history),
+      items: kept(cached?.items, items),
+      history: kept(cached?.history, history),
     };
     return this.#items;
   }
@@ -278,7 +292,7 @@ class ViewUser implements UserState {
       if (final && !this.#base.list(id)) lists.push(final);
     }
     lists.sort((a, b) => a.position - b.position);
-    this.#lists = { base, stamp, finals, lists: Object.freeze(lists) };
+    this.#lists = { base, stamp, finals, lists: kept(cached?.lists, lists) };
     return this.#lists;
   }
 
@@ -305,7 +319,7 @@ class ViewUser implements UserState {
       this.#base.plan(priority as Priority),
     ) as Map<string, ReminderPlan>;
     const plans = base.map((plan) => finals.get(plan.priority) ?? plan);
-    this.#plans = { base, stamp, finals, plans: Object.freeze(plans) };
+    this.#plans = { base, stamp, finals, plans: kept(cached?.plans, plans) };
     return this.#plans;
   }
 
@@ -344,6 +358,7 @@ function build(client: Client): OptimisticView {
   const users = new Map<string, ViewUser>();
   const listeners = new Set<(change: CacheChange) => void>();
   const resolved = new Map<string, string>();
+  const answered = new Map<string, string>();
   const drafts = new Set<string>();
   let list: { base: readonly UserState[]; users: readonly UserState[] } | undefined;
 
@@ -378,7 +393,9 @@ function build(client: Client): OptimisticView {
     }
     if (entry.create) {
       drafts.delete(entry.id);
-      const realId = resolved.get(entry.id);
+      const realId = answered.get(entry.id);
+      answered.delete(entry.id);
+      if (realId !== undefined) resolved.set(entry.id, realId);
       // Changes made to the draft now belong to the object that took its place.
       for (const other of (realId !== undefined && user?.entries) || []) {
         if (other.id === entry.id && other.kind === entry.kind) {
@@ -405,7 +422,7 @@ function build(client: Client): OptimisticView {
   /** True once the confirmed state shows what the entry wanted. */
   function arrived(user: ViewUser, entry: Entry): boolean {
     if (entry.create) {
-      const realId = resolved.get(entry.id);
+      const realId = answered.get(entry.id);
       return realId !== undefined && user.confirmed({ ...entry, id: realId }) !== undefined;
     }
     if (behind(user, entry)) return false;
@@ -434,9 +451,9 @@ function build(client: Client): OptimisticView {
       let born = cause?.name.endsWith(".created") ? cause.id : undefined;
       for (const entry of [...user.entries]) {
         if (cause && kind === entry.kind && cause.nonce === entry.batch.nonce) {
-          const known = resolved.get(entry.id);
+          const known = answered.get(entry.id);
           if (entry.create && born !== undefined && (known === undefined || known === born)) {
-            resolved.set(entry.id, born);
+            answered.set(entry.id, born);
             born = undefined;
             remove(entry, kinds);
             continue;
@@ -460,8 +477,8 @@ function build(client: Client): OptimisticView {
     options: { user?: string } = {},
   ): Promise<T> {
     const principal = client.principal;
-    const userId =
-      options.user ?? (principal && "userId" in principal ? principal.userId : undefined);
+    const own = principal && "userId" in principal ? principal.userId : undefined;
+    const userId = options.user === undefined || options.user === "@me" ? own : options.user;
     if (userId === undefined) {
       throw new TypeError("Say which user the changes are for: pass { user }.");
     }
@@ -520,7 +537,7 @@ function build(client: Client): OptimisticView {
     const only = created.length === 1 ? created[0]! : undefined;
     const answeredId = (result as { id?: unknown } | null | undefined)?.id;
     if (only && batch.entries.has(only) && typeof answeredId === "string") {
-      resolved.set(only.id, answeredId);
+      answered.set(only.id, answeredId);
     }
     const current = users.get(userId);
     withdraw([...batch.entries].filter((entry) => !current || arrived(current, entry)));

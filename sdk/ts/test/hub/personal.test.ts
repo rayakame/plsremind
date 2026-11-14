@@ -1,4 +1,5 @@
 import { afterEach, expect, test } from "vitest";
+import { optimistic } from "../../src/optimistic/index.js";
 import { ApiError, GatewayError, type DeliveryCreatedEvent, type Item } from "../../src/index.js";
 import {
   closeAll,
@@ -234,4 +235,36 @@ test("the dashboard's login works as a gateway client too", async () => {
   const item = await client.rest.createItem({ title: "from the session" });
   await until("the item", () => client.cache.user()!.item(item.id));
   expect(client.cache.user()!.profile).toMatchObject({ id: mia.user.id, preferences: {} });
+});
+
+test("a change shown ahead is settled by its own event from the hub", async () => {
+  const { rest } = await session("mia");
+  const item = await rest.createItem({ title: "before" });
+  const { client } = tokenClient(await personalToken(rest));
+  await client.connect();
+  const view = optimistic(client);
+  const titles: string[] = [];
+  view.subscribe(() => titles.push(view.user()!.item(item.id)?.title ?? "gone"));
+
+  await view.apply(
+    [{ kind: "item", id: item.id, update: (current) => ({ ...current, title: "after" }) }],
+    (nonce) => client.rest.updateItem(item.id, { title: "after" }, { nonce }),
+  );
+  await until("the event", () => client.cache.user()!.item(item.id)!.title === "after");
+  expect(new Set(titles)).toEqual(new Set(["after"]));
+  expect(view.user()!.items()).toBe(client.cache.user()!.items());
+
+  const temp = view.tempId();
+  const draft = { ...view.user()!.item(item.id)!, id: temp, title: "made ahead" };
+  const created = await view.apply([{ kind: "item", create: draft }], (nonce) =>
+    client.rest.createItem({ title: "made ahead" }, { nonce }),
+  );
+  await until("the new item", () => client.cache.user()!.item(created.id));
+  expect(view.resolveId(temp)).toBe(created.id);
+  expect(
+    view
+      .user()!
+      .items()
+      .filter((one) => one.title === "made ahead"),
+  ).toHaveLength(1);
 });

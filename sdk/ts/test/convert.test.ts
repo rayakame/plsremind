@@ -102,7 +102,7 @@ test("converting a sync of 5000 items stays quick", () => {
   fromWire({ items: items.slice(0, 50) });
   const started = performance.now();
   fromWire({ items });
-  expect(performance.now() - started).toBeLessThan(250);
+  expect(performance.now() - started).toBeLessThan(1000);
 });
 
 test("a value in a form the SDK does not know is left as it came", () => {

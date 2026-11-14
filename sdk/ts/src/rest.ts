@@ -183,7 +183,7 @@ export class RestClient {
     }
   }
 
-  /** Walks a listing page by page: `for await (const page of rest.pages((cursor) => rest.listItems({ cursor })))`. */
+  /** Walks a listing page by page. Pass a function that fetches the page after a cursor. */
   async *pages<T>(
     fetchPage: (cursor: string | undefined) => Promise<Page<T>>,
   ): AsyncGenerator<Page<T>, void, undefined> {
@@ -508,7 +508,7 @@ export class RestClient {
     return this.#request("GET", "/deliveries", { options });
   }
 
-  /** Confirms that a reminder reached the person, or says why it could not. The reason is shown to the user. */
+  /** Confirms that a reminder reached the person, or says why not, which the user gets to see. */
   acknowledgeDelivery(
     id: string,
     outcome: { status: "delivered" } | { status: "failed"; reason: string },

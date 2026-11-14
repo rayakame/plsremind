@@ -5,7 +5,6 @@ import { FakeGateway, ready, settle } from "./fake-gateway.js";
 
 interface Seen {
   dispatches: { name: string; data: unknown }[];
-  invalidated: number;
   disconnected: { code: number | undefined; reason: string }[];
   closed: GatewayError[];
   status: string[];
@@ -20,7 +19,7 @@ function start(
   } = {},
 ) {
   const fake = new FakeGateway();
-  const seen: Seen = { dispatches: [], invalidated: 0, disconnected: [], closed: [], status: [] };
+  const seen: Seen = { dispatches: [], disconnected: [], closed: [], status: [] };
   const gateway = new Gateway({
     url: options.url ?? (async () => "wss://hub.test/api/v1/gateway"),
     token: "token" in options ? options.token : "plsr_pat_x",
@@ -28,7 +27,6 @@ function start(
     createSocket: fake.createSocket,
     random: () => options.random ?? 0.5,
     onDispatch: (name, data) => seen.dispatches.push({ name, data }),
-    onInvalidated: () => seen.invalidated++,
     onDisconnected: (code, reason) => seen.disconnected.push({ code, reason }),
     onClosed: (error) => seen.closed.push(error),
     onStatus: (status) => seen.status.push(status),
@@ -160,7 +158,6 @@ test("an invalid session identifies again on the same connection", async () => {
   const socket = await fake.opened();
   socket.hello();
   socket.op(9, false);
-  expect(seen.invalidated).toBe(1);
   expect(socket.sent.map((message) => message.op)).toEqual([6, 2]);
   expect(fake.current).toBe(socket);
   ready(socket, { users: [], session: "s2" });
@@ -257,6 +254,7 @@ test("wake skips the wait", async () => {
   (await fake.opened()).hello();
   fake.current.dispatch("RESUMED", {}, 3);
   gateway.wake();
+  fake.current.op(11);
   await vi.advanceTimersByTimeAsync(40_000);
   expect(fake.sockets.length).toBe(before + 1);
 });
@@ -302,7 +300,6 @@ test("stop from inside the disconnected callback really stops", async () => {
     createSocket: fake.createSocket,
     random: () => 0.5,
     onDispatch: () => {},
-    onInvalidated: () => {},
     onDisconnected: () => gateway.stop(),
     onClosed: () => {},
     onStatus: (seen) => status.push(seen),
@@ -314,7 +311,7 @@ test("stop from inside the disconnected callback really stops", async () => {
   socket.drop();
   await vi.advanceTimersByTimeAsync(300_000);
   expect(fake.sockets).toHaveLength(1);
-  expect(status.at(-1)).toBe("connected");
+  expect(status.at(-1)).toBe("reconnecting");
 
   gateway.start();
   const second = await fake.opened();
@@ -334,7 +331,7 @@ test("a socket that never says hello is given up after fifteen seconds", async (
   expect(fake.current).toBe(silent);
   await vi.advanceTimersByTimeAsync(1);
   expect(silent.closedWith).toBe(4000);
-  expect(seen.disconnected).toHaveLength(2);
+  expect(seen.disconnected).toHaveLength(1);
   await vi.advanceTimersByTimeAsync(2000);
   await settle();
   expect(fake.current).not.toBe(silent);
@@ -366,4 +363,54 @@ test("wake abandons an attempt that has not got its hello yet", async () => {
   gateway.wake();
   await settle();
   expect(fake.current).toBe(live);
+});
+
+test("a handshake that stalls after hello is given up as well", async () => {
+  const { fake, seen } = await established();
+  fake.current.drop();
+  await vi.advanceTimersByTimeAsync(1000);
+  const stalled = await fake.opened();
+  stalled.hello();
+  await vi.advanceTimersByTimeAsync(14_000);
+  stalled.dispatch("item.updated", {}, 3);
+  await vi.advanceTimersByTimeAsync(14_000);
+  expect(stalled.closedWith).toBeUndefined();
+  await vi.advanceTimersByTimeAsync(1000);
+  expect(stalled.closedWith).toBe(4000);
+  expect(seen.closed).toEqual([]);
+});
+
+test("an outage is reported once, however many attempts it takes", async () => {
+  const { fake, seen } = await established();
+  for (let i = 0; i < 4; i++) {
+    fake.current.drop();
+    await vi.advanceTimersByTimeAsync(20_000);
+    await fake.opened();
+  }
+  expect(seen.disconnected).toHaveLength(1);
+  fake.current.hello();
+  fake.current.dispatch("RESUMED", {}, 3);
+  fake.current.drop(1012, "restarting");
+  expect(seen.disconnected).toEqual([
+    { code: 1006, reason: "" },
+    { code: 1012, reason: "restarting" },
+  ]);
+});
+
+test("wake on a live connection asks for a sign of life and drops it if none comes", async () => {
+  const { gateway, fake, seen } = await established();
+  const socket = fake.current;
+  gateway.wake();
+  gateway.wake();
+  expect(socket.beats()).toEqual([{ op: 1, d: 2 }]);
+  socket.op(11);
+  await vi.advanceTimersByTimeAsync(10_000);
+  expect(socket.closedWith).toBeUndefined();
+
+  gateway.wake();
+  await vi.advanceTimersByTimeAsync(4999);
+  expect(socket.closedWith).toBeUndefined();
+  await vi.advanceTimersByTimeAsync(1);
+  expect(socket.closedWith).toBe(4000);
+  expect(seen.disconnected).toHaveLength(1);
 });

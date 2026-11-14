@@ -495,3 +495,31 @@ test("an event the SDK cannot take in goes to error and the next one still arriv
   expect(client.cache.user()!.item("a")!.title).toBe("fine");
   expect(client.status).toBe("connected");
 });
+
+test("close inside ready and connect inside closed both do what they say", async () => {
+  const { client, fake } = setup({ intents: ["items"] });
+  client.once("ready", () => client.close());
+  const first = client.connect();
+  const socket = await fake.opened();
+  socket.hello();
+  ready(socket, { users: [] });
+  await first;
+  expect(client.status).toBe("idle");
+  expect(socket.closedWith).toBe(1000);
+
+  let again: Promise<void> | undefined;
+  client.once("closed", () => {
+    again = client.connect();
+  });
+  const second = client.connect().catch(() => "rejected");
+  const refused = await fake.opened();
+  refused.hello();
+  refused.drop(4004, "no");
+  expect(await second).toBe("rejected");
+  const third = await fake.opened();
+  expect(third).not.toBe(refused);
+  third.hello();
+  ready(third, { users: [] });
+  await again;
+  expect(client.status).toBe("connected");
+});
