@@ -228,6 +228,16 @@ paths:
                   type: string
                   description: IANA time zone name.
                   examples: [Europe/Berlin]
+                locale:
+                  description: A language tag such as `de` or `en-GB`. Send null to clear it.
+                  oneOf:
+                    - type: "null"
+                    - type: string
+                preferences:
+                  type: object
+                  description: |
+                    Replaces the stored preferences as a whole. Any JSON object of at most
+                    16 kB.
                 quiet_hours:
                   description: Send null to turn quiet hours off.
                   oneOf:
@@ -1698,7 +1708,7 @@ components:
           examples: ["08:00"]
     User:
       type: object
-      required: [id, display_name, role, timezone, quiet_hours, created_at]
+      required: [id, display_name, role, timezone, quiet_hours, locale, preferences, created_at]
       properties:
         id:
           type: string
@@ -1712,12 +1722,25 @@ components:
           type: string
         quiet_hours:
           $ref: "#/components/schemas/OptionalQuietHours"
+        locale:
+          description: |
+            The language the user wants to be addressed in, as a language tag such as `de`
+            or `en-GB`. Null while they have not chosen one.
+          oneOf:
+            - type: "null"
+            - type: string
+        preferences:
+          type: object
+          description: |
+            Settings of the user's own clients, for example the dashboard's theme and key
+            bindings. The hub stores the object and does not interpret it. Only the user sees
+            it: connections never do.
         created_at:
           type: string
           format: date-time
     UserSummary:
       type: object
-      required: [id, display_name, timezone, quiet_hours]
+      required: [id, display_name, timezone, quiet_hours, locale]
       properties:
         id:
           type: string
@@ -1728,6 +1751,13 @@ components:
           type: string
         quiet_hours:
           $ref: "#/components/schemas/OptionalQuietHours"
+        locale:
+          description: |
+            The language the user wants to be addressed in, as a language tag such as `de`
+            or `en-GB`. Null while they have not chosen one.
+          oneOf:
+            - type: "null"
+            - type: string
     NewPasswordAccount:
       type: object
       required: [username, password]
@@ -1744,6 +1774,9 @@ components:
         timezone:
           type: string
           description: IANA time zone name, defaults to UTC.
+        locale:
+          type: string
+          description: A language tag such as `de` or `en-GB`. Left unset when absent.
     Duration:
       type: string
       description: A span of time made of days, hours and minutes in descending order, without spaces.
@@ -2141,7 +2174,7 @@ components:
           $ref: "#/components/schemas/Item"
         user:
           type: object
-          required: [id, display_name, timezone]
+          required: [id, display_name, timezone, locale]
           properties:
             id:
               type: string
@@ -2150,6 +2183,11 @@ components:
               type: string
             timezone:
               type: string
+            locale:
+              description: The language the user wants to be addressed in, or null if they have not chosen.
+              oneOf:
+                - type: "null"
+                - type: string
             external_ids:
               type: array
               description: |

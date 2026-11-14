@@ -181,3 +181,32 @@ func TestConnectionCacheMatchesREST(t *testing.T) {
 		require.False(t, strings.Contains(f.D.Raw, `"role"`), f.T)
 	}
 }
+
+func TestConnectionSeesLocaleButNeverPreferences(t *testing.T) {
+	e := testkit.New(t)
+	bot := e.Connection(t, "discord")
+	mia := testkit.Linked(t, e, "mia", "111")
+	require.Equal(t, 200, mia.Do(t, "PATCH", "/users/@me", J{"locale": "de", "preferences": J{"theme": "dark"}}).Status)
+
+	profile := bot.Do(t, "GET", "/users/"+mia.UserID, nil)
+	require.Equal(t, "de", profile.Get("locale").String())
+	require.False(t, profile.Get("preferences").Exists())
+
+	own := e.Gateway(t, personalToken(t, mia), "users")
+	require.JSONEq(t, `{"theme":"dark"}`, own.Expect(t, "user.sync").Get("user.preferences").Raw)
+	gw := e.Gateway(t, bot.Token, "users")
+	sync := gw.Expect(t, "user.sync")
+	require.Equal(t, "de", sync.Get("user.locale").String())
+	require.False(t, sync.Get("user.preferences").Exists())
+
+	mia.Do(t, "PATCH", "/users/@me", J{"locale": "en"})
+	require.Equal(t, "en", own.Expect(t, "user.updated").Get("data.locale").String())
+	updated := gw.Expect(t, "user.updated")
+	require.Equal(t, "en", updated.Get("data.locale").String())
+	require.False(t, updated.Get("data.preferences").Exists())
+
+	// What a user sets up for their own screen is nothing a connection hears about.
+	mia.Do(t, "PATCH", "/users/@me", J{"preferences": J{"theme": "light"}})
+	require.JSONEq(t, `{"theme":"light"}`, own.Expect(t, "user.updated").Get("data.preferences").Raw)
+	gw.ExpectQuiet(t)
+}

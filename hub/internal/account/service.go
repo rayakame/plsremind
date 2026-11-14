@@ -2,6 +2,7 @@ package account
 
 import (
 	"context"
+	"encoding/json"
 	"regexp"
 	"strings"
 	"time"
@@ -23,6 +24,7 @@ type NewUser struct {
 	DisplayName string
 	Timezone    string
 	Role        string
+	Locale      *string
 }
 
 // CreateUser inserts a user together with their inbox list.
@@ -38,6 +40,7 @@ func CreateUser(ctx context.Context, q *sqlc.Queries, now time.Time, p NewUser) 
 		DisplayName: p.DisplayName,
 		Role:        p.Role,
 		Timezone:    p.Timezone,
+		Locale:      p.Locale,
 		CreatedAt:   now,
 	})
 	if err != nil {
@@ -112,6 +115,27 @@ func ValidateTimezone(tz string) error {
 
 // checkTimezone requires a name that both Go and the database know: the database
 // computes due times with it.
+var localePattern = regexp.MustCompile(`^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*$`)
+
+const maxLocaleLen = 35
+
+// checkLocale accepts anything shaped like a language tag. Which languages a
+// client can actually speak is the client's business.
+func checkLocale(fields map[string]string, locale string) {
+	if len(locale) > maxLocaleLen || !localePattern.MatchString(locale) {
+		fields["locale"] = `Must be a language tag such as "de" or "en-GB".`
+	}
+}
+
+const maxPreferencesLen = 16 << 10
+
+func checkPreferences(fields map[string]string, raw json.RawMessage) {
+	var object map[string]json.RawMessage
+	if len(raw) > maxPreferencesLen || json.Unmarshal(raw, &object) != nil || object == nil {
+		fields["preferences"] = "Must be a JSON object of at most 16 kB."
+	}
+}
+
 func checkTimezone(ctx context.Context, q *sqlc.Queries, fields map[string]string, tz string) {
 	err := ValidateTimezone(tz)
 	if err == nil {

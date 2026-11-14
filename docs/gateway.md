@@ -113,7 +113,7 @@ REST only to change things.
 {"op": 0, "t": "user.sync", "s": 2, "d": {
   "user_id": "0193...",
   "chunk": {"index": 0, "count": 1},
-  "user": {"id": "0193...", "display_name": "Mia", "timezone": "Europe/Berlin", "quiet_hours": null},
+  "user": {"id": "0193...", "display_name": "Mia", "timezone": "Europe/Berlin", "quiet_hours": null, "locale": "de", "preferences": {}},
   "lists": [{"id": "...", "name": "Inbox", "position": 0, "is_inbox": true}],
   "items": [{"id": "...", "title": "Hand in the report", "status": "open", "subitems": [], "reminders": []}],
   "plans": [{"priority": "low", "before": ["1d"], "follow_up": "never", "is_default": true}]
@@ -127,8 +127,10 @@ REST only to change things.
   which part this is. `user`, `lists` and `plans` come in part 0. Part 0 replaces whatever
   you knew about the user; later parts add items.
 - For a connection, `user` is a reduced profile: `id`, `display_name`, `timezone`,
-  `quiet_hours`, the user's `external_ids` at the connection's provider, and `remind`
-  (whether the user wants reminders through this connection).
+  `quiet_hours`, `locale` (the language the user wants to be addressed in, or `null`),
+  the user's `external_ids` at the connection's provider, and `remind` (whether the user
+  wants reminders through this connection). A connection never sees the user's
+  `preferences` and is not told when they change.
 
 ### `user.gone`
 
@@ -213,7 +215,7 @@ with `remind`. Each delivery waits until that channel confirms it.
     "late": false,
     "reminder": {"id": "...", "kind": "before", "offset": "1d", "scheduled_for": "2026-11-12T18:00:00Z"},
     "item": {"id": "...", "title": "Hand in the report", "due_at": "2026-11-13T18:00:00Z"},
-    "user": {"id": "0193...", "display_name": "Mia", "timezone": "Europe/Berlin", "external_ids": ["1234"]}
+    "user": {"id": "0193...", "display_name": "Mia", "timezone": "Europe/Berlin", "locale": "de", "external_ids": ["1234"]}
   }
 }}
 ```
@@ -227,7 +229,8 @@ with `remind`. Each delivery waits until that channel confirms it.
 
 What to do with a delivery:
 
-1. Remind the person. For a connection, `user.external_ids` says whom to address.
+1. Remind the person. For a connection, `user.external_ids` says whom to address, and
+   `user.locale` in which language if they chose one.
 2. Once the reminder has actually reached them, confirm it:
    `PUT /api/v1/deliveries/{id}` with `{"status": "delivered"}`.
 3. If it cannot reach them, say so: `{"status": "failed", "reason": "direct messages are closed"}`.

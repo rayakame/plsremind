@@ -1,6 +1,7 @@
 package account
 
 import (
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -21,7 +22,11 @@ type User struct {
 	Role        string      `json:"role"`
 	Timezone    string      `json:"timezone"`
 	QuietHours  *QuietHours `json:"quiet_hours"`
-	CreatedAt   time.Time   `json:"created_at"`
+	// Locale is the language the user wants to be addressed in, nil while they have not chosen.
+	Locale *string `json:"locale"`
+	// Preferences belong to the user's own clients. The hub keeps them and does not read them.
+	Preferences json.RawMessage `json:"preferences"`
+	CreatedAt   time.Time       `json:"created_at"`
 }
 
 func View(u sqlc.User) User {
@@ -31,6 +36,8 @@ func View(u sqlc.User) User {
 		Role:        u.Role,
 		Timezone:    u.Timezone,
 		QuietHours:  ViewQuietHours(u),
+		Locale:      u.Locale,
+		Preferences: json.RawMessage(u.Preferences),
 		CreatedAt:   u.CreatedAt.UTC(),
 	}
 }

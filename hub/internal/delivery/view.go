@@ -30,6 +30,8 @@ type User struct {
 	ID          uuid.UUID `json:"id"`
 	DisplayName string    `json:"display_name"`
 	Timezone    string    `json:"timezone"`
+	// Locale is the language the user wants to be addressed in, if they chose one.
+	Locale *string `json:"locale"`
 	// ExternalIDs are the user's accounts at the connection's provider, so the
 	// connection knows whom to address. Absent for personal tokens.
 	ExternalIDs []string `json:"external_ids,omitempty"`
@@ -88,7 +90,7 @@ func build(ctx context.Context, q *sqlc.Queries, now time.Time, d sqlc.Delivery,
 		Late:     now.Sub(r.FireAt) > lateAfter,
 		Reminder: viewReminder(r),
 		Item:     it,
-		User:     User{ID: user.ID, DisplayName: user.DisplayName, Timezone: user.Timezone},
+		User:     User{ID: user.ID, DisplayName: user.DisplayName, Timezone: user.Timezone, Locale: user.Locale},
 	}
 	if provider != "" {
 		view.User.ExternalIDs, err = q.ListExternalIDs(ctx, sqlc.ListExternalIDsParams{UserID: user.ID, Provider: provider})

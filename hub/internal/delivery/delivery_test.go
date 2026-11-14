@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"github.com/tidwall/gjson"
 
 	"github.com/rayakame/plsremind/hub/internal/testkit"
 )
@@ -189,4 +190,18 @@ func TestNothingIsHandedOutOnAChannelThatNoLongerReminds(t *testing.T) {
 	admin.Do(t, "PATCH", "/admin/users/"+mia.UserID, J{"disabled": true})
 	require.Equal(t, int64(0), bot.Do(t, "GET", "/deliveries", nil).Get("#").Int())
 	require.Equal(t, []string{"due cancelled"}, statuses(e.Deliveries(t, mia.UserID)))
+}
+
+func TestDeliveryCarriesLocale(t *testing.T) {
+	e := testkit.New(t)
+	mia := e.User(t, "mia")
+	bot := e.Connection(t, "discord")
+	e.GiveIdentity(t, mia.UserID, "discord", "1234")
+	testkit.DueSoon(t, e, mia)
+	require.Equal(t, gjson.Null, bot.Do(t, "GET", "/deliveries", nil).Get("0.user.locale").Type)
+
+	require.Equal(t, 200, mia.Do(t, "PATCH", "/users/@me", J{"locale": "de"}).Status)
+	d := bot.Do(t, "GET", "/deliveries", nil).Get("0.user")
+	require.Equal(t, "de", d.Get("locale").String())
+	require.False(t, d.Get("preferences").Exists())
 }

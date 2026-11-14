@@ -4,6 +4,7 @@ package account
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"strings"
 	"time"
@@ -55,10 +56,11 @@ func errLoginDisabled() error {
 }
 
 type credentials struct {
-	Username    string `json:"username"`
-	Password    string `json:"password"`
-	DisplayName string `json:"display_name"`
-	Timezone    string `json:"timezone"`
+	Username    string  `json:"username"`
+	Password    string  `json:"password"`
+	DisplayName string  `json:"display_name"`
+	Timezone    string  `json:"timezone"`
+	Locale      *string `json:"locale"`
 }
 
 // normalize trims the input and validates it for creating an account.
@@ -76,6 +78,9 @@ func (in *credentials) normalize(ctx context.Context, q *sqlc.Queries) error {
 	checkPassword(fields, "password", in.Password)
 	checkDisplayName(fields, in.DisplayName)
 	checkTimezone(ctx, q, fields, in.Timezone)
+	if in.Locale != nil {
+		checkLocale(fields, *in.Locale)
+	}
 	if len(fields) > 0 {
 		return api.Validation(fields)
 	}
@@ -104,7 +109,7 @@ func setup(d *core.Deps) fiber.Handler {
 				return api.Conflict("already_set_up", "This instance is already set up.")
 			}
 			now := d.Now()
-			user, err = CreateUser(c.Context(), q, now, NewUser{DisplayName: in.DisplayName, Timezone: in.Timezone, Role: "admin"})
+			user, err = CreateUser(c.Context(), q, now, NewUser{DisplayName: in.DisplayName, Timezone: in.Timezone, Role: "admin", Locale: in.Locale})
 			if err != nil {
 				return err
 			}
@@ -171,6 +176,7 @@ func getProfile(d *core.Deps) fiber.Handler {
 				"display_name": full.DisplayName,
 				"timezone":     full.Timezone,
 				"quiet_hours":  full.QuietHours,
+				"locale":       full.Locale,
 			})
 		}
 		return c.JSON(View(user))
@@ -181,6 +187,9 @@ type profilePatch struct {
 	DisplayName *string             `json:"display_name"`
 	Timezone    *string             `json:"timezone"`
 	QuietHours  api.Opt[QuietHours] `json:"quiet_hours"`
+	Locale      api.Opt[string]     `json:"locale"`
+	// Preferences replace the stored ones as a whole.
+	Preferences api.Opt[json.RawMessage] `json:"preferences"`
 }
 
 func patchProfile(d *core.Deps) fiber.Handler {
@@ -209,6 +218,12 @@ func patchProfile(d *core.Deps) fiber.Handler {
 				fields["quiet_hours"] = "Start and end must be two different times in HH:MM format."
 			}
 		}
+		if in.Locale.HasValue() {
+			checkLocale(fields, in.Locale.Val)
+		}
+		if in.Preferences.Set {
+			checkPreferences(fields, in.Preferences.Val)
+		}
 		if len(fields) > 0 {
 			return api.Validation(fields)
 		}
@@ -225,6 +240,8 @@ func patchProfile(d *core.Deps) fiber.Handler {
 				Timezone:    before.Timezone,
 				QuietStart:  before.QuietStart,
 				QuietEnd:    before.QuietEnd,
+				Locale:      before.Locale,
+				Preferences: before.Preferences,
 			}
 			if in.DisplayName != nil {
 				params.DisplayName = displayName
@@ -234,6 +251,14 @@ func patchProfile(d *core.Deps) fiber.Handler {
 			}
 			if in.QuietHours.Set {
 				params.QuietStart, params.QuietEnd = quietStart, quietEnd
+			}
+			if in.Locale.Null {
+				params.Locale = nil
+			} else if in.Locale.Set {
+				params.Locale = &in.Locale.Val
+			}
+			if in.Preferences.Set {
+				params.Preferences = in.Preferences.Val
 			}
 			user, err = q.UpdateUserProfile(c.Context(), params)
 			if err != nil {

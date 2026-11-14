@@ -66,6 +66,7 @@ type connectionUser struct {
 	DisplayName string              `json:"display_name"`
 	Timezone    string              `json:"timezone"`
 	QuietHours  *account.QuietHours `json:"quiet_hours"`
+	Locale      *string             `json:"locale"`
 	ExternalIDs []string            `json:"external_ids"`
 	Remind      bool                `json:"remind"`
 }
@@ -91,6 +92,7 @@ func (s *Session) userView(ctx context.Context, q *sqlc.Queries, user sqlc.User)
 		DisplayName: user.DisplayName,
 		Timezone:    user.Timezone,
 		QuietHours:  account.ViewQuietHours(user),
+		Locale:      user.Locale,
 		ExternalIDs: externalIDs,
 		Remind:      remind,
 	}, nil
@@ -372,7 +374,10 @@ func (s *Session) dispatch(ctx context.Context, q *sqlc.Queries, ev sqlc.Event) 
 		if data, err = s.userView(ctx, q, user); err != nil {
 			return err
 		}
-		s.changed(ev.UserID, data)
+		// A connection sees only part of a profile and hears nothing about the rest.
+		if !s.changed(ev.UserID, data) && s.principal.Kind == auth.KindConnection {
+			return nil
+		}
 	}
 	s.emit(ev.Type, true, envelope{UserID: ev.UserID, Actor: &actor{Kind: ev.ActorKind, ID: ev.ActorID}, Nonce: ev.Nonce, Data: data})
 	return nil

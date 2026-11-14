@@ -207,4 +207,6 @@ type User struct {
 	Disabled    bool
 	EventSeq    int64
 	CreatedAt   time.Time
+	Locale      *string
+	Preferences []byte
 }
