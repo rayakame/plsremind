@@ -35,6 +35,13 @@ function snake(name: string): string {
   return out;
 }
 
+/** Renames the keys of a flat object without reading anything into its values. */
+export function camelKeys<V>(value: Record<string, V>): Record<string, V> {
+  const out: Record<string, V> = {};
+  for (const [key, field] of Object.entries(value)) out[camel(key)] = field;
+  return out;
+}
+
 /** Turns a value in the API's form into the SDK's: camelCase names, Dates, milliseconds. */
 export function fromWire<T = unknown>(value: unknown): T {
   return read(value) as T;
