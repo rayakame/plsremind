@@ -366,3 +366,6 @@ is closed with 4014.
 ```sh
 PLSREMIND_URL=https://todo.example.com PLSREMIND_TOKEN=plsr_pat_... go run ./hub/examples/remind
 ```
+
+[`sdk/ts/examples/remind.ts`](../sdk/ts/examples/remind.ts) is the same adapter on top of
+the [TypeScript SDK](../sdk/ts/README.md), which takes care of the protocol described here.
