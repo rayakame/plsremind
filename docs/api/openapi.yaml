@@ -767,6 +767,7 @@ paths:
           application/json:
             schema:
               type: object
+              required: [before, follow_up]
               properties:
                 before:
                   $ref: "#/components/schemas/Before"

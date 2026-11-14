@@ -60,14 +60,27 @@ function read(value: unknown): unknown {
 function readField(key: string, field: unknown): unknown {
   if (key === "preferences") return field;
   if (typeof field === "string") {
-    if (instants.has(key)) return new Date(field);
-    if (key === "offset") return parseDuration(field);
+    if (instants.has(key)) {
+      const date = new Date(field);
+      return Number.isNaN(date.getTime()) ? field : date;
+    }
+    if (key === "offset") return duration(field) ?? field;
     return field;
   }
-  if (key === "before" && Array.isArray(field) && field.every((part) => typeof part === "string")) {
-    return field.map(parseDuration);
+  if (key === "before" && Array.isArray(field)) {
+    const parts = field.map((part) => (typeof part === "string" ? duration(part) : undefined));
+    if (parts.every((part) => part !== undefined)) return parts;
   }
   return read(field);
+}
+
+// A newer hub may write a value this SDK cannot read. It is then handed on as it came.
+function duration(text: string): number | undefined {
+  try {
+    return parseDuration(text);
+  } catch {
+    return undefined;
+  }
 }
 
 /** The opposite of fromWire, for request bodies. Fields that are undefined are left out. */

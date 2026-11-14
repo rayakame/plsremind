@@ -1,10 +1,5 @@
-// A minimal reminder adapter: it connects to the gateway, prints every reminder it is
-// given and confirms it.
-//
-//   PLSREMIND_URL=https://todo.example.com PLSREMIND_TOKEN=plsr_pat_... node examples/remind.ts
-//
-// The token must be a personal token marked for reminders, or a connection token.
-// Set PLSREMIND_ONCE=1 to exit after the first reminder.
+// A minimal reminder adapter: it prints every reminder it is given and confirms it.
+// How to run it is in the README.
 import { ApiError, Client, formatDuration, type Delivery } from "plsremind";
 
 const url = process.env.PLSREMIND_URL;
@@ -65,7 +60,7 @@ client.on("disconnected", (event) => {
   console.log(`connection lost (${event.code ?? "no close code"}), reconnecting`);
 });
 client.on("closed", (event) => {
-  console.error(`the hub refused the connection: ${event.reason}`);
+  console.error(`the connection ended: ${event.reason}`);
   process.exit(1);
 });
 client.on("error", (event) => {

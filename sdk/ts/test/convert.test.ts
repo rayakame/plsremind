@@ -104,3 +104,11 @@ test("converting a sync of 5000 items stays quick", () => {
   fromWire({ items });
   expect(performance.now() - started).toBeLessThan(250);
 });
+
+test("a value in a form the SDK does not know is left as it came", () => {
+  expect(fromWire({ offset: "1w", before: ["1d", "2w"], due_at: "soon" })).toEqual({
+    offset: "1w",
+    before: ["1d", "2w"],
+    dueAt: "soon",
+  });
+});

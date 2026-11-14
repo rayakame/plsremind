@@ -73,7 +73,13 @@ class Slots {
   readonly plans = new Map<Priority, ReminderPlan>();
 
   insertDone(item: Item, completedAt: string): void {
-    const entry: Done = { item, at: microsOf(completedAt), key: item.id.toLowerCase() };
+    let at = 0n;
+    try {
+      at = microsOf(completedAt);
+    } catch {
+      // An unreadable time sorts last instead of keeping the item out.
+    }
+    const entry: Done = { item, at, key: item.id.toLowerCase() };
     let low = 0;
     let high = this.history.length;
     while (low < high) {

@@ -209,3 +209,15 @@ test("ids in a path are escaped", async () => {
   await rest.deleteProvider("a/b");
   expect(calls[0]!.url).toBe("https://hub.test/api/v1/admin/providers/a%2Fb");
 });
+
+test("a 429 that does not say how long to wait is not tried again", async () => {
+  const { rest, calls } = fake([{ status: 429, body: { error: { code: "rate_limited" } } }]);
+  await expect(rest.listLists()).rejects.toMatchObject({ status: 429 });
+  expect(calls).toHaveLength(1);
+});
+
+test("@me as the user is the caller's own path", async () => {
+  const { rest, calls } = fake([{ status: 200, body: [] }]);
+  await rest.listLists({ user: "@me" });
+  expect(calls[0]!.url).toBe("https://hub.test/api/v1/users/@me/lists");
+});

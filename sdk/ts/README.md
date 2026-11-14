@@ -29,7 +29,9 @@ await client.connect();
 ```
 
 `connect()` returns once the state of every user the session covers is in the cache. From
-then on the client reconnects and resumes on its own.
+then on the client reconnects and resumes on its own. If the very first attempt fails, for
+example because the hub is down or the address is wrong, `connect()` rejects with a
+`GatewayError` and the client does not try again; call `connect()` again when you want to.
 
 ## The rules
 
@@ -87,14 +89,14 @@ events; a handler that returns a promise is not waited for.
 
 The client adds events of its own:
 
-| Event          | When                                                                               |
-| -------------- | ---------------------------------------------------------------------------------- |
-| `ready`        | after every new login, once the state is complete                                  |
-| `user.ready`   | one user's state is complete                                                       |
-| `resumed`      | a dropped connection was picked up again and missed nothing                        |
-| `disconnected` | the connection is gone and is being opened again                                   |
-| `closed`       | the client gave up for good: the token no longer works, or the intents are refused |
-| `error`        | a handler threw or its promise rejected                                            |
+| Event          | When                                                                                      |
+| -------------- | ----------------------------------------------------------------------------------------- |
+| `ready`        | after every new login, once the state is complete                                         |
+| `user.ready`   | one user's state is complete                                                              |
+| `resumed`      | a dropped connection was picked up again and missed nothing                               |
+| `disconnected` | the connection is gone and is being opened again                                          |
+| `closed`       | the client gave up: the first connect failed, or the hub refuses the token or the intents |
+| `error`        | a handler threw or its promise rejected                                                   |
 
 A failing handler never ends the connection. Without an `error` handler the failure is
 written to the console.
@@ -124,15 +126,18 @@ const off = client.cache.subscribe(({ userId, kinds }) => {
   item completed while connected. `historyCursor` continues it over REST:
 
   ```ts
-  const older = await client.rest.listItems({
-    status: "done",
-    sort: "completed",
-    order: "desc",
-    cursor: me.historyCursor,
-  });
+  if (me.historyCursor !== null) {
+    const older = await client.rest.listItems({
+      status: "done",
+      sort: "completed",
+      order: "desc",
+      cursor: me.historyCursor,
+    });
+  }
   ```
 
-  Pages loaded that way are yours to keep; they do not enter the cache.
+  `null` means there is nothing older. Pages loaded that way are yours to keep; they do
+  not enter the cache.
 
 ## Connections
 
@@ -170,7 +175,7 @@ for (const delivery of await rest.listDeliveries()) {
 - Every operation of the API reference is a method of the same name: `createItem`,
   `updateItem`, `listReminderPlans` and so on. Ids from the path come first, then the
   body, then options.
-- Options: `user` (whom to act for, `@me` by default), `signal` to abort, and on writes
+- Options: `user` (the id of the user to act for; the caller by default), `signal` to abort, and on writes
   `nonce`, which comes back in every event the call causes.
 - Listings that page return `{ data, nextCursor }`. `rest.pages` walks them:
 
@@ -213,6 +218,19 @@ await view.apply(
 - If it succeeds, a change stays until the event with its nonce arrived, or the confirmed
   state already shows it, and for five seconds at most. Pass the nonce on to REST as in
   the example; without it the view cannot tell your event from someone else's.
+
+## The example
+
+[`examples/remind.ts`](examples/remind.ts) is a complete reminder adapter. It imports the
+built package, so build once first:
+
+```sh
+npm run build
+PLSREMIND_URL=https://todo.example.com PLSREMIND_TOKEN=plsr_pat_... node examples/remind.ts
+```
+
+The token must be a personal token marked for reminders, or a connection token. With
+`PLSREMIND_ONCE=1` the adapter exits after the first reminder.
 
 ## Development
 

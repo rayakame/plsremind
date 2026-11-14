@@ -447,3 +447,51 @@ test("the address of the gateway cannot be fetched: connect rejects with the rea
   expect(((error as Error).cause as Error).name).toBe("NetworkError");
   expect(client.status).toBe("closed");
 });
+
+test("close from inside a disconnected handler ends the client", async () => {
+  const { client, socket, fake } = await connected();
+  client.on("disconnected", () => client.close());
+  socket.drop();
+  await vi.advanceTimersByTimeAsync(300_000);
+  expect(client.status).toBe("idle");
+  expect(fake.sockets).toHaveLength(1);
+});
+
+test("coming back into view reconnects at once, staying hidden does not", async () => {
+  const listeners = new Map<string, () => void>();
+  const document = {
+    visibilityState: "hidden",
+    addEventListener: (name: string, listener: () => void) => listeners.set(name, listener),
+    removeEventListener: (name: string) => listeners.delete(name),
+  };
+  vi.stubGlobal("addEventListener", () => {});
+  vi.stubGlobal("removeEventListener", () => {});
+  vi.stubGlobal("document", document);
+  const { client, socket, fake } = await connected();
+  socket.drop();
+  listeners.get("visibilitychange")!();
+  await settle();
+  expect(fake.sockets).toHaveLength(1);
+  document.visibilityState = "visible";
+  listeners.get("visibilitychange")!();
+  await settle();
+  expect(fake.sockets).toHaveLength(2);
+  client.close();
+  expect(listeners.size).toBe(0);
+});
+
+test("an event the SDK cannot take in goes to error and the next one still arrives", async () => {
+  const { client, socket } = await connected();
+  const errors: string[] = [];
+  client.on("error", (event) => errors.push(event.event));
+  socket.dispatch("user.sync", { user_id: "u1" }, 3);
+  expect(errors).toEqual(["user.sync"]);
+  socket.dispatch(
+    "item.updated",
+    change("u1", wireItem({ id: "a", data: null, subitems: null })),
+    4,
+  );
+  socket.dispatch("item.updated", change("u1", wireItem({ id: "a", title: "fine" })), 5);
+  expect(client.cache.user()!.item("a")!.title).toBe("fine");
+  expect(client.status).toBe("connected");
+});

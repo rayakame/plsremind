@@ -254,8 +254,10 @@ test("wake skips the wait", async () => {
   gateway.wake();
   await settle();
   expect(fake.sockets.length).toBe(before + 1);
+  (await fake.opened()).hello();
+  fake.current.dispatch("RESUMED", {}, 3);
   gateway.wake();
-  await vi.advanceTimersByTimeAsync(300_000);
+  await vi.advanceTimersByTimeAsync(40_000);
   expect(fake.sockets.length).toBe(before + 1);
 });
 
@@ -288,4 +290,80 @@ test("after stop a new start identifies from scratch", async () => {
   const socket = await fake.opened();
   socket.hello();
   expect(socket.sent[0]!.op).toBe(2);
+});
+
+test("stop from inside the disconnected callback really stops", async () => {
+  const fake = new FakeGateway();
+  const status: string[] = [];
+  const gateway: Gateway = new Gateway({
+    url: async () => "wss://hub.test/api/v1/gateway",
+    token: "t",
+    intents: ["items"],
+    createSocket: fake.createSocket,
+    random: () => 0.5,
+    onDispatch: () => {},
+    onInvalidated: () => {},
+    onDisconnected: () => gateway.stop(),
+    onClosed: () => {},
+    onStatus: (seen) => status.push(seen),
+  });
+  gateway.start();
+  const socket = await fake.opened();
+  socket.hello();
+  ready(socket, { users: [] });
+  socket.drop();
+  await vi.advanceTimersByTimeAsync(300_000);
+  expect(fake.sockets).toHaveLength(1);
+  expect(status.at(-1)).toBe("connected");
+
+  gateway.start();
+  const second = await fake.opened();
+  second.hello();
+  ready(second, { users: [] });
+  second.op(7);
+  await vi.advanceTimersByTimeAsync(300_000);
+  expect(fake.sockets).toHaveLength(2);
+});
+
+test("a socket that never says hello is given up after fifteen seconds", async () => {
+  const { fake, seen } = await established();
+  fake.current.drop();
+  await vi.advanceTimersByTimeAsync(1000);
+  const silent = await fake.opened();
+  await vi.advanceTimersByTimeAsync(14_999);
+  expect(fake.current).toBe(silent);
+  await vi.advanceTimersByTimeAsync(1);
+  expect(silent.closedWith).toBe(4000);
+  expect(seen.disconnected).toHaveLength(2);
+  await vi.advanceTimersByTimeAsync(2000);
+  await settle();
+  expect(fake.current).not.toBe(silent);
+  fake.current.open();
+  fake.current.hello();
+  await vi.advanceTimersByTimeAsync(20_000);
+  expect(fake.current.closedWith).toBeUndefined();
+});
+
+test("a first attempt that never gets a hello fails instead of hanging", async () => {
+  const { fake, seen } = start();
+  await fake.opened();
+  await vi.advanceTimersByTimeAsync(15_000);
+  expect(seen.closed).toHaveLength(1);
+  expect(fake.sockets).toHaveLength(1);
+});
+
+test("wake abandons an attempt that has not got its hello yet", async () => {
+  const { gateway, fake } = await established();
+  fake.current.drop();
+  await vi.advanceTimersByTimeAsync(1000);
+  const stuck = await fake.opened();
+  gateway.wake();
+  await settle();
+  expect(stuck.closedWith).toBe(4000);
+  expect(fake.current).not.toBe(stuck);
+  const live = await fake.opened();
+  live.hello();
+  gateway.wake();
+  await settle();
+  expect(fake.current).toBe(live);
 });

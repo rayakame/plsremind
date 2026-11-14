@@ -122,7 +122,7 @@ export interface ClosedEvent {
 
 export interface ErrorEvent {
   readonly error: unknown;
-  /** The event whose handler failed. */
+  /** The event that was being handled. */
   readonly event: string;
 }
 
@@ -153,9 +153,9 @@ export interface EventMap {
   resumed: ResumedEvent;
   /** The connection is gone and is being opened again. */
   disconnected: DisconnectedEvent;
-  /** The client gave up for good, for example because its token no longer works. */
+  /** The client gave up: the first connect failed, or the hub refuses the token or intents. */
   closed: ClosedEvent;
-  /** A handler threw or its promise rejected. */
+  /** A handler threw or its promise rejected, or an event could not be taken in. */
   error: ErrorEvent;
 }
 

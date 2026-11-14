@@ -396,3 +396,65 @@ test("events with 5000 items and a pending change are absorbed quickly", async (
   expect(slowest).toBeLessThan(50);
   await settle();
 });
+
+test("a change back to the old value does not uncover the change before it", async () => {
+  const { view, mine, send } = await setup();
+  const nonces: string[] = [];
+  const remember = async (nonce: string) => void nonces.push(nonce);
+  const seen: string[] = [];
+  view.subscribe(() => seen.push(mine().item("a")!.title));
+  await view.apply([{ kind: "item", id: "a", update: rename("y") }], remember);
+  await view.apply([{ kind: "item", id: "a", update: rename("Hand in the report") }], remember);
+  expect(mine().item("a")!.title).toBe("Hand in the report");
+  send("item.updated", change("u1", wireItem({ id: "a", title: "y" }), nonces[0]));
+  send("item.updated", change("u1", wireItem({ id: "a" }), nonces[1]));
+  expect(seen).toEqual(["y", "Hand in the report", "Hand in the report", "Hand in the report"]);
+});
+
+test("a change to a draft survives the answer coming before the event", async () => {
+  const { view, mine, send } = await setup();
+  const temp = view.tempId();
+  const call = deferred<{ id: string }>();
+  let nonce = "";
+  const created = view.apply(
+    [{ kind: "item", create: fromWire<Item>(wireItem({ id: temp, title: "fresh" })) }],
+    (given) => {
+      nonce = given;
+      return call.promise;
+    },
+  );
+  void view.apply(
+    [{ kind: "item", id: temp, update: rename("edited") }],
+    () => new Promise(() => {}),
+  );
+  call.resolve({ id: "real" });
+  await created;
+  expect(view.resolveId(temp)).toBe("real");
+  expect(mine().item(temp)!.title).toBe("edited");
+  send("item.updated", change("u1", wireItem({ id: "b", title: "unrelated" }), "other"));
+  expect(mine().item(temp)!.title).toBe("edited");
+  send("item.created", change("u1", wireItem({ id: "real", title: "fresh" }), nonce));
+  expect(mine().item(temp)).toBeUndefined();
+  expect(mine().item("real")!.title).toBe("edited");
+});
+
+test("two drafts in one call each get their own real object", async () => {
+  const { view, mine, send } = await setup();
+  const [first, second] = [view.tempId(), view.tempId()];
+  let nonce = "";
+  void view.apply(
+    [
+      { kind: "item", create: fromWire<Item>(wireItem({ id: first, title: "one" })) },
+      { kind: "item", create: fromWire<Item>(wireItem({ id: second, title: "two" })) },
+    ],
+    (given) => {
+      nonce = given;
+      return new Promise(() => {});
+    },
+  );
+  send("item.created", change("u1", wireItem({ id: "r1", title: "one" }), nonce));
+  expect(ids(mine().items())).toEqual(["a", "b", "r1", second]);
+  send("item.created", change("u1", wireItem({ id: "r2", title: "two" }), nonce));
+  expect(ids(mine().items())).toEqual(["a", "b", "r1", "r2"]);
+  expect([view.resolveId(first), view.resolveId(second)]).toEqual(["r1", "r2"]);
+});

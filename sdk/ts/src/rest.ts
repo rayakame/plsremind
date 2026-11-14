@@ -39,9 +39,9 @@ import type {
 
 export interface RestOptions {
   /** The address of the hub. In a browser it may be left out and is the page's own. */
-  url?: string;
+  url?: string | undefined;
   /** A personal token or a connection token. */
-  token?: string;
+  token?: string | undefined;
   /** "session" uses the login cookie of the dashboard instead of a token. */
   auth?: "session";
   /** false turns off waiting out a 429. */
@@ -76,7 +76,7 @@ export interface ListItemsQuery {
   sort?: "created" | "due" | "priority" | "completed";
   order?: "asc" | "desc";
   limit?: number;
-  cursor?: string | null | undefined;
+  cursor?: string | undefined;
 }
 
 export interface UserChanges {
@@ -137,7 +137,8 @@ export class RestClient {
     const options = request.options;
     let target = path;
     if (request.user) {
-      const user = typeof options?.user === "string" ? options.user : undefined;
+      const named = typeof options?.user === "string" ? options.user : undefined;
+      const user = named === "@me" ? undefined : named;
       if (user === undefined && this.#token?.startsWith("plsr_con_")) {
         throw new TypeError("A connection must say which user it acts for: pass { user }.");
       }
@@ -170,8 +171,9 @@ export class RestClient {
         throw new NetworkError(`The hub did not answer ${method} ${target}.`, cause);
       }
       if (response.status === 429 && this.#retry && attempt < maxRetries) {
-        const wait = Number(response.headers.get("retry-after")) * 1000;
-        if (Number.isFinite(wait) && wait >= 0 && wait < longestWait) {
+        const asked = response.headers.get("retry-after");
+        const wait = asked === null || asked.trim() === "" ? Number.NaN : Number(asked) * 1000;
+        if (wait >= 0 && wait < longestWait) {
           await response.body?.cancel().catch(() => {});
           await pause(wait, signal);
           continue;
@@ -278,7 +280,7 @@ export class RestClient {
   }
 
   listUsers(
-    query: { limit?: number; cursor?: string | null | undefined } = {},
+    query: { limit?: number; cursor?: string | undefined } = {},
     options?: CallOptions,
   ): Promise<Page<AdminUser>> {
     return this.#request("GET", "/admin/users", { query, options });
@@ -350,7 +352,7 @@ export class RestClient {
 
   setReminderPlan(
     priority: Priority,
-    plan: { before?: readonly number[]; followUp?: FollowUp },
+    plan: { before: readonly number[]; followUp: FollowUp },
     options?: WriteOptions,
   ): Promise<ReminderPlan> {
     const path = `/reminder-plans/${seg(priority)}`;
@@ -506,17 +508,17 @@ export class RestClient {
     return this.#request("GET", "/deliveries", { options });
   }
 
-  /** Confirms that a reminder reached the person, or says why it could not. */
+  /** Confirms that a reminder reached the person, or says why it could not. The reason is shown to the user. */
   acknowledgeDelivery(
     id: string,
-    outcome: { status: "delivered" } | { status: "failed"; reason?: string },
+    outcome: { status: "delivered" } | { status: "failed"; reason: string },
     options?: CallOptions,
   ): Promise<DeliveryResult> {
     return this.#request("PUT", `/deliveries/${seg(id)}`, { body: outcome, options });
   }
 
   listReminderLog(
-    query: { itemId?: string; limit?: number; cursor?: string | null | undefined } = {},
+    query: { itemId?: string; limit?: number; cursor?: string | undefined } = {},
     options?: UserOptions,
   ): Promise<Page<ReminderLogEntry>> {
     return this.#request("GET", "/reminder-log", { user: true, query, options });

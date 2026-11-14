@@ -218,10 +218,12 @@ test("a deleted token ends the client with 4004", async () => {
   expect(client.status).toBe("closed");
 });
 
-test("a token that does not exist is refused by connect", async () => {
+test("a token that does not exist is refused before the gateway is even asked", async () => {
   const { client } = tokenClient("plsr_pat_this-token-does-not-exist");
   const error = await client.connect().catch((e: unknown) => e);
   expect(error).toBeInstanceOf(GatewayError);
+  expect((error as GatewayError).cause).toMatchObject({ status: 401 });
+  expect(client.status).toBe("closed");
 });
 
 test("the dashboard's login works as a gateway client too", async () => {

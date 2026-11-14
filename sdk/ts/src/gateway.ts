@@ -32,7 +32,6 @@ const opHello = 10;
 const opHeartbeatAck = 11;
 
 const closeNormal = 1000;
-// Any code but 1000 and 1001 tells the hub the session is meant to be resumed.
 const closeResuming = 4000;
 const closeBadSequence = 4007;
 const closeTooMany = 4008;
@@ -41,6 +40,7 @@ const fatal = new Set([4004, 4013, 4014]);
 const firstWait = 1000;
 const longestWait = 60_000;
 const waitAfterTooMany = 5000;
+const helloWithin = 15_000;
 
 /** One gateway session kept alive across drops. It knows nothing about what the events mean. */
 export class Gateway {
@@ -56,6 +56,7 @@ export class Gateway {
   #acked = true;
   #heartbeat: ReturnType<typeof setTimeout> | undefined;
   #wait: ReturnType<typeof setTimeout> | undefined;
+  #hello: ReturnType<typeof setTimeout> | undefined;
 
   constructor(options: GatewayOptions) {
     this.#options = options;
@@ -82,13 +83,19 @@ export class Gateway {
 
   /** Connects now instead of sitting out the rest of a wait. */
   wake(): void {
-    if (this.#wait === undefined) return;
-    clearTimeout(this.#wait);
-    this.#wait = undefined;
-    void this.#open();
+    if (!this.#running) return;
+    if (this.#wait !== undefined) {
+      clearTimeout(this.#wait);
+      this.#wait = undefined;
+      void this.#open();
+    } else if (this.#hello !== undefined && this.#established) {
+      this.#release(closeResuming);
+      void this.#open();
+    }
   }
 
   async #open(): Promise<void> {
+    if (!this.#running) return;
     const generation = ++this.#generation;
     let socket: SocketLike;
     try {
@@ -97,10 +104,17 @@ export class Gateway {
       socket = this.#options.createSocket(this.#address);
     } catch (cause) {
       if (generation !== this.#generation) return;
-      this.#lost(undefined, "The gateway could not be reached.", cause);
+      const why = cause instanceof Error ? cause.message : String(cause);
+      this.#lost(undefined, `The gateway could not be reached: ${why}`, cause);
       return;
     }
     this.#socket = socket;
+    // A socket that opens but stays silent would otherwise be waited on forever.
+    this.#hello = setTimeout(() => {
+      if (this.#socket !== socket) return;
+      this.#release(closeResuming);
+      this.#lost(undefined, "The hub did not start the handshake.");
+    }, helloWithin);
     socket.onmessage = (event) => {
       if (this.#socket === socket) this.#receive(socket, event.data);
     };
@@ -113,7 +127,8 @@ export class Gateway {
 
   #release(code?: number): void {
     clearTimeout(this.#heartbeat);
-    this.#heartbeat = undefined;
+    clearTimeout(this.#hello);
+    this.#heartbeat = this.#hello = undefined;
     const socket = this.#socket;
     this.#socket = undefined;
     if (!socket) return;
@@ -138,8 +153,7 @@ export class Gateway {
       return;
     }
     if (code === closeBadSequence) this.#forget();
-    this.#options.onDisconnected(code, reason);
-    this.#options.onStatus("reconnecting");
+    if (!this.#disconnected(code, reason)) return;
     const step = Math.min(longestWait, firstWait * 2 ** this.#attempts);
     this.#attempts++;
     let wait = step * (0.5 + 0.5 * this.#options.random());
@@ -148,6 +162,15 @@ export class Gateway {
       this.#wait = undefined;
       void this.#open();
     }, wait);
+  }
+
+  /** Reports the drop. False if the callback stopped the gateway. */
+  #disconnected(code: number | undefined, reason: string): boolean {
+    const generation = this.#generation;
+    this.#options.onDisconnected(code, reason);
+    if (!this.#running || generation !== this.#generation) return false;
+    this.#options.onStatus("reconnecting");
+    return true;
   }
 
   #end(error: GatewayError): void {
@@ -170,6 +193,8 @@ export class Gateway {
     if (frame === null || typeof frame !== "object") return;
     switch (frame.op) {
       case opHello:
+        clearTimeout(this.#hello);
+        this.#hello = undefined;
         this.#beat(socket, (frame.d as { heartbeat_interval: number }).heartbeat_interval);
         this.#login(socket);
         break;
@@ -178,9 +203,7 @@ export class Gateway {
         break;
       case opReconnect:
         this.#release(closeResuming);
-        this.#options.onDisconnected(undefined, "The hub asked to reconnect.");
-        this.#options.onStatus("reconnecting");
-        void this.#open();
+        if (this.#disconnected(undefined, "The hub asked to reconnect.")) void this.#open();
         break;
       case opInvalidSession:
         this.#forget();

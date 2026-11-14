@@ -86,13 +86,15 @@ export default async function setup(project: TestProject): Promise<() => Promise
   };
 
   let hub: ChildProcess | undefined;
-  const stopHub = async () => {
+  const stopHub = async (signal: NodeJS.Signals = "SIGKILL") => {
     const running = hub;
     hub = undefined;
     if (!running || running.exitCode !== null) return;
     const exited = new Promise((resolve) => running.once("exit", resolve));
-    running.kill("SIGKILL");
+    running.kill(signal);
+    const impatient = setTimeout(() => running.kill("SIGKILL"), 15_000);
     await exited;
+    clearTimeout(impatient);
   };
 
   try {
@@ -136,7 +138,7 @@ export default async function setup(project: TestProject): Promise<() => Promise
     const control = createServer((request, response) => {
       const done = (status: number) => response.writeHead(status).end();
       if (request.method !== "POST" || request.url !== "/restart") return done(404);
-      stopHub()
+      stopHub("SIGTERM")
         .then(startHub)
         .then(
           () => done(204),

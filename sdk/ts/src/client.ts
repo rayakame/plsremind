@@ -72,9 +72,8 @@ export class Client {
   }
 
   /**
-   * Opens the gateway session. Resolves once the state of every user it covers is in the
-   * cache, and rejects with a GatewayError if the hub cannot be reached or refuses the login.
-   * Later drops are handled without the caller doing anything.
+   * Resolves once the state of every user of the session is in the cache. Rejects with a
+   * GatewayError if the first attempt fails; later drops are reconnected without the caller.
    */
   connect(): Promise<void> {
     if (this.#connecting) return this.#connecting;
@@ -90,7 +89,13 @@ export class Client {
       intents,
       createSocket,
       random: this.#internals.random ?? Math.random,
-      onDispatch: (name, data) => this.#dispatch(name, data),
+      onDispatch: (name, data) => {
+        try {
+          this.#dispatch(name, data);
+        } catch (error) {
+          this.#failed(name, error);
+        }
+      },
       onInvalidated: () => {},
       onDisconnected: (code, reason) => {
         this.#emit("disconnected", { code, reason });
@@ -189,13 +194,15 @@ export class Client {
   }
 
   #emit<K extends keyof EventMap>(name: K, event: EventMap[K]): void {
-    this.#events.emit(name, event, (error) => {
-      if (name === "error" || !this.#events.has("error")) {
-        console.error(`plsremind: a handler for "${name}" failed`, error);
-        return;
-      }
-      this.#emit("error", { error, event: name });
-    });
+    this.#events.emit(name, event, (error) => this.#failed(name, error));
+  }
+
+  #failed(name: string, error: unknown): void {
+    if (name === "error" || !this.#events.has("error")) {
+      console.error(`plsremind: handling "${name}" failed`, error);
+      return;
+    }
+    this.#emit("error", { error, event: name });
   }
 
   #hook(gateway: Gateway): void {

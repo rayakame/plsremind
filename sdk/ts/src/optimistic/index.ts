@@ -161,6 +161,11 @@ class ViewUser implements UserState {
     this.#stamps.set(key, (this.#stamps.get(key) ?? 0) + 1);
   }
 
+  forget(kind: Kind, id: string): void {
+    this.#stamps.delete(`${kind}:${id}`);
+    this.#memos.delete(`${kind}:${id}`);
+  }
+
   #of(kind: Kind): Entry[] {
     return this.entries.filter((entry) => entry.kind === kind);
   }
@@ -365,26 +370,36 @@ function build(client: Client): OptimisticView {
   function remove(entry: Entry, kinds: Set<CacheKind>): void {
     const batch = entry.batch;
     if (!batch.entries.delete(entry)) return;
-    if (entry.create) drafts.delete(entry.id);
     if (batch.entries.size === 0) clearTimeout(batch.timer);
     const user = users.get(batch.userId);
     if (user) {
       user.entries.splice(user.entries.indexOf(entry), 1);
       user.touch(entry.kind, entry.id);
     }
+    if (entry.create) {
+      drafts.delete(entry.id);
+      const realId = resolved.get(entry.id);
+      // Changes made to the draft now belong to the object that took its place.
+      for (const other of (realId !== undefined && user?.entries) || []) {
+        if (other.id === entry.id && other.kind === entry.kind) {
+          other.id = realId!;
+          user!.touch(other.kind, realId!);
+        }
+      }
+    }
+    if (user && !user.entries.some((other) => other.kind === entry.kind && other.id === entry.id)) {
+      user.forget(entry.kind, entry.id);
+    }
     for (const kind of shown[entry.kind]) kinds.add(kind);
   }
 
-  function resolve(entry: Entry, realId: string): void {
-    const tempId = entry.id;
-    resolved.set(tempId, realId);
-    const user = users.get(entry.batch.userId);
-    for (const other of user?.entries ?? []) {
-      if (other !== entry && other.id === tempId && other.kind === entry.kind) {
-        other.id = realId;
-        user!.touch(other.kind, realId);
-      }
+  /** True if an older change to the same object is still pending. */
+  function behind(user: ViewUser, entry: Entry): boolean {
+    for (const other of user.entries) {
+      if (other === entry) return false;
+      if (other.kind === entry.kind && other.id === entry.id) return true;
     }
+    return false;
   }
 
   /** True once the confirmed state shows what the entry wanted. */
@@ -393,6 +408,7 @@ function build(client: Client): OptimisticView {
       const realId = resolved.get(entry.id);
       return realId !== undefined && user.confirmed({ ...entry, id: realId }) !== undefined;
     }
+    if (behind(user, entry)) return false;
     const confirmed = user.confirmed(entry);
     if (!entry.update) return confirmed === undefined;
     return (
@@ -415,10 +431,13 @@ function build(client: Client): OptimisticView {
     } else if (user) {
       const cause = change.cause;
       const kind = cause ? eventKind(cause.name) : undefined;
+      let born = cause?.name.endsWith(".created") ? cause.id : undefined;
       for (const entry of [...user.entries]) {
         if (cause && kind === entry.kind && cause.nonce === entry.batch.nonce) {
-          if (entry.create && cause.name.endsWith(".created") && cause.id !== undefined) {
-            resolve(entry, cause.id);
+          const known = resolved.get(entry.id);
+          if (entry.create && born !== undefined && (known === undefined || known === born)) {
+            resolved.set(entry.id, born);
+            born = undefined;
             remove(entry, kinds);
             continue;
           }
@@ -501,7 +520,7 @@ function build(client: Client): OptimisticView {
     const only = created.length === 1 ? created[0]! : undefined;
     const answeredId = (result as { id?: unknown } | null | undefined)?.id;
     if (only && batch.entries.has(only) && typeof answeredId === "string") {
-      resolve(only, answeredId);
+      resolved.set(only.id, answeredId);
     }
     const current = users.get(userId);
     withdraw([...batch.entries].filter((entry) => !current || arrived(current, entry)));

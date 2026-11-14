@@ -364,3 +364,9 @@ test("objects from the cache are what the SDK promises: converted and of the rig
   expect(list.isInbox).toBe(true);
   expect(user.items()[0]!.createdAt).toBeInstanceOf(Date);
 });
+
+test("a completion time the SDK cannot read does not keep the item out", () => {
+  const { store, user } = loaded();
+  store.apply("item.updated", change("u1", done("a", "whenever")));
+  expect(user.history().map((item) => item.id)).toEqual(["a"]);
+});
