@@ -27,8 +27,7 @@ func registerItems(user fiber.Router, d *core.Deps) {
 }
 
 func actor(c fiber.Ctx) events.Actor {
-	p, _ := auth.From(c)
-	return auth.ActorFrom(p)
+	return auth.Actor(c)
 }
 
 func createItem(d *core.Deps) fiber.Handler {

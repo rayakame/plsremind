@@ -51,7 +51,7 @@ func (q *Queries) GetGrantRemind(ctx context.Context, arg GetGrantRemindParams) 
 }
 
 const listEventsAfter = `-- name: ListEventsAfter :many
-SELECT user_id, seq, type, payload, actor_kind, actor_id, created_at FROM events WHERE user_id = $1 AND seq > $2 ORDER BY seq LIMIT $3
+SELECT user_id, seq, type, payload, actor_kind, actor_id, created_at, nonce FROM events WHERE user_id = $1 AND seq > $2 ORDER BY seq LIMIT $3
 `
 
 type ListEventsAfterParams struct {
@@ -77,6 +77,7 @@ func (q *Queries) ListEventsAfter(ctx context.Context, arg ListEventsAfterParams
 			&i.ActorKind,
 			&i.ActorID,
 			&i.CreatedAt,
+			&i.Nonce,
 		); err != nil {
 			return nil, err
 		}

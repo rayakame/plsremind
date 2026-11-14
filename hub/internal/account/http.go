@@ -240,8 +240,7 @@ func patchProfile(d *core.Deps) fiber.Handler {
 				return err
 			}
 			now := d.Now()
-			p, _ := auth.From(c)
-			actor := auth.ActorFrom(p)
+			actor := auth.Actor(c)
 			if err := events.Append(c.Context(), q, now, user.ID, actor, "user.updated", View(user)); err != nil {
 				return err
 			}

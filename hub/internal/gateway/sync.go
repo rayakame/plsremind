@@ -50,6 +50,7 @@ type userSync struct {
 type envelope struct {
 	UserID uuid.UUID `json:"user_id"`
 	Actor  *actor    `json:"actor"`
+	Nonce  *string   `json:"nonce"`
 	Data   any       `json:"data"`
 }
 
@@ -373,6 +374,6 @@ func (s *Session) dispatch(ctx context.Context, q *sqlc.Queries, ev sqlc.Event) 
 		}
 		s.changed(ev.UserID, data)
 	}
-	s.emit(ev.Type, true, envelope{UserID: ev.UserID, Actor: &actor{Kind: ev.ActorKind, ID: ev.ActorID}, Data: data})
+	s.emit(ev.Type, true, envelope{UserID: ev.UserID, Actor: &actor{Kind: ev.ActorKind, ID: ev.ActorID}, Nonce: ev.Nonce, Data: data})
 	return nil
 }

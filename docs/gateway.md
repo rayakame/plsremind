@@ -148,6 +148,7 @@ counterparts of Discord's `GUILD_DELETE` and `GUILD_CREATE`.
 {"op": 0, "t": "item.updated", "s": 18, "d": {
   "user_id": "0193...",
   "actor": {"kind": "session", "id": "0193..."},
+  "nonce": null,
   "data": {"id": "...", "title": "Hand in the report", "status": "done"}
 }}
 ```
@@ -158,6 +159,10 @@ counterparts of Discord's `GUILD_DELETE` and `GUILD_CREATE`.
   and `id` identifies it. Compare it with your own to recognise your own changes. It is
   `null` when the hub tells a connection that something about a user's access changed,
   for example that they switched reminders through it off.
+- `nonce` is the `X-Request-Nonce` header of the request that made the change, or `null`
+  if it sent none. Send one with a request and you can tell exactly which events are the
+  result of that call, however many it causes. Every client that receives the event sees
+  the value. It is 1 to 64 printable ASCII characters without spaces.
 - Every change to a subitem or a manual reminder is followed by `item.updated` with the
   whole item. If you keep items in memory you can ignore the `subitem.*` and `reminder.*`
   events and just replace the item.
@@ -199,6 +204,7 @@ with `remind`. Each delivery waits until that channel confirms it.
 {"op": 0, "t": "delivery.created", "s": null, "d": {
   "user_id": "0193...",
   "actor": null,
+  "nonce": null,
   "data": {
     "id": "0193...",
     "attempt": 1,
@@ -246,7 +252,7 @@ a growing `attempt`. It is not repeated while you stay connected. After 24 hours
 ### `delivery.closed`
 
 ```json
-{"op": 0, "t": "delivery.closed", "s": null, "d": {"user_id": "0193...", "actor": null, "data": {"id": "0193...", "status": "cancelled"}}}
+{"op": 0, "t": "delivery.closed", "s": null, "d": {"user_id": "0193...", "actor": null, "nonce": null, "data": {"id": "0193...", "status": "cancelled"}}}
 ```
 
 An open delivery was withdrawn. `status` is `superseded` (a newer reminder for the same

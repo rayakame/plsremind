@@ -16,6 +16,15 @@ info:
     A write with any other `Origin` is refused with `403` and the code `csrf_failed`, unless
     it uses a bearer token.
 
+    ## Recognising your own changes
+
+    A request may carry an `X-Request-Nonce` header: 1 to 64 printable ASCII characters
+    without spaces, chosen by you. Every gateway event the request causes carries the same
+    value as `nonce`, for every client that receives the event. One request can cause
+    several events, for example deleting a list that still holds items. The hub does not
+    interpret the value and does not require it to be unique. A header that does not fit
+    is refused with `400` and the code `invalid_nonce`.
+
     ## Rate limits
 
     Every response carries `X-RateLimit-Limit`, `X-RateLimit-Remaining` and
@@ -174,6 +183,7 @@ paths:
   /users/{user}:
     parameters:
       - $ref: "#/components/parameters/User"
+      - $ref: "#/components/parameters/Nonce"
     get:
       tags: [Account]
       operationId: getUser
@@ -262,6 +272,7 @@ paths:
   /users/{user}/identities:
     parameters:
       - $ref: "#/components/parameters/User"
+      - $ref: "#/components/parameters/Nonce"
     get:
       tags: [Account]
       operationId: listIdentities
@@ -280,6 +291,7 @@ paths:
   /users/{user}/password:
     parameters:
       - $ref: "#/components/parameters/User"
+      - $ref: "#/components/parameters/Nonce"
     put:
       tags: [Account]
       operationId: setPassword
@@ -504,6 +516,7 @@ paths:
   /users/{user}/tokens:
     parameters:
       - $ref: "#/components/parameters/User"
+      - $ref: "#/components/parameters/Nonce"
     get:
       tags: [Account]
       operationId: listTokens
@@ -555,6 +568,7 @@ paths:
   /users/{user}/tokens/{id}:
     parameters:
       - $ref: "#/components/parameters/User"
+      - $ref: "#/components/parameters/Nonce"
       - $ref: "#/components/parameters/Id"
     patch:
       tags: [Account]
@@ -596,6 +610,7 @@ paths:
   /users/{user}/lists:
     parameters:
       - $ref: "#/components/parameters/User"
+      - $ref: "#/components/parameters/Nonce"
     get:
       tags: [Lists]
       operationId: listLists
@@ -633,6 +648,7 @@ paths:
   /users/{user}/lists/order:
     parameters:
       - $ref: "#/components/parameters/User"
+      - $ref: "#/components/parameters/Nonce"
     put:
       tags: [Lists]
       operationId: reorderLists
@@ -657,6 +673,7 @@ paths:
   /users/{user}/lists/{id}:
     parameters:
       - $ref: "#/components/parameters/User"
+      - $ref: "#/components/parameters/Nonce"
       - $ref: "#/components/parameters/Id"
     patch:
       tags: [Lists]
@@ -690,6 +707,7 @@ paths:
   /users/{user}/reminder-plans:
     parameters:
       - $ref: "#/components/parameters/User"
+      - $ref: "#/components/parameters/Nonce"
     get:
       tags: [Reminder plans]
       operationId: listReminderPlans
@@ -708,6 +726,7 @@ paths:
   /users/{user}/reminder-plans/{priority}:
     parameters:
       - $ref: "#/components/parameters/User"
+      - $ref: "#/components/parameters/Nonce"
       - name: priority
         in: path
         required: true
@@ -749,6 +768,7 @@ paths:
   /users/{user}/items:
     parameters:
       - $ref: "#/components/parameters/User"
+      - $ref: "#/components/parameters/Nonce"
     get:
       tags: [Items]
       operationId: listItems
@@ -839,6 +859,7 @@ paths:
   /users/{user}/items/{id}:
     parameters:
       - $ref: "#/components/parameters/User"
+      - $ref: "#/components/parameters/Nonce"
       - $ref: "#/components/parameters/Id"
     get:
       tags: [Items]
@@ -892,6 +913,7 @@ paths:
   /users/{user}/items/{id}/subitems:
     parameters:
       - $ref: "#/components/parameters/User"
+      - $ref: "#/components/parameters/Nonce"
       - $ref: "#/components/parameters/Id"
     post:
       tags: [Subitems]
@@ -919,6 +941,7 @@ paths:
   /users/{user}/items/{id}/subitems/order:
     parameters:
       - $ref: "#/components/parameters/User"
+      - $ref: "#/components/parameters/Nonce"
       - $ref: "#/components/parameters/Id"
     put:
       tags: [Subitems]
@@ -944,6 +967,7 @@ paths:
   /users/{user}/items/{id}/subitems/{sid}:
     parameters:
       - $ref: "#/components/parameters/User"
+      - $ref: "#/components/parameters/Nonce"
       - $ref: "#/components/parameters/Id"
       - name: sid
         in: path
@@ -987,6 +1011,7 @@ paths:
   /users/{user}/items/{id}/reminders:
     parameters:
       - $ref: "#/components/parameters/User"
+      - $ref: "#/components/parameters/Nonce"
       - $ref: "#/components/parameters/Id"
     get:
       tags: [Manual reminders]
@@ -1033,6 +1058,7 @@ paths:
   /users/{user}/items/{id}/reminders/{rid}:
     parameters:
       - $ref: "#/components/parameters/User"
+      - $ref: "#/components/parameters/Nonce"
       - $ref: "#/components/parameters/Id"
       - name: rid
         in: path
@@ -1086,6 +1112,7 @@ paths:
   /users/{user}/connections:
     parameters:
       - $ref: "#/components/parameters/User"
+      - $ref: "#/components/parameters/Nonce"
     get:
       tags: [Connections]
       operationId: listUserConnections
@@ -1104,6 +1131,7 @@ paths:
   /users/{user}/connections/{id}:
     parameters:
       - $ref: "#/components/parameters/User"
+      - $ref: "#/components/parameters/Nonce"
       - $ref: "#/components/parameters/Id"
     put:
       tags: [Connections]
@@ -1316,6 +1344,7 @@ paths:
   /users/{user}/identities/{id}:
     parameters:
       - $ref: "#/components/parameters/User"
+      - $ref: "#/components/parameters/Nonce"
       - $ref: "#/components/parameters/Id"
     delete:
       tags: [Account]
@@ -1482,6 +1511,7 @@ paths:
   /users/{user}/reminder-log:
     parameters:
       - $ref: "#/components/parameters/User"
+      - $ref: "#/components/parameters/Nonce"
     get:
       tags: [Deliveries]
       operationId: listReminderLog
@@ -1544,6 +1574,17 @@ components:
       scheme: bearer
       description: A personal token (`plsr_pat_...`) or a connection token (`plsr_con_...`).
   parameters:
+    Nonce:
+      name: X-Request-Nonce
+      in: header
+      description: |
+        A value of your choosing that comes back as `nonce` in every gateway event this
+        request causes. See "Recognising your own changes".
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 64
+        pattern: "^[!-~]+$"
     User:
       name: user
       in: path

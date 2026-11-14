@@ -196,9 +196,8 @@ func setGrant(d *core.Deps) fiber.Handler {
 					out = viewUserConnection(row)
 				}
 			}
-			p, _ := auth.From(c)
 			now := d.Now()
-			if err := events.Append(c.Context(), q, now, userID, auth.ActorFrom(p), "connection.updated", out); err != nil {
+			if err := events.Append(c.Context(), q, now, userID, auth.Actor(c), "connection.updated", out); err != nil {
 				return err
 			}
 			if err := delivery.SyncConnection(c.Context(), q, now, id, userID); err != nil {

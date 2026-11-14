@@ -97,7 +97,6 @@ func createReminder(d *core.Deps) fiber.Handler {
 			return err
 		}
 		userID := auth.Target(c)
-		p, _ := auth.From(c)
 		var created Reminder
 		err = store.UserTx(c.Context(), d.Pool, userID, func(q *sqlc.Queries) error {
 			row, err := LockItem(c.Context(), q, userID, itemID)
@@ -127,10 +126,10 @@ func createReminder(d *core.Deps) fiber.Handler {
 				return err
 			}
 			created = ViewReminder(added)
-			if err := events.Append(c.Context(), q, now, userID, auth.ActorFrom(p), "reminder.created", created); err != nil {
+			if err := events.Append(c.Context(), q, now, userID, auth.Actor(c), "reminder.created", created); err != nil {
 				return err
 			}
-			return announceItem(c, q, now, userID, itemID, auth.ActorFrom(p))
+			return announceItem(c, q, now, userID, itemID, auth.Actor(c))
 		})
 		if err != nil {
 			return err
@@ -150,7 +149,6 @@ func removeReminder(d *core.Deps) fiber.Handler {
 			return err
 		}
 		userID := auth.Target(c)
-		p, _ := auth.From(c)
 		err = store.UserTx(c.Context(), d.Pool, userID, func(q *sqlc.Queries) error {
 			if _, err := LockItem(c.Context(), q, userID, itemID); err != nil {
 				return err
@@ -166,10 +164,10 @@ func removeReminder(d *core.Deps) fiber.Handler {
 				return err
 			}
 			now := d.Now()
-			if err := events.Append(c.Context(), q, now, userID, auth.ActorFrom(p), "reminder.deleted", events.Deleted{ID: id, ItemID: &itemID}); err != nil {
+			if err := events.Append(c.Context(), q, now, userID, auth.Actor(c), "reminder.deleted", events.Deleted{ID: id, ItemID: &itemID}); err != nil {
 				return err
 			}
-			return announceItem(c, q, now, userID, itemID, auth.ActorFrom(p))
+			return announceItem(c, q, now, userID, itemID, auth.Actor(c))
 		})
 		if err != nil {
 			return err

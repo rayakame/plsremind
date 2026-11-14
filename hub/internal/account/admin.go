@@ -224,8 +224,7 @@ func patchUserAccess(d *core.Deps) fiber.Handler {
 				return err
 			}
 			// The user's own clients show the role, so they are told like about any other profile change.
-			admin, _ := auth.From(c)
-			if err := events.Append(c.Context(), q, d.Now(), id, auth.ActorFrom(admin), "user.updated", View(updated)); err != nil {
+			if err := events.Append(c.Context(), q, d.Now(), id, auth.Actor(c), "user.updated", View(updated)); err != nil {
 				return err
 			}
 			return events.NotifyUser(c.Context(), q, events.SignalUser, id)

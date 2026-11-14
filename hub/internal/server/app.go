@@ -89,7 +89,7 @@ func New(d *core.Deps) *Server {
 			return d.RateAuth, p.CredentialID.String()
 		}
 		return d.RateAnon, c.IP()
-	}), auth.Reject())
+	}), auth.Reject(), auth.Nonce())
 	root.Get("/info", info(d))
 	user := root.Group("/users/:user", auth.ResolveUser(d))
 

@@ -54,6 +54,7 @@ type Event struct {
 	ActorKind string
 	ActorID   uuid.UUID
 	CreatedAt time.Time
+	Nonce     *string
 }
 
 type Identity struct {
