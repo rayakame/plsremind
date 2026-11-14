@@ -11,7 +11,11 @@
     "allowImportingTsExtensions": false,
     "skipLibCheck": true,
     "noEmit": true,
-    "types": ["node"]
+    "types": ["node"],
+    "paths": {
+      "plsremind": ["./src/index.ts"],
+      "plsremind/optimistic": ["./src/optimistic/index.ts"]
+    }
   },
   "include": ["src", "test", "examples", "vitest.config.ts"]
 }

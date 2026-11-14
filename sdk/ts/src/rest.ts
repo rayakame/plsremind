@@ -76,7 +76,7 @@ export interface ListItemsQuery {
   sort?: "created" | "due" | "priority" | "completed";
   order?: "asc" | "desc";
   limit?: number;
-  cursor?: string | undefined;
+  cursor?: string | null | undefined;
 }
 
 export interface UserChanges {
@@ -278,7 +278,7 @@ export class RestClient {
   }
 
   listUsers(
-    query: { limit?: number; cursor?: string | undefined } = {},
+    query: { limit?: number; cursor?: string | null | undefined } = {},
     options?: CallOptions,
   ): Promise<Page<AdminUser>> {
     return this.#request("GET", "/admin/users", { query, options });
@@ -516,7 +516,7 @@ export class RestClient {
   }
 
   listReminderLog(
-    query: { itemId?: string; limit?: number; cursor?: string | undefined } = {},
+    query: { itemId?: string; limit?: number; cursor?: string | null | undefined } = {},
     options?: UserOptions,
   ): Promise<Page<ReminderLogEntry>> {
     return this.#request("GET", "/reminder-log", { user: true, query, options });
