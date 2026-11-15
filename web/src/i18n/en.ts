@@ -175,6 +175,19 @@ export const en = {
   "theme.system": "System",
   "theme.light": "Light",
   "theme.dark": "Dark",
+  "keys.title": "Keys",
+  "keys.down": "Select the next item",
+  "keys.up": "Select the previous item",
+  "keys.open": "Open the selected item large",
+  "keys.complete": "Complete the selected item",
+  "keys.new": "New item",
+  "keys.find": "Search",
+  "keys.remind": "Remind about the selected item",
+  "keys.due": "Set the due date",
+  "keys.move": "Move to another list",
+  "keys.goto": "Go to",
+  "keys.theme": "Change the colour scheme",
+  "keys.help": "Show all keys",
 } as const;
 
 export type Key = keyof typeof en;

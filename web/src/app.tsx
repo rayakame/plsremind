@@ -3,6 +3,7 @@ import { useEffect } from "react";
 import { Redirect, Route, Router, Switch, useLocation, useSearch } from "wouter";
 import type { BaseLocationHook, BaseSearchHook } from "wouter";
 import { BarProvider } from "./bar/context.js";
+import { Keys } from "./keys/keys.js";
 import { useProfile } from "./hub/hooks.js";
 import { readPrefs } from "./hub/prefs.js";
 import { SessionProvider, useSession } from "./hub/session.js";
@@ -82,6 +83,7 @@ function SignedIn() {
       <Preferences />
       <SelectionProvider>
         <BarProvider>
+          <Keys />
           <Shell panel={<Details />}>
             <Switch>
               <Route path="/">
