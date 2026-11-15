@@ -59,6 +59,8 @@ export function OpenItems(props: {
   history: readonly Item[];
   sort: Sort;
   showList: boolean;
+  /** A fixed text to narrow to, instead of what the bar holds. */
+  filter?: string;
 }) {
   const t = useT();
   const hub = useHub();
@@ -68,7 +70,8 @@ export function OpenItems(props: {
   const narrow = useNarrow();
   const { selected, select, setOrder } = useSelection();
   const open = useOpenItem();
-  const { filter } = useBar();
+  const bar = useBar();
+  const filter = props.filter ?? bar.filter;
   const shown = filterItems(props.items, filter);
   const done = filter.trim() === "" ? none : filterItems(props.history, filter);
   const groups = groupOpen(shown, now, props.sort);

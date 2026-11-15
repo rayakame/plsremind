@@ -7,9 +7,11 @@ import type {
   Priority,
   ReminderOverride,
   Subitem,
+  User,
 } from "plsremind";
 import type { OptimisticView } from "plsremind/optimistic";
 import type { When } from "../time/when.js";
+import { mergePrefs, type Prefs } from "./prefs.js";
 import { instantAt } from "../time/zone.js";
 
 /** What a write needs: the client to call and the view to show the change in. */
@@ -347,6 +349,19 @@ export function removeReminder(hub: Writer, item: Item, reminder: ManualReminder
         hub.client.rest.deleteReminder(id, partId(hub, reminder.id), { nonce }),
       ),
   );
+}
+
+/** Changes the dashboard's own preferences and keeps what other clients stored. */
+export function setPrefs(hub: Writer, patch: Partial<Prefs>): Promise<void> {
+  const profile = hub.view.user(hub.userId)?.profile as User | undefined;
+  const preferences = mergePrefs(profile?.preferences, patch);
+  return hub.view
+    .apply(
+      [{ kind: "profile", update: (before) => ({ ...before, preferences }) }],
+      (nonce) => hub.client.rest.updateUser({ preferences }, { nonce }),
+      { user: hub.userId },
+    )
+    .then(() => undefined);
 }
 
 /** Creates a list, shown at once as a draft. Resolves with its real id. */

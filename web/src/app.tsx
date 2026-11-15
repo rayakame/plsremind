@@ -8,6 +8,7 @@ import { readPrefs } from "./hub/prefs.js";
 import { SessionProvider, useSession } from "./hub/session.js";
 import { setLocale, useT } from "./i18n/index.js";
 import { LoginPage, RegisterPage, SetupPage } from "./pages/account.js";
+import { FindPage } from "./pages/find.js";
 import { ItemPage } from "./pages/item.js";
 import { AllItemsPage, ListPage } from "./pages/items.js";
 import { Details } from "./shell/details.js";
@@ -87,6 +88,9 @@ function SignedIn() {
                 <AllItemsPage />
               </Route>
               <Route path="/lists/:id">{(params) => <ListPage id={params.id} />}</Route>
+              <Route path="/find">
+                <FindPage />
+              </Route>
               <Route path="/calendar">
                 <Placeholder title={t("nav.calendar")} />
               </Route>
