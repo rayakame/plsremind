@@ -2,6 +2,7 @@ import type { Client } from "plsremind";
 import { useEffect } from "react";
 import { Redirect, Route, Router, Switch, useLocation, useSearch } from "wouter";
 import type { BaseLocationHook, BaseSearchHook } from "wouter";
+import { BarProvider } from "./bar/context.js";
 import { useProfile } from "./hub/hooks.js";
 import { readPrefs } from "./hub/prefs.js";
 import { SessionProvider, useSession } from "./hub/session.js";
@@ -79,27 +80,29 @@ function SignedIn() {
     <NoticesProvider>
       <Preferences />
       <SelectionProvider>
-        <Shell panel={<Details />}>
-          <Switch>
-            <Route path="/">
-              <AllItemsPage />
-            </Route>
-            <Route path="/lists/:id">{(params) => <ListPage id={params.id} />}</Route>
-            <Route path="/calendar">
-              <Placeholder title={t("nav.calendar")} />
-            </Route>
-            <Route path="/done">
-              <Placeholder title={t("nav.done")} />
-            </Route>
-            <Route path="/items/:id">{(params) => <ItemPage id={params.id} />}</Route>
-            <Route path="/settings/:area?">
-              <Placeholder title={t("nav.settings")} />
-            </Route>
-            <Route>
-              <NotFound />
-            </Route>
-          </Switch>
-        </Shell>
+        <BarProvider>
+          <Shell panel={<Details />}>
+            <Switch>
+              <Route path="/">
+                <AllItemsPage />
+              </Route>
+              <Route path="/lists/:id">{(params) => <ListPage id={params.id} />}</Route>
+              <Route path="/calendar">
+                <Placeholder title={t("nav.calendar")} />
+              </Route>
+              <Route path="/done">
+                <Placeholder title={t("nav.done")} />
+              </Route>
+              <Route path="/items/:id">{(params) => <ItemPage id={params.id} />}</Route>
+              <Route path="/settings/:area?">
+                <Placeholder title={t("nav.settings")} />
+              </Route>
+              <Route>
+                <NotFound />
+              </Route>
+            </Switch>
+          </Shell>
+        </BarProvider>
       </SelectionProvider>
     </NoticesProvider>
   );

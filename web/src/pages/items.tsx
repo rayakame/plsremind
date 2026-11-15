@@ -1,12 +1,14 @@
 import type { Item, List } from "plsremind";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useLocation } from "wouter";
-import { useItems, useLists } from "../hub/hooks.js";
+import { useBar } from "../bar/context.js";
+import { useHistory, useItems, useLists } from "../hub/hooks.js";
 import { useNow } from "../hub/now.js";
 import { useHub } from "../hub/session.js";
 import { moveList, removeList, renameList, setDone } from "../hub/write.js";
 import { useT, type Key } from "../i18n/index.js";
 import { flatOrder, groupOpen, type GroupKey } from "../model/groups.js";
+import { filterItems } from "../model/search.js";
 import { useNotices } from "../shell/notices.js";
 import { routes } from "../shell/router.js";
 import { useOpenItem, useSelection } from "../shell/selection.js";
@@ -39,6 +41,7 @@ export function itemsOf(items: readonly Item[], listId: string): readonly Item[]
 }
 
 type Sort = "due" | "priority";
+const none: readonly Item[] = Object.freeze([]);
 
 function storedSort(listId: string): Sort {
   try {
@@ -51,7 +54,12 @@ function storedSort(listId: string): Sort {
 const rowKey = (item: Item) => item.id;
 
 /** Open items in groups, with the handlers every such view shares. */
-export function OpenItems(props: { items: readonly Item[]; sort: Sort; showList: boolean }) {
+export function OpenItems(props: {
+  items: readonly Item[];
+  history: readonly Item[];
+  sort: Sort;
+  showList: boolean;
+}) {
   const t = useT();
   const hub = useHub();
   const { guard } = useNotices();
@@ -60,15 +68,24 @@ export function OpenItems(props: { items: readonly Item[]; sort: Sort; showList:
   const narrow = useNarrow();
   const { selected, select, setOrder } = useSelection();
   const open = useOpenItem();
-  const groups = groupOpen(props.items, now, props.sort);
+  const { filter } = useBar();
+  const shown = filterItems(props.items, filter);
+  const done = filter.trim() === "" ? none : filterItems(props.history, filter);
+  const groups = groupOpen(shown, now, props.sort);
 
-  const order = useMemo(() => flatOrder(groups), [groups]);
+  const order = useMemo(
+    () => [...flatOrder(groups), ...done.map((item) => item.id)],
+    [groups, done],
+  );
   useEffect(() => setOrder(order), [order, setOrder]);
 
   const names = useMemo(() => new Map(lists.map((list) => [list.id, list.name])), [lists]);
   const labelled = useMemo(
-    () => groups.map((group) => ({ ...group, label: t(groupLabels[group.key]) })),
-    [groups, t],
+    () => [
+      ...groups.map((group) => ({ ...group, label: t(groupLabels[group.key]) })),
+      ...(done.length > 0 ? [{ key: "done", label: t("nav.done"), items: done }] : []),
+    ],
+    [groups, done, t],
   );
   const toggle = useCallback(
     (item: Item) => void guard(setDone(hub, item, item.status !== "done")),
@@ -95,7 +112,9 @@ export function OpenItems(props: { items: readonly Item[]; sort: Sort; showList:
     [now, showList, names, selected, toggle, pick, openItem],
   );
 
-  if (props.items.length === 0) return <p className="lead">{t("items.empty")}</p>;
+  if (labelled.length === 0) {
+    return <p className="lead">{t(filter.trim() === "" ? "items.empty" : "items.noMatch")}</p>;
+  }
   return (
     <VirtualRows
       label={t("items.label")}
@@ -110,10 +129,11 @@ export function OpenItems(props: { items: readonly Item[]; sort: Sort; showList:
 export function AllItemsPage() {
   const t = useT();
   const items = useItems();
+  const history = useHistory();
   return (
     <>
       <h1 className="h1">{t("nav.all")}</h1>
-      <OpenItems items={items} sort="due" showList />
+      <OpenItems items={items} history={history} sort="due" showList />
     </>
   );
 }
@@ -192,6 +212,7 @@ function ListHeader(props: { list: List; sort: Sort; onSort: (sort: Sort) => voi
 export function ListPage(props: { id: string }) {
   const lists = useLists();
   const items = useItems();
+  const history = useHistory();
   const list = lists.find((one) => one.id === props.id);
   const [sort, setSort] = useState<Sort>(() => storedSort(props.id));
   useEffect(() => setSort(storedSort(props.id)), [props.id]);
@@ -208,7 +229,12 @@ export function ListPage(props: { id: string }) {
   return (
     <>
       <ListHeader list={list} sort={sort} onSort={change} />
-      <OpenItems items={itemsOf(items, list.id)} sort={sort} showList={false} />
+      <OpenItems
+        items={itemsOf(items, list.id)}
+        history={itemsOf(history, list.id)}
+        sort={sort}
+        showList={false}
+      />
     </>
   );
 }

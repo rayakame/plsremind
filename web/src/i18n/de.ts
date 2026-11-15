@@ -155,4 +155,8 @@ export const de: Texts = {
   "status.superseded": "ersetzt",
   "status.cancelled": "zurückgezogen",
   "status.expired": "abgelaufen",
+  "bar.label": "Suchen, anlegen oder Befehl eingeben",
+  "bar.placeholder": "Suchen oder anlegen, {prefix} für Befehle",
+  "bar.newItem": "Neuer Eintrag",
+  "items.noMatch": "Nichts passt.",
 };

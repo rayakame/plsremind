@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { useLocation } from "wouter";
 import { useT } from "../i18n/index.js";
+import { Bar } from "../bar/bar.js";
 import { Button } from "../ui/controls.js";
 import { Icon } from "../ui/icon.js";
 import { ConnectionLine, ZoneLine } from "./lines.js";
@@ -37,6 +38,7 @@ export function Shell(props: { panel: ReactNode; children: ReactNode }) {
           >
             <Icon name="menu" />
           </Button>
+          <Bar />
         </div>
         <ConnectionLine />
         <ZoneLine />

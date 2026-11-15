@@ -151,6 +151,10 @@ export const en = {
   "status.superseded": "replaced",
   "status.cancelled": "withdrawn",
   "status.expired": "expired",
+  "bar.label": "Search, create or type a command",
+  "bar.placeholder": "Search or create, {prefix} for commands",
+  "bar.newItem": "New item",
+  "items.noMatch": "Nothing matches.",
 } as const;
 
 export type Key = keyof typeof en;
