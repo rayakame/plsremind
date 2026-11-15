@@ -78,7 +78,7 @@ export function Bar() {
     if (!typed) return;
     if (exact && Array.isArray(understood)) {
       const work = exact.run(typed.rest, ctx);
-      bar.setText("");
+      bar.clear();
       if (work) void guard(work);
     } else if (!exact && offered[at]) {
       bar.setText(`${bar.prefix}${offered[at].name} `);

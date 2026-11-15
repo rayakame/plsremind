@@ -180,3 +180,14 @@ test("another prefix replaces the slash", async () => {
   await userEvent.type(bar(), "!go calendar{Enter}");
   expect(made.path()).toBe("/calendar");
 });
+
+test("after a command the bar lets go, so that single keys work again", async () => {
+  const made = await app();
+  await userEvent.type(bar(), "/go all{Enter}");
+  expect(document.activeElement).not.toBe(bar());
+  await userEvent.keyboard("g");
+  expect((bar() as HTMLInputElement).value).toBe("/go ");
+  await userEvent.keyboard("calendar{Enter}");
+  expect(made.path()).toBe("/calendar");
+  expect(document.activeElement).not.toBe(bar());
+});

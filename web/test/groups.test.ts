@@ -103,3 +103,15 @@ test("a search folds case and accents and wants every word", () => {
   expect(filterItems(items, "rep")).toBe(filterItems(items, "rep"));
   expect(filterItems(items, "zzz")).toEqual([]);
 });
+
+test("a search word has to start a word, not sit in the middle of one", () => {
+  const items = [
+    item({ id: "a", title: "Test" }),
+    item({ id: "b", title: "ST Wiederholung" }),
+    item({ id: "c", title: "Kurz-Test (st.)" }),
+    item({ id: "d", title: "Liste", note: "erst morgen\nstatt heute" }),
+  ];
+  expect(ids(filterItems(items, "ST"))).toEqual(["b", "c", "d"]);
+  expect(ids(filterItems(items, "te"))).toEqual(["a", "c"]);
+  expect(ids(filterItems(items, "est"))).toEqual([]);
+});
