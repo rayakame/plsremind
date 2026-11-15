@@ -69,13 +69,13 @@ function settled(hub: Writer, id: string): Promise<string> {
 const chains = new WeakMap<OptimisticView, Map<string, Promise<unknown>>>();
 const parts = new WeakMap<OptimisticView, Map<string, string>>();
 
-/** Runs the calls about one item's parts one after the other, in the order they were made. */
-function inOrder<T>(hub: Writer, itemId: string, work: () => Promise<T>): Promise<T> {
-  let byItem = chains.get(hub.view);
-  if (!byItem) chains.set(hub.view, (byItem = new Map()));
-  const next = (byItem.get(itemId) ?? Promise.resolve()).then(work, work);
-  byItem.set(
-    itemId,
+/** Runs the calls about one object one after the other, in the order they were made. */
+function inOrder<T>(hub: Writer, id: string, work: () => Promise<T>): Promise<T> {
+  let byObject = chains.get(hub.view);
+  if (!byObject) chains.set(hub.view, (byObject = new Map()));
+  const next = (byObject.get(id) ?? Promise.resolve()).then(work, work);
+  byObject.set(
+    id,
     next.catch(() => {}),
   );
   return next;
@@ -171,7 +171,7 @@ function updateItem(
   return hub.view
     .apply(
       [{ kind: "item", id: item.id, update: shown }],
-      async (nonce) => call(await settled(hub, item.id), nonce),
+      (nonce) => inOrder(hub, item.id, async () => call(await settled(hub, item.id), nonce)),
       { user: hub.userId },
     )
     .then(() => undefined);
@@ -210,7 +210,10 @@ export function patchItem(hub: Writer, item: Item, patch: ItemPatch): Promise<vo
 export function removeItem(hub: Writer, item: Item): Promise<void> {
   return hub.view.apply(
     [{ kind: "item", id: item.id, remove: true }],
-    async (nonce) => hub.client.rest.deleteItem(await settled(hub, item.id), { nonce }),
+    (nonce) =>
+      inOrder(hub, item.id, async () =>
+        hub.client.rest.deleteItem(await settled(hub, item.id), { nonce }),
+      ),
     { user: hub.userId },
   );
 }
@@ -233,11 +236,10 @@ export function addSubitem(hub: Writer, item: Item, title: string): Promise<void
       before.subitems.some((one) => one.id === partId(hub, draft.id))
         ? before
         : { ...before, subitems: [...before.subitems, draft] },
-    (id, nonce) =>
-      inOrder(hub, item.id, async () => {
-        const created = await hub.client.rest.createSubitem(id, { title }, { nonce });
-        learnPart(hub, draft.id, created.id);
-      }),
+    async (id, nonce) => {
+      const created = await hub.client.rest.createSubitem(id, { title }, { nonce });
+      learnPart(hub, draft.id, created.id);
+    },
   );
 }
 
@@ -256,10 +258,7 @@ export function patchSubitem(
         one.id === subitem.id || one.id === partId(hub, subitem.id) ? { ...one, ...patch } : one,
       ),
     }),
-    (id, nonce) =>
-      inOrder(hub, item.id, () =>
-        hub.client.rest.updateSubitem(id, partId(hub, subitem.id), patch, { nonce }),
-      ),
+    (id, nonce) => hub.client.rest.updateSubitem(id, partId(hub, subitem.id), patch, { nonce }),
   );
 }
 
@@ -273,10 +272,7 @@ export function removeSubitem(hub: Writer, item: Item, subitem: Subitem): Promis
         (one) => one.id !== subitem.id && one.id !== partId(hub, subitem.id),
       ),
     }),
-    (id, nonce) =>
-      inOrder(hub, item.id, () =>
-        hub.client.rest.deleteSubitem(id, partId(hub, subitem.id), { nonce }),
-      ),
+    (id, nonce) => hub.client.rest.deleteSubitem(id, partId(hub, subitem.id), { nonce }),
   );
 }
 
@@ -299,13 +295,7 @@ export function moveSubitem(hub: Writer, item: Item, subitem: Subitem, by: -1 | 
       }),
     }),
     (id, nonce) =>
-      inOrder(hub, item.id, () =>
-        hub.client.rest.reorderSubitems(
-          id,
-          { ids: order.map((one) => partId(hub, one)) },
-          { nonce },
-        ),
-      ),
+      hub.client.rest.reorderSubitems(id, { ids: order.map((one) => partId(hub, one)) }, { nonce }),
   );
 }
 
@@ -328,11 +318,10 @@ export function addReminder(hub: Writer, item: Item, at: Date): Promise<void> {
               (a, b) => a.remindAt.getTime() - b.remindAt.getTime(),
             ),
           },
-    (id, nonce) =>
-      inOrder(hub, item.id, async () => {
-        const created = await hub.client.rest.createReminder(id, { at }, { nonce });
-        learnPart(hub, draft.id, created.id);
-      }),
+    async (id, nonce) => {
+      const created = await hub.client.rest.createReminder(id, { at }, { nonce });
+      learnPart(hub, draft.id, created.id);
+    },
   );
 }
 
@@ -346,10 +335,7 @@ export function removeReminder(hub: Writer, item: Item, reminder: ManualReminder
         (one) => one.id !== reminder.id && one.id !== partId(hub, reminder.id),
       ),
     }),
-    (id, nonce) =>
-      inOrder(hub, item.id, () =>
-        hub.client.rest.deleteReminder(id, partId(hub, reminder.id), { nonce }),
-      ),
+    (id, nonce) => hub.client.rest.deleteReminder(id, partId(hub, reminder.id), { nonce }),
   );
 }
 
@@ -422,7 +408,10 @@ export function renameList(hub: Writer, list: List, name: string): Promise<void>
   return hub.view
     .apply(
       [{ kind: "list", id: list.id, update: (before) => ({ ...before, name }) }],
-      async (nonce) => hub.client.rest.renameList(await settled(hub, list.id), { name }, { nonce }),
+      (nonce) =>
+        inOrder(hub, list.id, async () =>
+          hub.client.rest.renameList(await settled(hub, list.id), { name }, { nonce }),
+        ),
       { user: hub.userId },
     )
     .then(() => undefined);
@@ -446,7 +435,10 @@ export function removeList(hub: Writer, list: List): Promise<void> {
         update: (before: Item) => ({ ...before, listId: inbox! }),
       })),
     ],
-    async (nonce) => hub.client.rest.deleteList(await settled(hub, list.id), { nonce }),
+    (nonce) =>
+      inOrder(hub, list.id, async () =>
+        hub.client.rest.deleteList(await settled(hub, list.id), { nonce }),
+      ),
     { user: hub.userId },
   );
 }

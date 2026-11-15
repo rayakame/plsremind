@@ -1,0 +1,46 @@
+name: web
+
+on:
+  push:
+    branches: [main]
+    paths: ["web/**", "sdk/ts/**", "hub/**", "package*.json", ".github/workflows/web.yml"]
+  pull_request:
+    paths: ["web/**", "sdk/ts/**", "hub/**", "package*.json", ".github/workflows/web.yml"]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [22, current]
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: hub/go.mod
+          cache-dependency-path: hub/go.sum
+      - run: npm ci
+        working-directory: .
+      - run: npm run check
+      - run: npm test
+      - run: npm run build
+      - run: npm run size
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e
+      - uses: actions/upload-artifact@v5
+        if: failure()
+        with:
+          name: playwright-report-node-${{ matrix.node }}
+          path: |
+            web/playwright-report
+            web/test-results
+          retention-days: 7

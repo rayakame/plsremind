@@ -21,12 +21,7 @@ export function Details() {
   return (
     <aside className="panel" aria-label={t("item.details")}>
       <div className="between">
-        <Button
-          onClick={() => {
-            select(undefined);
-            open(item.id);
-          }}
-        >
+        <Button onClick={() => open(item.id)}>
           <Icon name="open" />
           {t("item.openLarge")}
         </Button>

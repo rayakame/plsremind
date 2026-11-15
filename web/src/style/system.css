@@ -712,12 +712,14 @@ fieldset.card {
   background: transparent;
   font-size: var(--t5);
   line-height: var(--t5-line);
-  color: var(--muted);
+  color: var(--text);
+  font-weight: 500;
   cursor: pointer;
 }
 
 .cal .out .n {
-  color: var(--line-strong);
+  color: var(--muted);
+  font-weight: 400;
 }
 
 .cal .today .n {

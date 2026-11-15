@@ -56,7 +56,7 @@ async function until(what: string, attempt: () => Promise<boolean>, seconds = 60
 }
 
 /** Builds the hub and runs it against a throwaway PostgreSQL in Docker. */
-export async function launchHub(): Promise<LaunchedHub> {
+export async function launchHub(options: { publicUrl?: string } = {}): Promise<LaunchedHub> {
   const work = mkdtempSync(join(tmpdir(), "plsremind-hub-"));
   const binary = join(work, "plsremind");
   let container = "";
@@ -122,7 +122,7 @@ export async function launchHub(): Promise<LaunchedHub> {
         env: {
           PATH: process.env.PATH ?? "",
           PLSREMIND_DATABASE_URL: databaseUrl,
-          PLSREMIND_PUBLIC_URL: url,
+          PLSREMIND_PUBLIC_URL: options.publicUrl ?? url,
           PLSREMIND_LISTEN_ADDR: `127.0.0.1:${port}`,
           PLSREMIND_SECRET_KEY: secret,
           PLSREMIND_PROXY_HEADER: proxyHeader,

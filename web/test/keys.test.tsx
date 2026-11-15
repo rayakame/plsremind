@@ -62,6 +62,7 @@ test("x completes the selected item and Enter opens it", async () => {
   expect(app.sent("PATCH", "/users/@me/items/a")[0]!.body).toEqual({ status: "done" });
   await userEvent.keyboard("j{Enter}");
   expect(app.path()).toBe("/items/b");
+  expect(screen.queryByRole("complementary", { name: "Details" })).toBeNull();
 });
 
 test("keys typed into a field are just text", async () => {

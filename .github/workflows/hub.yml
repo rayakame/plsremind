@@ -3,9 +3,25 @@ name: hub
 on:
   push:
     branches: [main]
-    paths: ["hub/**", "docs/api/**", "deploy/**", ".github/workflows/hub.yml"]
+    paths:
+      - "hub/**"
+      - "docs/api/**"
+      - "deploy/**"
+      - "web/**"
+      - "sdk/ts/**"
+      - "package*.json"
+      - ".dockerignore"
+      - ".github/workflows/hub.yml"
   pull_request:
-    paths: ["hub/**", "docs/api/**", "deploy/**", ".github/workflows/hub.yml"]
+    paths:
+      - "hub/**"
+      - "docs/api/**"
+      - "deploy/**"
+      - "web/**"
+      - "sdk/ts/**"
+      - "package*.json"
+      - ".dockerignore"
+      - ".github/workflows/hub.yml"
 
 jobs:
   test:

@@ -26,9 +26,15 @@ export function useSelection(): Selection {
   return selection;
 }
 
-/** Opens an item's own page and remembers the view's order for previous and next. */
+/** Opens an item's own page, without the detail column next to it. */
 export function useOpenItem(): (id: string) => void {
-  const { order } = useSelection();
+  const { select } = useSelection();
   const [, navigate] = useLocation();
-  return useCallback((id) => navigate(routes.item(id), { state: { order } }), [navigate, order]);
+  return useCallback(
+    (id) => {
+      select(undefined);
+      navigate(routes.item(id));
+    },
+    [navigate, select],
+  );
 }

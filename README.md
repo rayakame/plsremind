@@ -4,16 +4,20 @@ plsremind keeps your todos and deadlines in one place and reminds you about them
 It is self-hostable and built around a documented API, so you can connect your own
 tools to it the same way you would write a bot.
 
-The project is in early development. What exists today is the hub: accounts, login,
-lists, items, reminders with confirmed delivery, the REST API and the WebSocket gateway.
-There is a TypeScript SDK to build on it. The dashboard, the Python SDK and the Discord
-bot are next.
+The project is in early development. What exists today is the hub (accounts, login,
+lists, items, reminders with confirmed delivery, the REST API and the WebSocket gateway),
+a dashboard in the browser, and a TypeScript SDK to build on. The Python SDK and the
+Discord bot are next.
 
 ## How it fits together
 
 - **Hub** (`hub/`): the server that holds all logic and data. Everything else talks to its API.
+- **Dashboard** (`web/`): the web interface, served by the hub. It keeps everything in
+  memory through the gateway, so nothing waits for the network after the first load.
+  See [web](web/README.md).
 - **TypeScript SDK** (`sdk/ts/`): a client for browsers and Node that speaks the gateway,
-  keeps the state in memory and wraps the REST API. See [sdk/ts](sdk/ts/README.md).
+  keeps the state in memory and wraps the REST API. The dashboard is built on it.
+  See [sdk/ts](sdk/ts/README.md).
 - **Connections**: integrations an admin installs for all users of an instance, such as a
   Discord bot.
 - **Adapters**: your own tools, using a personal token that only reaches your data.
@@ -24,8 +28,9 @@ bot are next.
 cd deploy
 echo "PLSREMIND_SECRET_KEY=$(openssl rand -base64 32)" > .env
 docker compose up -d
-curl http://localhost:8080/api/v1/info
 ```
+
+Then open http://localhost:8080 and create the first account.
 
 See [docs/self-hosting.md](docs/self-hosting.md) for setup and configuration,
 [docs/api/openapi.yaml](docs/api/openapi.yaml) for the REST API and
@@ -41,9 +46,13 @@ cd hub
 make test      # needs Docker, the tests start their own PostgreSQL
 make lint
 make generate  # after changing SQL in internal/store
+make web       # builds the dashboard into the binary; needs "npm ci" at the root first
 ```
 
-The TypeScript SDK lives in an npm workspace.
+Without `make web` the binary serves a placeholder page instead of the dashboard. The
+Docker image always contains it.
+
+The TypeScript SDK and the dashboard live in one npm workspace.
 
 ```sh
 npm install
@@ -51,6 +60,12 @@ cd sdk/ts
 npm run check
 npm test
 npm run test:hub  # needs Docker and Go, starts a real hub
+
+cd ../../web
+npm run dev       # against a hub on localhost:8080
+npm run check
+npm test
+npm run test:e2e  # needs Docker and Go, drives a browser against a real hub
 ```
 
 ## License

@@ -21,7 +21,7 @@ test("completing shows at once and tells the hub with a nonce", async () => {
   const done = setDone(hub.own, hub.mine().item("a")!, true);
   expect(ids(hub.mine().items())).toEqual(["b"]);
   expect(ids(hub.mine().history())).toEqual(["a"]);
-  await Promise.resolve();
+  await settle();
   const call = hub.sent("PATCH", "/users/@me/items/a")[0]!;
   expect(call.body).toEqual({ status: "done" });
   expect(call.headers["x-request-nonce"]).toMatch(/^[A-Za-z0-9]{16}$/);
@@ -49,7 +49,7 @@ test("a new item shows as a draft in the inbox and resolves to the real one", as
   const draft = hub.mine().items().at(-1)!;
   expect(draft.id).toMatch(/^tmp_/);
   expect(draft).toMatchObject({ title: "Fresh", listId: "l1", priority: "normal", status: "open" });
-  await Promise.resolve();
+  await settle();
   const call = hub.sent("POST", "/users/@me/items")[0]!;
   expect(call.body).toEqual({ title: "Fresh", list_id: "l1" });
   const real = wireItem({ id: "real", title: "Fresh" });
@@ -74,7 +74,7 @@ test("a due day or time is sent the way the hub wants it, in the profile's zone"
     dueDate: "2026-11-20",
     dueAt: new Date("2026-11-20T22:59:59Z"),
   });
-  await Promise.resolve();
+  await settle();
   expect(hub.sent("POST", "/users/@me/items")[0]!.body).toEqual({
     title: "Whole day",
     list_id: "l2",
@@ -84,13 +84,13 @@ test("a due day or time is sent the way the hub wants it, in the profile's zone"
 
   void patchItem(hub.own, hub.mine().item("a")!, { due: { day: "2026-03-29", time: "12:00" } });
   expect(hub.mine().item("a")).toMatchObject({ allDay: false, dueDate: null });
-  await Promise.resolve();
+  await settle();
   expect(hub.sent("PATCH", "/users/@me/items/a")[0]!.body).toEqual({
     due_at: "2026-03-29T10:00:00.000Z",
   });
 
   void patchItem(hub.own, hub.mine().item("a")!, { due: null, title: "Renamed" });
-  await Promise.resolve();
+  await settle();
   expect(hub.sent("PATCH", "/users/@me/items/a")[1]!.body).toEqual({
     due_at: null,
     title: "Renamed",
@@ -106,7 +106,7 @@ test("a change to a draft waits for the real id", async () => {
   const draft = hub.mine().items().at(-1)!;
   const done = setDone(hub.own, draft, true);
   expect(hub.mine().item(draft.id)!.status).toBe("done");
-  await Promise.resolve();
+  await settle();
   expect(hub.sent("PATCH", /items/)).toHaveLength(0);
   const nonce = hub.sent("POST", "/users/@me/items")[0]!.headers["x-request-nonce"]!;
   await hub.send("item.created", change("u1", wireItem({ id: "real", title: "Fresh" }), nonce));
@@ -188,4 +188,28 @@ test("a change to a subitem that is still a draft waits for it and then names th
   ).toBe("s9:true");
   expect(hub.sent("POST", "/users/@me/items/a/subitems")).toHaveLength(2);
   expect(hub.sent("PATCH", "/users/@me/items/a/subitems/s9")[0]!.body).toEqual({ done: true });
+});
+
+test("two changes to one item reach the hub in the order they were made", async () => {
+  const hub = await connectedHub();
+  const first = deferred<{ status: number; body: unknown }>();
+  let asked = 0;
+  hub.route("PATCH", "/users/@me/items/a", () =>
+    ++asked === 1 ? first.promise : { status: 200, body: wireItem({ id: "a" }) },
+  );
+  hub.route("PATCH", "/users/@me/items/b", { status: 200, body: wireItem({ id: "b" }) });
+  void patchItem(hub.own, hub.mine().item("a")!, { due: { day: "2030-01-15", time: null } });
+  void patchItem(hub.own, hub.mine().item("a")!, { due: { day: "2030-01-15", time: "12:00" } });
+  void patchItem(hub.own, hub.mine().item("b")!, { title: "Other" });
+  await settle();
+  expect(hub.sent("PATCH", "/users/@me/items/a").map((call) => call.body)).toEqual([
+    { due_date: "2030-01-15" },
+  ]);
+  expect(hub.sent("PATCH", "/users/@me/items/b")).toHaveLength(1);
+  first.resolve({ status: 200, body: wireItem({ id: "a" }) });
+  await settle();
+  expect(hub.sent("PATCH", "/users/@me/items/a").map((call) => call.body)).toEqual([
+    { due_date: "2030-01-15" },
+    { due_at: "2030-01-15T11:00:00.000Z" },
+  ]);
 });
