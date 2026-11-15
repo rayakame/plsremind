@@ -340,6 +340,9 @@ export const en = {
   "item.loadFailed": "This item could not be loaded.",
   "common.retry": "Try again",
   "personal.keyReserved": "{key} is the command prefix.",
+  "keys.back": "Deselect or go back",
+  "cmd.dueExample": "today, tomorrow 12:00, fri, 13.11., 2026-11-13, or - for none",
+  "cmd.remindExample": "30m, 2h, 1d",
 } as const;
 
 export type Key = keyof typeof en;

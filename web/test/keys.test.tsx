@@ -1,6 +1,6 @@
 import { cleanup, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, expect, test } from "vitest";
+import { afterEach, expect, test, vi } from "vitest";
 import { actions, bindings, defaults, rebind } from "../src/keys/actions.js";
 import { renderApp, wireItem, wireUser } from "./support.js";
 
@@ -22,8 +22,8 @@ const sync = {
 };
 
 test("every action has one key and the defaults do not collide", () => {
-  expect(actions).toHaveLength(12);
-  expect(new Set(Object.values(defaults)).size).toBe(12);
+  expect(actions).toHaveLength(13);
+  expect(new Set(Object.values(defaults)).size).toBe(13);
   expect(bindings({}).get("x")).toBe("complete");
   expect(bindings({ complete: "c" }).get("c")).toBe("complete");
   expect(bindings({ complete: "c" }).has("x")).toBe(false);
@@ -100,7 +100,7 @@ test("the question mark shows every key, and nothing else acts while it is open"
   const app = await renderApp({ sync });
   await userEvent.keyboard("?");
   const help = within(screen.getByRole("dialog", { name: "Keys" }));
-  expect(help.getAllByRole("listitem")).toHaveLength(12);
+  expect(help.getAllByRole("listitem")).toHaveLength(13);
   expect(help.getAllByRole("listitem")[3]!.textContent).toBe("Complete the selected item" + "x");
   await userEvent.keyboard("j");
   expect(current()).toEqual([]);
@@ -184,4 +184,44 @@ test("x completes the item whose page is open", async () => {
 test("the arrow keys stay with moving through the list", () => {
   expect(rebind({}, "complete", "ArrowDown")).toEqual({ ok: false, conflict: "down" });
   expect(rebind({}, "open", "ArrowUp")).toEqual({ ok: false, conflict: "up" });
+});
+
+test("Enter opens the selected item even when a link in the sidebar still has the focus", async () => {
+  const app = await renderApp({ sync });
+  await userEvent.click(screen.getByRole("link", { name: /All items/ }));
+  expect(document.activeElement).toBe(screen.getByRole("link", { name: /All items/ }));
+  await userEvent.keyboard("{ArrowDown}{Enter}");
+  expect(app.path()).toBe("/items/a");
+});
+
+test("Escape deselects, then lets go of the calendar's day, and leaves an item's page", async () => {
+  const app = await renderApp({ sync });
+  await userEvent.keyboard("j");
+  expect(screen.getByRole("complementary", { name: "Details" })).toBeTruthy();
+  await userEvent.keyboard("{Escape}");
+  expect(screen.queryByRole("complementary", { name: "Details" })).toBeNull();
+  expect(current()).toEqual([]);
+
+  await userEvent.keyboard("j{Enter}");
+  expect(app.path()).toBe("/items/a");
+  const back = vi.spyOn(history, "back").mockImplementation(() => {});
+  await userEvent.keyboard("{Escape}");
+  expect(back).toHaveBeenCalledOnce();
+});
+
+test("Escape on an item's page that was opened directly leads to all items", async () => {
+  const app = await renderApp({ sync, path: "/items/a" });
+  await userEvent.keyboard("{Escape}");
+  expect(app.path()).toBe("/");
+});
+
+test("Escape in a field is left to the field", async () => {
+  await renderApp({ sync });
+  await userEvent.keyboard("j");
+  const title = within(screen.getByRole("complementary", { name: "Details" })).getByLabelText(
+    "Title",
+  );
+  await userEvent.click(title);
+  await userEvent.keyboard("{Escape}");
+  expect(screen.getByRole("complementary", { name: "Details" })).toBeTruthy();
 });

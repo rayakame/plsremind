@@ -10,7 +10,13 @@ import { useSelection } from "../shell/selection.js";
 import { Button } from "../ui/controls.js";
 import { Icon } from "../ui/icon.js";
 import { Kbd } from "../ui/layout.js";
-import { commandNames, commands, type Command, type CommandContext } from "./commands.js";
+import {
+  commandNames,
+  commands,
+  type Choice,
+  type Command,
+  type CommandContext,
+} from "./commands.js";
 import { useBar } from "./context.js";
 import { complete, parseCommand } from "./parse.js";
 import { QuickForm } from "./quick-form.js";
@@ -43,7 +49,7 @@ export function Bar() {
       : exact
         ? [exact]
         : [];
-  useEffect(() => setAt(0), [bar.text]);
+  useEffect(() => setAt(naming ? 0 : -1), [bar.text, naming]);
 
   const ctx: CommandContext = {
     hub,
@@ -60,6 +66,8 @@ export function Bar() {
       : exact.needsItem && !item
         ? "needsItem"
         : exact.preview(typed.rest, ctx);
+  const choices: readonly Choice[] =
+    typed && exact && !naming ? (exact.choices?.(typed.rest, ctx, bar.prefix) ?? []) : [];
 
   const create = (draft: ItemDraft) => void guard(createItem(hub, draft));
   const submit = () => {
@@ -74,16 +82,23 @@ export function Bar() {
     });
     bar.setText("");
   };
+  /** Runs a command as written. One that cannot run yet is left in the bar. */
+  function execute(text: string) {
+    const written = parseCommand(text, bar.prefix);
+    const command = written && commands.find((one) => one.name === written.name);
+    const ready =
+      written && command && !(command.needsItem && !item) && command.preview(written.rest, ctx);
+    if (!written || !command || !ready) return bar.setText(text);
+    const work = command.run(written.rest, ctx);
+    bar.clear();
+    if (work) void guard(work);
+  }
   function run() {
     if (!typed) return;
-    if (exact && Array.isArray(understood)) {
-      const work = exact.run(typed.rest, ctx);
-      bar.clear();
-      if (work) void guard(work);
-    } else if (!exact && offered[at]) {
-      bar.setText(`${bar.prefix}${offered[at].name} `);
-    }
+    if (exact) execute(bar.text);
+    else if (offered[at]) bar.setText(`${bar.prefix}${offered[at].name} `);
   }
+  const pick = (choice: Choice) => (choice.run ? execute(choice.text) : bar.focus(choice.text));
 
   const onKeyDown = (event: KeyboardEvent) => {
     if (event.key === "Escape") {
@@ -94,21 +109,25 @@ export function Bar() {
       submit();
     } else if (event.key === "Enter" && typed) {
       event.preventDefault();
-      run();
+      const chosen = naming ? undefined : choices[at];
+      if (chosen) pick(chosen);
+      else run();
     } else if (event.key === "Tab" && typed) {
       const finished = naming
         ? offered[at]
           ? `${bar.prefix}${offered[at].name} `
           : null
-        : complete(bar.text, bar.prefix, commandNames);
+        : (choices[Math.max(at, 0)]?.text ?? complete(bar.text, bar.prefix, commandNames));
       if (finished !== null) {
         event.preventDefault();
         bar.setText(finished);
       }
-    } else if (typed && naming && (event.key === "ArrowDown" || event.key === "ArrowUp")) {
+    } else if (typed && (event.key === "ArrowDown" || event.key === "ArrowUp")) {
+      const count = naming ? offered.length : choices.length;
+      if (count === 0) return;
       event.preventDefault();
       const step = event.key === "ArrowDown" ? 1 : -1;
-      setAt((offered.length + at + step) % Math.max(1, offered.length));
+      setAt(at < 0 && step < 0 ? count - 1 : (count + at + step) % count);
     }
   };
 
@@ -123,7 +142,11 @@ export function Bar() {
             aria-expanded={typed !== null}
             aria-controls={typed ? listbox : undefined}
             aria-activedescendant={
-              naming && offered[at] ? `${listbox}-${offered[at].name}` : undefined
+              naming && offered[at]
+                ? `${listbox}-${offered[at].name}`
+                : choices[at]
+                  ? `${listbox}-${at}`
+                  : undefined
             }
             aria-label={t("bar.label")}
             placeholder={t("bar.placeholder", { prefix: bar.prefix })}
@@ -143,14 +166,34 @@ export function Bar() {
             <div className="hint" role="status" aria-label={t("cmd.understood")}>
               {!exact && offered.length === 0 && <span>{t("cmd.unknown")}</span>}
               {exact && understood === "needsItem" && <span>{t("cmd.needsItem")}</span>}
-              {exact && understood === null && (
+              {exact && understood === null && typed.rest === "" && exact.example && (
+                <span>{t(exact.example)}</span>
+              )}
+              {exact && understood === null && !(typed.rest === "" && exact.example) && (
                 <span className="mono">{`${bar.prefix}${exact.name} ${exact.usage}`.trim()}</span>
               )}
               {Array.isArray(understood) &&
                 understood.map((part, index) => <span key={index}>{part}</span>)}
             </div>
             <div id={listbox} role="listbox" aria-label={t("cmd.commands")}>
-              {offered.map((command, index) => (
+              {choices.map((choice, index) => (
+                <button
+                  key={choice.text}
+                  type="button"
+                  role="option"
+                  id={`${listbox}-${index}`}
+                  tabIndex={-1}
+                  aria-selected={index === at}
+                  className={index === at ? "opt on" : "opt"}
+                  onClick={() => pick(choice)}
+                >
+                  <span className="mono">{choice.label}</span>
+                  {choice.describe !== undefined && (
+                    <span className="t dim">{choice.describe}</span>
+                  )}
+                </button>
+              ))}
+              {(choices.length > 0 ? [] : offered).map((command, index) => (
                 <button
                   key={command.name}
                   type="button"

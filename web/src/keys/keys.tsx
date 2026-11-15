@@ -7,7 +7,7 @@ import { useHub } from "../hub/session.js";
 import { setDone, setPrefs } from "../hub/write.js";
 import { useT } from "../i18n/index.js";
 import { useNotices } from "../shell/notices.js";
-import { useOpenItem, useSelection } from "../shell/selection.js";
+import { useLeaveItem, useOpenItem, useSelection } from "../shell/selection.js";
 import { Dialog } from "../ui/dialog.js";
 import { Kbd } from "../ui/layout.js";
 import { actions, bindings, keysOf, type ActionId } from "./actions.js";
@@ -42,6 +42,7 @@ export function Keys() {
   const [, onItem] = useRoute("/items/:id");
   const item = useItem(onItem?.id ?? selected);
   const open = useOpenItem();
+  const leave = useLeaveItem();
   const [help, setHelp] = useState(false);
 
   const run: Record<ActionId, () => void> = {
@@ -61,12 +62,19 @@ export function Keys() {
     goto: () => bar.focus(`${bar.prefix}go `),
     theme: () => void guard(setPrefs(hub, { theme: nextTheme[prefs.theme] })),
     help: () => setHelp(true),
+    back: () => {
+      if (selected !== undefined) select(undefined);
+      else if (bar.defaultDue !== null) bar.setDefaultDue(null);
+      else if (onItem) leave();
+    },
   };
   function move(by: number) {
     if (!listed || order.length === 0) return;
     const at = selected === undefined ? -1 : order.indexOf(selected);
     const next = at < 0 ? (by > 0 ? 0 : order.length - 1) : at + by;
     select(order[Math.min(order.length - 1, Math.max(0, next))]);
+    // A link or button that still has the focus would take the Enter meant for the item.
+    if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
   }
 
   const now = { run, keys: prefs.keys, prefix: bar.prefix, focus: bar.focus, listed };

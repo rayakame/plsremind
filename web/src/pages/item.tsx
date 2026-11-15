@@ -7,7 +7,7 @@ import { removeItem, setDone } from "../hub/write.js";
 import { useT } from "../i18n/index.js";
 import { useNotices } from "../shell/notices.js";
 import { routes } from "../shell/router.js";
-import { useSelection } from "../shell/selection.js";
+import { useLeaveItem, useSelection } from "../shell/selection.js";
 import { Button } from "../ui/controls.js";
 import { Icon } from "../ui/icon.js";
 import { ConfirmDialog } from "../ui/name-dialog.js";
@@ -52,6 +52,7 @@ export function ItemPage(props: { id: string }) {
   const hub = useHub();
   const { guard } = useNotices();
   const { order } = useSelection();
+  const leave = useLeaveItem();
   const [, navigate] = useLocation();
   const { id, key } = useResolved(props.id);
   const shown = id ?? props.id;
@@ -94,7 +95,7 @@ export function ItemPage(props: { id: string }) {
     <div className="scroll col">
       <div className="between">
         <div className="line">
-          <Button variant="ghost" onClick={() => history.back()}>
+          <Button variant="ghost" onClick={leave}>
             <Icon name="left" />
             {t("item.back")}
           </Button>

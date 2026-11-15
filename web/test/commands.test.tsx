@@ -191,3 +191,67 @@ test("after a command the bar lets go, so that single keys work again", async ()
   expect(made.path()).toBe("/calendar");
   expect(document.activeElement).not.toBe(bar());
 });
+
+const choices = () =>
+  within(screen.getByRole("listbox"))
+    .getAllByRole("option")
+    .map((option) => option.textContent);
+
+test("a command shows what its argument may be, and typing narrows it", async () => {
+  const made = await app();
+  await userEvent.type(bar(), "/go ");
+  expect(choices()).toEqual([
+    "all" + "All items",
+    "calendar" + "Calendar",
+    "done" + "Done",
+    "settings" + "Settings",
+    "Inbox" + "List",
+    "Work" + "List",
+  ]);
+  await userEvent.type(bar(), "c");
+  expect(choices()).toEqual(["calendar" + "Calendar"]);
+  await userEvent.keyboard("{ArrowDown}{Enter}");
+  expect(made.path()).toBe("/calendar");
+});
+
+test("Tab fills in the first choice and a click runs it", async () => {
+  const made = await app();
+  select("Hand in the report");
+  await userEvent.type(bar(), "/prio ");
+  expect(choices()).toEqual(["low" + "Low", "normal" + "Normal", "high" + "High"]);
+  await userEvent.type(bar(), "h{Tab}");
+  expect((bar() as HTMLInputElement).value).toBe("/prio high");
+  await userEvent.clear(bar());
+  await userEvent.type(bar(), "/move ");
+  expect(choices()).toEqual(["#Inbox", "#Work"]);
+  await userEvent.click(within(screen.getByRole("listbox")).getByRole("option", { name: "#Work" }));
+  await waitFor(() => expect(made.sent("PATCH", "/users/@me/items/a")).toHaveLength(1));
+  expect(made.sent("PATCH", "/users/@me/items/a")[0]!.body).toEqual({ list_id: "l2" });
+  expect((bar() as HTMLInputElement).value).toBe("");
+});
+
+test("the schemes and the examples for times are shown", async () => {
+  await app();
+  select("Hand in the report");
+  await userEvent.type(bar(), "/theme ");
+  expect(choices()).toEqual(["system" + "System", "light" + "Light", "dark" + "Dark"]);
+  await userEvent.clear(bar());
+  await userEvent.type(bar(), "/due ");
+  expect(preview()).toBe("today, tomorrow 12:00, fri, 13.11., 2026-11-13, or - for none");
+  await userEvent.clear(bar());
+  await userEvent.type(bar(), "/remind ");
+  expect(preview()).toBe("30m, 2h, 1d");
+});
+
+test("inside a new item the lists follow a hash and the priorities an exclamation mark", async () => {
+  await app();
+  await userEvent.type(bar(), "/new Call Mia #");
+  expect(choices()).toEqual(["#Inbox", "#Work"]);
+  await userEvent.type(bar(), "w{Tab}");
+  expect((bar() as HTMLInputElement).value).toBe("/new Call Mia #work ");
+  await userEvent.type(bar(), "!");
+  expect(choices()).toEqual(["!low" + "Low", "!normal" + "Normal", "!high" + "High"]);
+  await userEvent.keyboard("{ArrowDown}{ArrowDown}{ArrowDown}{Enter}");
+  expect((bar() as HTMLInputElement).value).toBe("/new Call Mia #work !high ");
+  expect(preview()).toBe("Call Mia" + "High" + "Work");
+});

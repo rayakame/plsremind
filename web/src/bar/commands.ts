@@ -29,11 +29,25 @@ export interface CommandContext {
   navigate: (path: string) => void;
 }
 
+/** One value a command's argument may take, offered while it is typed. */
+export interface Choice {
+  /** What the bar holds once this is chosen. */
+  text: string;
+  label: string;
+  describe?: string;
+  /** True if choosing it completes the command, so that it can run at once. */
+  run: boolean;
+}
+
 export interface Command {
   name: string;
   usage: string;
   describe: Key;
   needsItem?: true;
+  /** Examples of what may be typed, shown while the argument is still empty. */
+  example?: Key;
+  /** The values that fit what is typed so far. */
+  choices?: (rest: string, ctx: CommandContext, prefix: string) => readonly Choice[];
   /** What the command would do, in parts to show, or null if the text makes no sense. */
   preview: (rest: string, ctx: CommandContext) => readonly string[] | null;
   run: (rest: string, ctx: CommandContext) => Promise<unknown> | void;
@@ -63,12 +77,57 @@ function placeOf(rest: string, ctx: CommandContext): { path: string; label: stri
 }
 
 const themes: readonly Prefs["theme"][] = ["system", "light", "dark"];
+const priorities: readonly Priority[] = ["low", "normal", "high"];
+const starts = (text: string, typed: string) => text.toLowerCase().startsWith(typed.toLowerCase());
+
+/** Choices that fill the whole argument of a command. */
+function whole(
+  name: string,
+  rest: string,
+  prefix: string,
+  values: readonly { value: string; label?: string; describe?: string }[],
+): Choice[] {
+  return values
+    .filter((one) => starts(one.value, rest.replace(/^#/, "")) || starts(one.describe ?? "", rest))
+    .map((one) => ({
+      text: `${prefix}${name} ${one.label ?? one.value}`,
+      label: one.label ?? one.value,
+      ...(one.describe === undefined ? {} : { describe: one.describe }),
+      run: true,
+    }));
+}
+
+/** Choices for the word being typed inside a new item: lists after "#", priorities after "!". */
+function insideNew(rest: string, ctx: CommandContext, prefix: string): Choice[] {
+  const word = /(^|\s)([#!]\S*)$/.exec(rest)?.[2];
+  if (word === undefined) return [];
+  const before = rest.slice(0, rest.length - word.length);
+  const typed = word.slice(1);
+  const fill = (marker: string) => `${prefix}new ${before}${marker} `;
+  if (word.startsWith("!")) {
+    return priorities
+      .filter((one) => starts(one, typed) || starts(t(`priority.${one}`), typed))
+      .map((one) => ({
+        text: fill(`!${one}`),
+        label: `!${one}`,
+        describe: t(`priority.${one}`),
+        run: false,
+      }));
+  }
+  return ctx.lists.flatMap((list) => {
+    // A new item's text is read word by word, so a list is named by its first word.
+    const short = list.name.split(/\s+/)[0]!.toLowerCase();
+    if (!starts(list.name, typed) || listOf(short, ctx.lists) !== list) return [];
+    return [{ text: fill(`#${short}`), label: `#${list.name}`, run: false }];
+  });
+}
 
 export const commands: readonly Command[] = [
   {
     name: "new",
     usage: "title [when] [!priority] [#list]",
     describe: "cmd.new",
+    choices: insideNew,
     preview: (rest, ctx) => {
       const draft = parseNew(rest, { today: ctx.now.today, lists: ctx.lists });
       if (draft.title === "") return null;
@@ -102,6 +161,14 @@ export const commands: readonly Command[] = [
     name: "go",
     usage: "place",
     describe: "cmd.go",
+    choices: (rest, ctx, prefix) =>
+      whole("go", rest, prefix, [
+        { value: "all", describe: t("nav.all") },
+        { value: "calendar", describe: t("nav.calendar") },
+        { value: "done", describe: t("nav.done") },
+        { value: "settings", describe: t("nav.settings") },
+        ...ctx.lists.map((list) => ({ value: list.name, describe: t("item.list") })),
+      ]),
     preview: (rest, ctx) => {
       const place = placeOf(rest, ctx);
       return place ? [place.label] : null;
@@ -121,6 +188,7 @@ export const commands: readonly Command[] = [
     usage: "duration",
     describe: "cmd.remind",
     needsItem: true,
+    example: "cmd.remindExample",
     preview: (rest, ctx) => {
       try {
         const at = new Date(ctx.now.instant.getTime() + parseDuration(rest));
@@ -136,6 +204,7 @@ export const commands: readonly Command[] = [
     usage: "when",
     describe: "cmd.due",
     needsItem: true,
+    example: "cmd.dueExample",
     preview: (rest, ctx) => {
       if (rest === "-") return [t("cmd.noDue")];
       const when = parseWhen(rest, ctx.now.today);
@@ -149,6 +218,13 @@ export const commands: readonly Command[] = [
     usage: "#list",
     describe: "cmd.move",
     needsItem: true,
+    choices: (rest, ctx, prefix) =>
+      whole(
+        "move",
+        rest,
+        prefix,
+        ctx.lists.map((list) => ({ value: list.name, label: `#${list.name}` })),
+      ),
     preview: (rest, ctx) => {
       const list = listOf(rest, ctx.lists);
       return list ? [list.name] : null;
@@ -160,6 +236,13 @@ export const commands: readonly Command[] = [
     usage: "low|normal|high",
     describe: "cmd.prio",
     needsItem: true,
+    choices: (rest, _ctx, prefix) =>
+      whole(
+        "prio",
+        rest,
+        prefix,
+        priorities.map((one) => ({ value: one, describe: t(`priority.${one}`) })),
+      ),
     preview: (rest) => {
       const priority = priorityOf(rest);
       return priority ? [t(`priority.${priority}`)] : null;
@@ -170,6 +253,13 @@ export const commands: readonly Command[] = [
     name: "theme",
     usage: "system|light|dark",
     describe: "cmd.theme",
+    choices: (rest, _ctx, prefix) =>
+      whole(
+        "theme",
+        rest,
+        prefix,
+        themes.map((one) => ({ value: one, describe: t(`theme.${one}`) })),
+      ),
     preview: (rest) => {
       const theme = themes.find((one) => one === rest.toLowerCase());
       return theme ? [t(`theme.${theme}`)] : null;

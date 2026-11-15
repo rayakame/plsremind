@@ -167,3 +167,12 @@ test("the new command and the bar's text respect the calendar", async () => {
     due_date: "2026-11-20",
   });
 });
+
+test("Escape lets go of the chosen day", async () => {
+  await calendar("2026-11-15T12:00:00Z");
+  await userEvent.click(screen.getByRole("button", { name: "November 20" }));
+  await userEvent.keyboard("{Escape}");
+  expect(screen.getByRole("button", { name: "November 20" }).getAttribute("aria-pressed")).toBe(
+    "false",
+  );
+});

@@ -19,6 +19,9 @@ interface Selection {
   listed: boolean;
   setOrder: (order: readonly string[]) => void;
   setListed: (listed: boolean) => void;
+  /** True if the item page that is open was reached from a view of this page load. */
+  entered: boolean;
+  setEntered: (entered: boolean) => void;
 }
 
 const none: readonly string[] = Object.freeze([]);
@@ -28,9 +31,10 @@ export function SelectionProvider(props: { children: ReactNode }) {
   const [selected, select] = useState<string>();
   const [order, setOrder] = useState(none);
   const [listed, setListed] = useState(false);
+  const [entered, setEntered] = useState(false);
   const value = useMemo(
-    () => ({ selected, select, order, listed, setOrder, setListed }),
-    [selected, order, listed],
+    () => ({ selected, select, order, listed, setOrder, setListed, entered, setEntered }),
+    [selected, order, listed, entered],
   );
   return <SelectionContext.Provider value={value}>{props.children}</SelectionContext.Provider>;
 }
@@ -56,13 +60,25 @@ export function useOrder(order: readonly string[]): void {
 
 /** Opens an item's own page, without the detail column next to it. */
 export function useOpenItem(): (id: string) => void {
-  const { select } = useSelection();
+  const { select, setEntered } = useSelection();
   const [, navigate] = useLocation();
   return useCallback(
     (id) => {
       select(undefined);
+      setEntered(true);
       navigate(routes.item(id));
     },
-    [navigate, select],
+    [navigate, select, setEntered],
   );
+}
+
+/** Leaves an item's page: back to where one came from, or to all items after a direct visit. */
+export function useLeaveItem(): () => void {
+  const { entered, setEntered } = useSelection();
+  const [, navigate] = useLocation();
+  return useCallback(() => {
+    setEntered(false);
+    if (entered) history.back();
+    else navigate(routes.items);
+  }, [entered, navigate, setEntered]);
 }

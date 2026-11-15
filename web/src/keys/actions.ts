@@ -11,6 +11,7 @@ export const actions = [
   "goto",
   "theme",
   "help",
+  "back",
 ] as const;
 
 export type ActionId = (typeof actions)[number];
@@ -28,6 +29,7 @@ export const defaults: Readonly<Record<ActionId, string>> = {
   goto: "g",
   theme: "t",
   help: "?",
+  back: "Escape",
 };
 
 /** The key of every action, with the user's own choices over the defaults. */

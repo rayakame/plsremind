@@ -347,4 +347,7 @@ export const de: Texts = {
   "item.loadFailed": "Dieser Eintrag ließ sich nicht laden.",
   "common.retry": "Noch einmal versuchen",
   "personal.keyReserved": "{key} ist das Befehlspräfix.",
+  "keys.back": "Abwählen oder zurück",
+  "cmd.dueExample": "heute, morgen 12:00, fr., 13.11., 2026-11-13 oder - für keine",
+  "cmd.remindExample": "30m, 2h, 1d",
 };
