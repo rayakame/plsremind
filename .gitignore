@@ -8,3 +8,6 @@
 .env
 node_modules/
 /sdk/ts/dist/
+/web/dist/
+/web/test-results/
+/web/playwright-report/
