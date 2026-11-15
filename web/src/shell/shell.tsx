@@ -11,11 +11,20 @@ export function Shell(props: { panel?: ReactNode; children: ReactNode }) {
   const [drawer, setDrawer] = useState(false);
   const [path] = useLocation();
   useEffect(() => setDrawer(false), [path]);
+  useEffect(() => {
+    if (!drawer) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setDrawer(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [drawer]);
 
   return (
     <div className={props.panel ? "app with-panel" : "app"}>
       <Sidebar open={drawer} onNavigate={() => setDrawer(false)} />
-      <main className="main">
+      {drawer && <div className="backdrop only-narrow" onClick={() => setDrawer(false)} />}
+      <main className="main fixed">
         <div className="barrow">
           <Button
             variant="icon"

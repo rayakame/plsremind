@@ -7,6 +7,9 @@ import { readPrefs } from "./hub/prefs.js";
 import { SessionProvider, useSession } from "./hub/session.js";
 import { setLocale, useT } from "./i18n/index.js";
 import { LoginPage, RegisterPage, SetupPage } from "./pages/account.js";
+import { AllItemsPage, ListPage } from "./pages/items.js";
+import { NotFound } from "./pages/not-found.js";
+import { SelectionProvider } from "./shell/selection.js";
 import { NoticesProvider } from "./shell/notices.js";
 import { localPath, routes } from "./shell/router.js";
 import { Shell } from "./shell/shell.js";
@@ -73,31 +76,31 @@ function SignedIn() {
   return (
     <NoticesProvider>
       <Preferences />
-      <Shell>
-        <Switch>
-          <Route path="/">
-            <Placeholder title={t("nav.all")} />
-          </Route>
-          <Route path="/lists/:id">
-            <Placeholder title={t("nav.lists")} />
-          </Route>
-          <Route path="/calendar">
-            <Placeholder title={t("nav.calendar")} />
-          </Route>
-          <Route path="/done">
-            <Placeholder title={t("nav.done")} />
-          </Route>
-          <Route path="/items/:id">
-            <Placeholder title={t("nav.all")} />
-          </Route>
-          <Route path="/settings/:area?">
-            <Placeholder title={t("nav.settings")} />
-          </Route>
-          <Route>
-            <Placeholder title={t("common.notFound")} />
-          </Route>
-        </Switch>
-      </Shell>
+      <SelectionProvider>
+        <Shell>
+          <Switch>
+            <Route path="/">
+              <AllItemsPage />
+            </Route>
+            <Route path="/lists/:id">{(params) => <ListPage id={params.id} />}</Route>
+            <Route path="/calendar">
+              <Placeholder title={t("nav.calendar")} />
+            </Route>
+            <Route path="/done">
+              <Placeholder title={t("nav.done")} />
+            </Route>
+            <Route path="/items/:id">
+              <Placeholder title={t("nav.all")} />
+            </Route>
+            <Route path="/settings/:area?">
+              <Placeholder title={t("nav.settings")} />
+            </Route>
+            <Route>
+              <NotFound />
+            </Route>
+          </Switch>
+        </Shell>
+      </SelectionProvider>
     </NoticesProvider>
   );
 }

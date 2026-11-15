@@ -1,5 +1,6 @@
 import { act, render } from "@testing-library/react";
 import { Client, type Intent } from "plsremind";
+import { optimistic } from "plsremind/optimistic";
 import { memoryLocation } from "wouter/memory-location";
 import { FakeGateway, ready, settle } from "../../sdk/ts/test/fake-gateway.js";
 import { sync, wireItem, wireList, wirePlan, wireUser } from "../../sdk/ts/test/fixtures.js";
@@ -165,4 +166,15 @@ export async function renderApp(options: AppOptions = {}) {
   const signedIn = options.user !== null && options.info?.setup_required !== true;
   if (signedIn && !options.hold) await act(() => hub.connect());
   return { ...hub, ...view, location, path: () => location.history.at(-1)! };
+}
+
+/** A connected client and its view against a fake hub, without the app around it. */
+export async function connectedHub(options: HubOptions = {}) {
+  const hub = fakeHub(options);
+  const client = hub.make();
+  const connecting = client.connect();
+  await hub.connect();
+  await connecting;
+  const view = optimistic(client);
+  return { ...hub, client, view, own: { client, view, userId: "u1" }, mine: () => view.user()! };
 }

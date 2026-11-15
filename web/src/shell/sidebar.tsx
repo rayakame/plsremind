@@ -1,4 +1,9 @@
+import { useState } from "react";
 import { Link, useLocation } from "wouter";
+import { createList } from "../hub/write.js";
+import { Icon } from "../ui/icon.js";
+import { NameDialog } from "../ui/name-dialog.js";
+import { useNotices } from "./notices.js";
 import { useItems, useLists, useProfile } from "../hub/hooks.js";
 import { useHub, useSessionStore } from "../hub/session.js";
 import { useT } from "../i18n/index.js";
@@ -9,13 +14,16 @@ import { routes } from "./router.js";
 
 export function Sidebar(props: { open: boolean; onNavigate: () => void }) {
   const t = useT();
-  const { info } = useHub();
+  const hub = useHub();
+  const { info } = hub;
   const session = useSessionStore();
   const profile = useProfile();
   const lists = useLists();
   const items = useItems();
   const counts = openCounts(items);
-  const [path] = useLocation();
+  const [path, navigate] = useLocation();
+  const [creating, setCreating] = useState(false);
+  const { guard } = useNotices();
 
   const link = (href: string, label: string, count?: number, active = path === href) => (
     <Link href={href} asChild>
@@ -34,6 +42,10 @@ export function Sidebar(props: { open: boolean; onNavigate: () => void }) {
       {lists.map((list) => (
         <div key={list.id}>{link(routes.list(list.id), list.name, counts.get(list.id) ?? 0)}</div>
       ))}
+      <Button variant="ghost" onClick={() => setCreating(true)}>
+        <Icon name="plus" />
+        {t("list.new")}
+      </Button>
       <div className="grow" />
       {link(routes.done, t("nav.done"))}
       {link(routes.settings(), t("nav.settings"), undefined, path.startsWith("/settings"))}
@@ -43,6 +55,18 @@ export function Sidebar(props: { open: boolean; onNavigate: () => void }) {
           {t("nav.signOut")}
         </Button>
       </div>
+      {creating && (
+        <NameDialog
+          title={t("list.new")}
+          submit={t("common.create")}
+          onSubmit={(name) =>
+            void guard(createList(hub, name)).then((id) => {
+              if (id !== undefined) navigate(routes.list(id));
+            })
+          }
+          onClose={() => setCreating(false)}
+        />
+      )}
     </nav>
   );
 }

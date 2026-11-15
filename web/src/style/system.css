@@ -45,6 +45,7 @@
   --danger-soft: #fdeeed;
   --scrim: rgba(24, 24, 27, 0.45);
   --shade: rgba(0, 0, 0, 0.2);
+  --layout: wide;
 }
 
 :root[data-theme="dark"] {
@@ -541,6 +542,11 @@ textarea.input {
   cursor: pointer;
 }
 
+.row a.t {
+  color: inherit;
+  text-decoration: none;
+}
+
 .row .t {
   flex: 1;
   min-width: 0;
@@ -796,6 +802,13 @@ textarea.input {
   overflow-y: auto;
 }
 
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 2;
+  background: var(--scrim);
+}
+
 .dialog {
   display: flex;
   flex-direction: column;
@@ -877,6 +890,10 @@ textarea.input {
 }
 
 @media (max-width: 768px) {
+  :root {
+    --layout: narrow;
+  }
+
   .app,
   .app.with-panel {
     grid-template-columns: minmax(0, 1fr);
