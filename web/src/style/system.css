@@ -456,6 +456,24 @@ textarea.input {
   color: var(--on-accent);
 }
 
+.btn.on {
+  border-color: transparent;
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+}
+
+fieldset {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+fieldset.card {
+  padding: var(--s4);
+  border: 1px solid var(--line);
+}
+
 .btn.ghost {
   border-color: transparent;
   background: transparent;

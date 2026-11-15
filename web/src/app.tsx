@@ -1,5 +1,5 @@
 import type { Client } from "plsremind";
-import { lazy, Suspense, useEffect } from "react";
+import { lazy, Suspense, useEffect, useRef } from "react";
 import { Redirect, Route, Router, Switch, useLocation, useSearch } from "wouter";
 import type { BaseLocationHook, BaseSearchHook } from "wouter";
 import { BarProvider } from "./bar/context.js";
@@ -7,7 +7,8 @@ import { Keys } from "./keys/keys.js";
 import { useProfile } from "./hub/hooks.js";
 import { readPrefs } from "./hub/prefs.js";
 import { SessionProvider, useSession } from "./hub/session.js";
-import { setLocale, useT } from "./i18n/index.js";
+import { describeCode } from "./hub/errors.js";
+import { setLocale, t, useT } from "./i18n/index.js";
 import { LoginPage, RegisterPage, SetupPage } from "./pages/account.js";
 import { DonePage } from "./pages/done.js";
 import { FindPage } from "./pages/find.js";
@@ -16,11 +17,13 @@ import { AllItemsPage, ListPage } from "./pages/items.js";
 import { Details } from "./shell/details.js";
 import { NotFound } from "./pages/not-found.js";
 import { SelectionProvider } from "./shell/selection.js";
-import { NoticesProvider } from "./shell/notices.js";
+import { NoticesProvider, useNotices } from "./shell/notices.js";
 import { localPath, routes } from "./shell/router.js";
 import { Shell } from "./shell/shell.js";
 
 const CalendarPage = lazy(() => import("./pages/calendar.js"));
+
+const SettingsPage = lazy(() => import("./pages/settings/index.js"));
 
 const themeKey = "plsremind.theme";
 
@@ -70,12 +73,23 @@ function Message(props: { title: string; text?: string }) {
   );
 }
 
-function Placeholder(props: { title: string }) {
-  return <h1 className="h1">{props.title}</h1>;
+/** Says why linking an account elsewhere failed, once, and tidies the address. */
+function AuthError() {
+  const { notify } = useNotices();
+  const [path, navigate] = useLocation();
+  const search = useSearch();
+  const code = new URLSearchParams(search).get("auth_error");
+  const told = useRef<string | null>(null);
+  useEffect(() => {
+    if (!code || told.current === code) return;
+    told.current = code;
+    notify(describeCode(code) ?? t("errors.unexpected"), "danger");
+    navigate(path, { replace: true });
+  }, [code, notify, navigate, path]);
+  return null;
 }
 
 function SignedIn() {
-  const t = useT();
   const [path] = useLocation();
   const search = new URLSearchParams(useSearch());
   if (path === routes.login || path === routes.register || path === routes.setup) {
@@ -87,6 +101,7 @@ function SignedIn() {
       <SelectionProvider>
         <BarProvider>
           <Keys />
+          <AuthError />
           <Shell panel={<Details />}>
             <Switch>
               <Route path="/">
@@ -105,8 +120,12 @@ function SignedIn() {
                 <DonePage />
               </Route>
               <Route path="/items/:id">{(params) => <ItemPage id={params.id} />}</Route>
-              <Route path="/settings/:area?">
-                <Placeholder title={t("nav.settings")} />
+              <Route path="/settings/:area?/:section?">
+                {(params) => (
+                  <Suspense fallback={null}>
+                    <SettingsPage area={params.area} section={params.section} />
+                  </Suspense>
+                )}
               </Route>
               <Route>
                 <NotFound />

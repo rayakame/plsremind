@@ -1,5 +1,6 @@
 import type {
   Client,
+  FollowUp,
   Item,
   ItemInput,
   List,
@@ -8,6 +9,7 @@ import type {
   ReminderOverride,
   Subitem,
   User,
+  UserChanges,
 } from "plsremind";
 import type { OptimisticView } from "plsremind/optimistic";
 import type { When } from "../time/when.js";
@@ -349,6 +351,37 @@ export function removeReminder(hub: Writer, item: Item, reminder: ManualReminder
         hub.client.rest.deleteReminder(id, partId(hub, reminder.id), { nonce }),
       ),
   );
+}
+
+/** Changes the profile: name, zone, language or quiet hours. */
+export function updateProfile(hub: Writer, changes: UserChanges): Promise<void> {
+  return hub.view
+    .apply(
+      [{ kind: "profile", update: (before) => ({ ...before, ...changes }) }],
+      (nonce) => hub.client.rest.updateUser(changes, { nonce }),
+      { user: hub.userId },
+    )
+    .then(() => undefined);
+}
+
+export function setPlan(
+  hub: Writer,
+  priority: Priority,
+  plan: { before: readonly number[]; followUp: FollowUp },
+): Promise<void> {
+  return hub.view
+    .apply(
+      [
+        {
+          kind: "plan",
+          priority,
+          update: (before) => ({ ...before, ...plan, isDefault: false }),
+        },
+      ],
+      (nonce) => hub.client.rest.setReminderPlan(priority, plan, { nonce }),
+      { user: hub.userId },
+    )
+    .then(() => undefined);
 }
 
 /** Changes the dashboard's own preferences and keeps what other clients stored. */
