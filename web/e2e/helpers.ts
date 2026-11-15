@@ -111,3 +111,12 @@ export async function restartHub(): Promise<void> {
   const response = await fetch(`${process.env.PLSREMIND_E2E_CONTROL}/restart`, { method: "POST" });
   if (response.status !== 204) throw new Error(`restart answered ${response.status}`);
 }
+
+/** Opens the navigation where it is a drawer. */
+export async function openNav(page: Page): Promise<void> {
+  await page.locator("nav").waitFor({ state: "attached" });
+  const menu = page.getByRole("button", { name: "Menu" });
+  if ((await menu.isVisible()) && (await menu.getAttribute("aria-expanded")) === "false") {
+    await menu.click();
+  }
+}

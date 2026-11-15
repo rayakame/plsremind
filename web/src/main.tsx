@@ -1,9 +1,10 @@
 import "./style/system.css";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
+import { App } from "./app.js";
 
 createRoot(document.getElementById("app")!).render(
   <StrictMode>
-    <h1 className="h1">plsremind</h1>
+    <App />
   </StrictMode>,
 );
