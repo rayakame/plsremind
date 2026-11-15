@@ -1,5 +1,5 @@
 import type { Client } from "plsremind";
-import { useEffect } from "react";
+import { lazy, Suspense, useEffect } from "react";
 import { Redirect, Route, Router, Switch, useLocation, useSearch } from "wouter";
 import type { BaseLocationHook, BaseSearchHook } from "wouter";
 import { BarProvider } from "./bar/context.js";
@@ -18,6 +18,8 @@ import { SelectionProvider } from "./shell/selection.js";
 import { NoticesProvider } from "./shell/notices.js";
 import { localPath, routes } from "./shell/router.js";
 import { Shell } from "./shell/shell.js";
+
+const CalendarPage = lazy(() => import("./pages/calendar.js"));
 
 const themeKey = "plsremind.theme";
 
@@ -94,7 +96,9 @@ function SignedIn() {
                 <FindPage />
               </Route>
               <Route path="/calendar">
-                <Placeholder title={t("nav.calendar")} />
+                <Suspense fallback={null}>
+                  <CalendarPage />
+                </Suspense>
               </Route>
               <Route path="/done">
                 <Placeholder title={t("nav.done")} />

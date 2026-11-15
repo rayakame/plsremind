@@ -724,6 +724,15 @@ textarea.input {
   cursor: pointer;
 }
 
+.ev-plain {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
 .ev.high {
   border-color: var(--danger);
   color: var(--danger);

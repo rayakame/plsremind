@@ -188,6 +188,13 @@ export const en = {
   "keys.goto": "Go to",
   "keys.theme": "Change the colour scheme",
   "keys.help": "Show all keys",
+  "cal.days": "Days",
+  "cal.month": "Month",
+  "cal.week": "Week",
+  "cal.view": "View",
+  "cal.today": "Today",
+  "cal.more": "{count} more",
+  "cal.nothing": "Nothing on this day.",
 } as const;
 
 export type Key = keyof typeof en;

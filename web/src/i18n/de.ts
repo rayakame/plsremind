@@ -192,4 +192,11 @@ export const de: Texts = {
   "keys.goto": "Gehe zu",
   "keys.theme": "Farbschema wechseln",
   "keys.help": "Alle Tasten zeigen",
+  "cal.days": "Tage",
+  "cal.month": "Monat",
+  "cal.week": "Woche",
+  "cal.view": "Ansicht",
+  "cal.today": "Heute",
+  "cal.more": "{count} weitere",
+  "cal.nothing": "Nichts an diesem Tag.",
 };
