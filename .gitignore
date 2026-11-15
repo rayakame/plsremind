@@ -11,3 +11,5 @@ node_modules/
 /web/dist/
 /web/test-results/
 /web/playwright-report/
+/hub/internal/server/webdist/*
+!/hub/internal/server/webdist/.gitkeep
