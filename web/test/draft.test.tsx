@@ -61,3 +61,22 @@ test("an older save that succeeds does not replace a newer edit that is still on
   });
   expect(field.value).toBe("B");
 });
+
+function Entered(props: { save: (next: string) => Promise<boolean> }) {
+  return <input aria-label="Name" {...useDraft("A", props.save, { enter: true })} />;
+}
+
+test("leaving the field after Enter keeps what is being saved", async () => {
+  const saving = deferred<boolean>();
+  render(<Entered save={() => saving.promise} />);
+  const field = screen.getByLabelText("Name") as HTMLInputElement;
+  await userEvent.clear(field);
+  await userEvent.type(field, "B{Enter}");
+  await userEvent.tab();
+  expect(field.value).toBe("B");
+  await act(async () => {
+    saving.resolve(false);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+  expect(field.value).toBe("A");
+});

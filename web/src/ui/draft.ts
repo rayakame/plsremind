@@ -62,7 +62,7 @@ export function useDraft(
     },
     onBlur: () => {
       focused.current = false;
-      if (!commit()) setText(value);
+      if (!commit() && pending.current === 0) setText(value);
     },
     onKeyDown: (event: KeyboardEvent) => {
       if (options.enter && event.key === "Enter") commit();
