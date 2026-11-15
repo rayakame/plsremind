@@ -150,8 +150,8 @@ export default function CalendarPage() {
                 onClick={() => setDefaultDue(day === chosen ? null : day)}
               >
                 {Number(day.slice(8))}
-                {narrow && own.length > 0 && <span className="count"> {own.length}</span>}
               </button>
+              {narrow && own.length > 0 && <span className="tag">{own.length}</span>}
               {shown.map(event)}
               {own.length > shown.length && (
                 <button type="button" className="ev" onClick={() => setMore(day)}>

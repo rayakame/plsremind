@@ -29,7 +29,7 @@ export function Details() {
           <Icon name="close" />
         </Button>
       </div>
-      <ItemText key={`text:${item.id}`} item={item} />
+      <ItemText key={`text:${item.id}`} item={item} compact />
       <ItemFacts key={`facts:${item.id}`} item={item} />
     </aside>
   );

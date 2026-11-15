@@ -1,4 +1,4 @@
-import { useSyncExternalStore } from "react";
+import { useMemo, useSyncExternalStore } from "react";
 import { de } from "./de.js";
 import { en, type Key, type Texts } from "./en.js";
 
@@ -43,8 +43,11 @@ function subscribe(listener: () => void): () => void {
   return () => listeners.delete(listener);
 }
 
-/** Makes a component render again when the language changes. */
+/**
+ * Makes a component render again when the language changes. The function it returns is a
+ * new one per language, so that it can stand in a dependency list.
+ */
 export function useT(): typeof t {
-  useSyncExternalStore(subscribe, locale);
-  return t;
+  const tag = useSyncExternalStore(subscribe, locale);
+  return useMemo(() => ((key, params) => t(key, params)) as typeof t, [tag]);
 }

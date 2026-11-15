@@ -180,3 +180,11 @@ test("an empty view says so", async () => {
   await renderApp({ sync: { items: [] } });
   expect(screen.getByText("Nothing open.")).toBeTruthy();
 });
+
+test("the group headings follow the profile's language", async () => {
+  const { wireUser } = await import("./support.js");
+  await renderApp({ user: wireUser({ locale: "de" }) });
+  expect(screen.getAllByRole("heading", { level: 2 }).map((h) => h.textContent)).toContain(
+    "Ohne Datum",
+  );
+});

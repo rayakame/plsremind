@@ -26,10 +26,12 @@ import { formatMoment, reminderLabel } from "./labels.js";
 interface Props {
   item: Item;
   readOnly?: boolean;
+  /** For the narrow detail column: leaves out what needs room. */
+  compact?: boolean;
 }
 
 /** Title, note and subitems: what an item says. */
-export function ItemText({ item, readOnly = false }: Props) {
+export function ItemText({ item, readOnly = false, compact = false }: Props) {
   const t = useT();
   const hub = useHub();
   const { guard } = useNotices();
@@ -68,6 +70,7 @@ export function ItemText({ item, readOnly = false }: Props) {
                 first={index === 0}
                 last={index === item.subitems.length - 1}
                 readOnly={readOnly}
+                movable={!compact}
               />
             ))}
           </Rows>
@@ -93,6 +96,7 @@ function SubitemRow(props: {
   first: boolean;
   last: boolean;
   readOnly: boolean;
+  movable: boolean;
 }) {
   const t = useT();
   const hub = useHub();
@@ -121,7 +125,7 @@ function SubitemRow(props: {
         aria-label={t("item.subitemTitle", named)}
         {...title}
       />
-      {!props.readOnly && (
+      {!props.readOnly && props.movable && (
         <>
           <Button
             variant="icon"
@@ -139,14 +143,16 @@ function SubitemRow(props: {
           >
             <Icon name="down" />
           </Button>
-          <Button
-            variant="icon"
-            aria-label={t("item.removeNamed", named)}
-            onClick={() => void guard(removeSubitem(hub, item, subitem))}
-          >
-            <Icon name="close" />
-          </Button>
         </>
+      )}
+      {!props.readOnly && (
+        <Button
+          variant="icon"
+          aria-label={t("item.removeNamed", named)}
+          onClick={() => void guard(removeSubitem(hub, item, subitem))}
+        >
+          <Icon name="close" />
+        </Button>
       )}
     </Row>
   );
