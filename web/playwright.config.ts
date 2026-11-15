@@ -2,6 +2,8 @@ import { defineConfig, devices } from "@playwright/test";
 
 const phone = { viewport: { width: 360, height: 740 }, hasTouch: true, isMobile: true };
 const main = ["desktop-light", "desktop-dark", "phone-light", "phone-dark"];
+// These change the instance for everyone, so they run alone once the others are through.
+const alone = ["admin.spec.ts", "restart.spec.ts"];
 
 export default defineConfig({
   testDir: "e2e",
@@ -21,31 +23,31 @@ export default defineConfig({
     {
       name: "desktop-light",
       dependencies: ["first"],
-      testIgnore: "restart.spec.ts",
+      testIgnore: alone,
       use: { colorScheme: "light" },
     },
     {
       name: "desktop-dark",
       dependencies: ["first"],
       grep: /@core/,
-      testIgnore: "restart.spec.ts",
+      testIgnore: alone,
       use: { colorScheme: "dark" },
     },
     {
       name: "phone-light",
       dependencies: ["first"],
       grep: /@core/,
-      testIgnore: "restart.spec.ts",
+      testIgnore: alone,
       use: { ...phone, colorScheme: "light" },
     },
     {
       name: "phone-dark",
       dependencies: ["first"],
       grep: /@core/,
-      testIgnore: "restart.spec.ts",
+      testIgnore: alone,
       use: { ...phone, colorScheme: "dark" },
     },
-    // Restarting the hub disturbs every other test, so it runs once they are through.
-    { name: "last", dependencies: main, testMatch: "restart.spec.ts" },
+    { name: "admin", dependencies: main, testMatch: "admin.spec.ts" },
+    { name: "restart", dependencies: ["admin"], testMatch: "restart.spec.ts" },
   ],
 });
