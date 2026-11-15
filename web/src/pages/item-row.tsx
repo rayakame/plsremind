@@ -49,7 +49,7 @@ export const ItemRow = memo(function ItemRow(props: ItemRowProps) {
       </a>
       {props.listName !== undefined && <span className="meta only-wide">{props.listName}</span>}
       {item.priority === "high" && <Tag tone="high">{t("priority.high")}</Tag>}
-      <span className={late ? "meta late" : "meta"}>{formatDue(item, now.zone, now.today)}</span>
+      <span className={late ? "meta late" : "meta"}>{formatDue(item, now)}</span>
     </Row>
   );
 });

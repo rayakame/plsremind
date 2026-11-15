@@ -6,6 +6,7 @@ import { useNow } from "../hub/now.js";
 import { readPrefs } from "../hub/prefs.js";
 import { locale, useT } from "../i18n/index.js";
 import { byDay } from "../model/calendar.js";
+import type { Now } from "../model/groups.js";
 import { filterItems } from "../model/search.js";
 import { useOpenItem, useOrder, useSelection } from "../shell/selection.js";
 import { formatTime } from "../time/format.js";
@@ -176,7 +177,7 @@ export default function CalendarPage() {
         })}
       </div>
       {narrow && chosen && days.includes(chosen) && (
-        <DayList day={chosen} items={items.get(chosen) ?? []} zone={now.zone} onPick={pick} />
+        <DayList day={chosen} items={items.get(chosen) ?? []} clock={now} onPick={pick} />
       )}
       {more && (
         <Dialog
@@ -186,7 +187,7 @@ export default function CalendarPage() {
           <DayList
             day={more}
             items={items.get(more) ?? []}
-            zone={now.zone}
+            clock={now}
             onPick={(item) => {
               setMore(undefined);
               pick(item);
@@ -201,7 +202,7 @@ export default function CalendarPage() {
 function DayList(props: {
   day: string;
   items: readonly Item[];
-  zone: string;
+  clock: Now;
   onPick: (item: Item) => void;
 }) {
   const t = useT();
@@ -220,7 +221,7 @@ function DayList(props: {
             {item.title}
           </button>
           <span className="meta">
-            {item.allDay || !item.dueAt ? "" : formatTime(item.dueAt, props.zone)}
+            {item.allDay || !item.dueAt ? "" : formatTime(item.dueAt, props.clock)}
           </span>
         </Row>
       ))}

@@ -1,8 +1,10 @@
 import type { Priority } from "plsremind";
 import { useState, type FormEvent } from "react";
 import { useLists } from "../hub/hooks.js";
+import { useNow } from "../hub/now.js";
 import type { ItemDraft } from "../hub/write.js";
 import { useT } from "../i18n/index.js";
+import { parseClock, showClock } from "../time/clock.js";
 import { Button, Field, Input, Select } from "../ui/controls.js";
 import { Dialog } from "../ui/dialog.js";
 
@@ -21,6 +23,8 @@ export function QuickForm(props: {
   const [title, setTitle] = useState("");
   const [day, setDay] = useState(props.day ?? "");
   const [time, setTime] = useState("");
+  const [timeError, setTimeError] = useState(false);
+  const { hour12 } = useNow();
   const [priority, setPriority] = useState<Priority>("normal");
   const [listId, setListId] = useState(props.listId ?? inbox);
 
@@ -28,11 +32,14 @@ export function QuickForm(props: {
     event.preventDefault();
     const trimmed = title.trim();
     if (trimmed === "") return;
+    const clock = parseClock(time);
+    setTimeError(clock === undefined);
+    if (clock === undefined) return;
     props.onCreate({
       title: trimmed,
       listId,
       priority: priority === "normal" ? undefined : priority,
-      due: day ? { day, time: time || null } : undefined,
+      due: day ? { day, time: clock || null } : undefined,
     });
     props.onClose();
   };
@@ -47,8 +54,13 @@ export function QuickForm(props: {
           <Input type="date" value={day} onChange={(event) => setDay(event.target.value)} />
         </Field>
         {day !== "" && (
-          <Field label={t("item.dueTime")}>
-            <Input type="time" value={time} onChange={(event) => setTime(event.target.value)} />
+          <Field label={t("item.dueTime")} error={timeError ? t("item.timeError") : undefined}>
+            <Input
+              value={time}
+              autoComplete="off"
+              placeholder={showClock("18:00", hour12)}
+              onChange={(event) => setTime(event.target.value)}
+            />
           </Field>
         )}
         <Field label={t("item.priority")}>

@@ -340,6 +340,11 @@ export const en = {
   "item.loadFailed": "This item could not be loaded.",
   "common.retry": "Try again",
   "personal.keyReserved": "{key} is the command prefix.",
+  "item.timeError": "Write a time like 18:00 or 6:00 PM.",
+  "personal.clock": "Clock",
+  "personal.clockAuto": "As the language",
+  "personal.clock24": "24 hours",
+  "personal.clock12": "12 hours",
 } as const;
 
 export type Key = keyof typeof en;

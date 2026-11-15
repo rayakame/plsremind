@@ -61,15 +61,19 @@ test("only an expression at the end of a title counts", () => {
 test("a due time reads short and relative to today", () => {
   const item = (dueAt: string | null, dueDate: string | null) =>
     ({ dueAt: dueAt ? new Date(dueAt) : null, dueDate, allDay: dueDate !== null }) as never;
-  const zone = "Europe/Berlin";
-  expect(formatDue(item(null, null), zone, today)).toBe("");
-  expect(formatDue(item("2026-11-15T11:00:00Z", null), zone, today)).toBe("today 12:00 PM");
-  expect(formatDue(item("2026-11-15T23:30:00Z", null), zone, today)).toBe("tomorrow 12:30 AM");
-  expect(formatDue(item("2026-11-14T22:59:59Z", "2026-11-14"), zone, today)).toBe("yesterday");
-  expect(formatDue(item("2026-11-20T22:59:59Z", "2026-11-20"), zone, today)).toBe("Fri");
-  expect(formatDue(item("2026-12-24T17:00:00Z", null), zone, today)).toBe("Dec 24 6:00 PM");
-  expect(formatDue(item("2027-01-02T22:59:59Z", "2027-01-02"), zone, today)).toBe("Jan 2, 2027");
+  const zone = { zone: "Europe/Berlin", today, hour12: true };
+  expect(formatDue(item(null, null), zone)).toBe("");
+  expect(formatDue(item("2026-11-15T11:00:00Z", null), zone)).toBe("today 12:00 PM");
+  expect(formatDue(item("2026-11-15T23:30:00Z", null), zone)).toBe("tomorrow 12:30 AM");
+  expect(formatDue(item("2026-11-14T22:59:59Z", "2026-11-14"), zone)).toBe("yesterday");
+  expect(formatDue(item("2026-11-20T22:59:59Z", "2026-11-20"), zone)).toBe("Fri");
+  expect(formatDue(item("2026-12-24T17:00:00Z", null), zone)).toBe("Dec 24 6:00 PM");
+  expect(formatDue(item("2027-01-02T22:59:59Z", "2027-01-02"), zone)).toBe("Jan 2, 2027");
   setLocale("de");
-  expect(formatDue(item("2026-11-15T11:00:00Z", null), zone, today)).toBe("heute 12:00");
-  expect(formatDue(item("2026-12-24T17:00:00Z", null), zone, today)).toBe("24. Dez. 18:00");
+  expect(formatDue(item("2026-11-15T11:00:00Z", null), { ...zone, hour12: false })).toBe(
+    "heute 12:00",
+  );
+  expect(formatDue(item("2026-12-24T17:00:00Z", null), { ...zone, hour12: false })).toBe(
+    "24. Dez. 18:00",
+  );
 });

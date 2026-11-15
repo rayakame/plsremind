@@ -43,6 +43,11 @@ function subscribe(listener: () => void): () => void {
   return () => listeners.delete(listener);
 }
 
+/** The chosen language's tag, for what has to be worked out again when it changes. */
+export function useLocaleTag(): string {
+  return useSyncExternalStore(subscribe, locale);
+}
+
 /**
  * Makes a component render again when the language changes. The function it returns is a
  * new one per language, so that it can stand in a dependency list.

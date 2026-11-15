@@ -347,4 +347,9 @@ export const de: Texts = {
   "item.loadFailed": "Dieser Eintrag ließ sich nicht laden.",
   "common.retry": "Noch einmal versuchen",
   "personal.keyReserved": "{key} ist das Befehlspräfix.",
+  "item.timeError": "Schreib eine Uhrzeit wie 18:00 oder 6:00 PM.",
+  "personal.clock": "Zeitformat",
+  "personal.clockAuto": "Wie die Sprache",
+  "personal.clock24": "24 Stunden",
+  "personal.clock12": "12 Stunden",
 };

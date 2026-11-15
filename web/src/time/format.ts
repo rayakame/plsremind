@@ -1,6 +1,7 @@
 import type { Item } from "plsremind";
 import { locale, t } from "../i18n/index.js";
-import { addDays, dayIn } from "./zone.js";
+import { showClock } from "./clock.js";
+import { addDays, dayIn, timeIn } from "./zone.js";
 
 function noon(day: string): Date {
   return new Date(`${day}T12:00:00Z`);
@@ -24,33 +25,27 @@ export function formatDay(day: string, today: string): string {
   }).format(noon(day));
 }
 
-const clocks = new Map<string, Intl.DateTimeFormat>();
+/** Where and how times are shown: the zone, today's date there, and the kind of clock. */
+export interface Clock {
+  readonly zone: string;
+  readonly today: string;
+  readonly hour12: boolean;
+}
 
-/** A time of day the way the user's language writes it: "21:00" or "9:00 PM". */
-export function formatTime(instant: Date, zone: string): string {
-  const key = `${locale()}|${zone}`;
-  let clock = clocks.get(key);
-  if (!clock) {
-    clock = new Intl.DateTimeFormat(locale(), { timeStyle: "short", timeZone: zone });
-    clocks.set(key, clock);
-  }
-  // Engines disagree on the kind of space before AM and PM.
-  return clock.format(instant).replace(/\s/g, " ");
+/** A time of day on the user's clock: "21:00" or "9:00 PM". */
+export function formatTime(instant: Date, clock: Pick<Clock, "zone" | "hour12">): string {
+  return showClock(timeIn(instant, clock.zone), clock.hour12);
 }
 
 /** A moment as "tomorrow 19:00" or "Fri 08:00". */
-export function formatMoment(instant: Date, zone: string, today: string): string {
-  return `${formatDay(dayIn(instant, zone), today)} ${formatTime(instant, zone)}`;
+export function formatMoment(instant: Date, clock: Clock): string {
+  return `${formatDay(dayIn(instant, clock.zone), clock.today)} ${formatTime(instant, clock)}`;
 }
 
-export function formatDue(
-  item: Pick<Item, "dueAt" | "dueDate" | "allDay">,
-  zone: string,
-  today: string,
-): string {
-  if (item.allDay && item.dueDate) return formatDay(item.dueDate, today);
+export function formatDue(item: Pick<Item, "dueAt" | "dueDate" | "allDay">, clock: Clock): string {
+  if (item.allDay && item.dueDate) return formatDay(item.dueDate, clock.today);
   if (!item.dueAt) return "";
-  return formatMoment(item.dueAt, zone, today);
+  return formatMoment(item.dueAt, clock);
 }
 
 /** A full date and time for places with room, in the user's language. */

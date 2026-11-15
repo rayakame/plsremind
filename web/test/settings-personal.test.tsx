@@ -147,3 +147,14 @@ test("a key is changed by pressing the new one, refused when taken, and reset", 
   await waitFor(() => expect(sent(app)).toHaveLength(2));
   expect(sent(app)[1]).toEqual({ preferences: { keys: {} } });
 });
+
+test("the clock can be set to 12 or 24 hours", async () => {
+  const app = await personal();
+  await userEvent.click(screen.getByRole("button", { name: "24 hours" }));
+  await waitFor(() => expect(sent(app)).toHaveLength(1));
+  expect(sent(app)[0]).toEqual({ preferences: { clock: "24h" } });
+  await userEvent.click(screen.getByRole("checkbox", { name: "Quiet hours" }));
+  expect((screen.getByLabelText("From") as HTMLInputElement).value).toBe("22:00");
+  await userEvent.click(screen.getByRole("button", { name: "12 hours" }));
+  expect((screen.getByLabelText("From") as HTMLInputElement).value).toBe("10:00 PM");
+});

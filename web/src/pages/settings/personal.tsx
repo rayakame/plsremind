@@ -8,6 +8,7 @@ import {
 } from "plsremind";
 import { useState } from "react";
 import { usePlans, useProfile } from "../../hub/hooks.js";
+import { useNow } from "../../hub/now.js";
 import { isPrefix, readPrefs, type Prefs } from "../../hub/prefs.js";
 import { useHub } from "../../hub/session.js";
 import { resetPlan, setPlan, setPrefs, updateProfile } from "../../hub/write.js";
@@ -18,6 +19,7 @@ import { Button, Field, Input, Segmented, Select, Toggle } from "../../ui/contro
 import { keysOf } from "../../keys/actions.js";
 import { useCheckedDraft, useDraft } from "../../ui/draft.js";
 import { Card } from "../../ui/layout.js";
+import { TimeField } from "../../ui/time-field.js";
 import { KeysEditor } from "./keys-editor.js";
 
 const languageNames: Record<string, string> = { en: "English", de: "Deutsch" };
@@ -93,23 +95,24 @@ function PlanCard({ plan }: { plan: ReminderPlan }) {
 
 function QuietTimes(props: { quiet: QuietHours; onChange: (next: QuietHours) => void }) {
   const t = useT();
+  const { hour12 } = useNow();
   const { quiet, onChange } = props;
-  const start = useDraft(quiet.start, (next) => onChange({ ...quiet, start: next }), {
-    required: true,
-    enter: true,
-  });
-  const end = useDraft(quiet.end, (next) => onChange({ ...quiet, end: next }), {
-    required: true,
-    enter: true,
-  });
   return (
     <div className="line">
-      <Field label={t("personal.quietFrom")}>
-        <Input type="time" {...start} />
-      </Field>
-      <Field label={t("personal.quietTo")}>
-        <Input type="time" {...end} />
-      </Field>
+      <TimeField
+        label={t("personal.quietFrom")}
+        value={quiet.start}
+        hour12={hour12}
+        required
+        onSave={(start) => onChange({ ...quiet, start })}
+      />
+      <TimeField
+        label={t("personal.quietTo")}
+        value={quiet.end}
+        hour12={hour12}
+        required
+        onSave={(end) => onChange({ ...quiet, end })}
+      />
     </div>
   );
 }
@@ -195,6 +198,19 @@ export function PersonalSettings() {
               { value: "dark", label: t("theme.dark") },
             ]}
             onChange={(theme) => void guard(setPrefs(hub, { theme }))}
+          />
+        </div>
+        <div className="between">
+          <span>{t("personal.clock")}</span>
+          <Segmented<Prefs["clock"]>
+            label={t("personal.clock")}
+            value={prefs.clock}
+            options={[
+              { value: "auto", label: t("personal.clockAuto") },
+              { value: "24h", label: t("personal.clock24") },
+              { value: "12h", label: t("personal.clock12") },
+            ]}
+            onChange={(clock) => void guard(setPrefs(hub, { clock }))}
           />
         </div>
         <div className="between">

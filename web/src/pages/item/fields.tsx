@@ -22,6 +22,7 @@ import { Button, Field, Input, Select, TextArea } from "../../ui/controls.js";
 import { useCheckedDraft, useDraft } from "../../ui/draft.js";
 import { Icon } from "../../ui/icon.js";
 import { Card, Row, Rows } from "../../ui/layout.js";
+import { TimeField } from "../../ui/time-field.js";
 import { formatMoment, reminderLabel } from "./labels.js";
 
 interface Props {
@@ -191,7 +192,6 @@ export function ItemFacts({ item, readOnly = false }: Props) {
       patchItem(hub, item, { due: nextDay ? { day: nextDay, time: nextTime || null } : null }),
     );
   const dayField = useDraft(day, (next) => setDue(next, next ? time : ""), { enter: true });
-  const timeField = useDraft(time, (next) => setDue(dayField.value || day, next), { enter: true });
 
   const [remind, setRemind] = useState("");
   const [remindError, setRemindError] = useState(false);
@@ -237,9 +237,13 @@ export function ItemFacts({ item, readOnly = false }: Props) {
         </Field>
         {(dayField.value !== "" || day !== "") && (
           <>
-            <Field label={t("item.dueTime")}>
-              <Input type="time" readOnly={readOnly} {...timeField} />
-            </Field>
+            <TimeField
+              label={t("item.dueTime")}
+              value={time}
+              hour12={now.hour12}
+              readOnly={readOnly}
+              onSave={(next) => setDue(dayField.value || day, next)}
+            />
             {!readOnly && (
               <Button variant="ghost" onClick={() => setDue("", "")}>
                 {t("item.removeDue")}

@@ -41,7 +41,7 @@ export interface Command {
 
 const whenText = (when: When, now: Now) =>
   when.time
-    ? formatMoment(instantAt(when.day, when.time, now.zone), now.zone, now.today)
+    ? formatMoment(instantAt(when.day, when.time, now.zone), now)
     : formatDay(when.day, now.today);
 
 const dayOnly = (day: string | null): When | null => (day ? { day, time: null } : null);
@@ -124,7 +124,7 @@ export const commands: readonly Command[] = [
     preview: (rest, ctx) => {
       try {
         const at = new Date(ctx.now.instant.getTime() + parseDuration(rest));
-        return [t("cmd.remindAt", { time: formatMoment(at, ctx.now.zone, ctx.now.today) })];
+        return [t("cmd.remindAt", { time: formatMoment(at, ctx.now) })];
       } catch {
         return null;
       }

@@ -23,12 +23,19 @@ export interface Now {
   readonly weekEnd: string;
   readonly weekStart: string;
   readonly zone: string;
+  /** True if times are shown with AM and PM. */
+  readonly hour12: boolean;
 }
 
-export function nowIn(zone: string, weekStart: "monday" | "sunday", instant = new Date()): Now {
+export function nowIn(
+  zone: string,
+  weekStart: "monday" | "sunday",
+  instant = new Date(),
+  hour12 = false,
+): Now {
   const today = dayIn(instant, zone);
   const start = weekStartOf(today, weekStart);
-  return { instant, today, weekStart: start, weekEnd: addDays(start, 6), zone };
+  return { instant, today, weekStart: start, weekEnd: addDays(start, 6), zone, hour12 };
 }
 
 const order: readonly GroupKey[] = ["overdue", "today", "week", "later", "none"];
