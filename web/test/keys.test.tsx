@@ -138,3 +138,33 @@ test("a key with Ctrl, Alt or Meta is left to the browser", async () => {
   await userEvent.keyboard("{Control>}j{/Control}{Meta>}j{/Meta}{Alt>}j{/Alt}");
   expect(current()).toEqual([]);
 });
+
+test("on a page without a list the keys for moving do nothing", async () => {
+  const app = await renderApp({ sync });
+  await userEvent.keyboard("j");
+  expect(current()).toEqual(["First"]);
+  const { act } = await import("@testing-library/react");
+  act(() => app.location.navigate("/nowhere"));
+  expect(screen.queryByRole("complementary", { name: "Details" })).toBeNull();
+  await userEvent.keyboard("j{ArrowDown}");
+  expect(screen.queryByRole("complementary", { name: "Details" })).toBeNull();
+});
+
+test("keys still act after a checkbox was ticked", async () => {
+  const app = await renderApp({ sync });
+  app.route("PATCH", /items/, { status: 200, body: wireItem({ id: "a" }) });
+  await userEvent.click(screen.getByRole("checkbox", { name: "Complete Third" }));
+  await userEvent.keyboard("j");
+  expect(current()).toEqual(["First"]);
+});
+
+test("a command on an item's page is about that item, whatever was selected before", async () => {
+  const app = await renderApp({ sync });
+  app.route("PATCH", /items/, { status: 200, body: wireItem({ id: "b" }) });
+  await userEvent.keyboard("j");
+  const { act } = await import("@testing-library/react");
+  act(() => app.location.navigate("/items/b"));
+  await userEvent.type(bar(), "/prio high{Enter}");
+  await waitFor(() => expect(app.sent("PATCH", "/users/@me/items/b")).toHaveLength(1));
+  expect(app.sent("PATCH", "/users/@me/items/a")).toHaveLength(0);
+});

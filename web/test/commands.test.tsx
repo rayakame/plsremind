@@ -60,7 +60,7 @@ test("the prefix shows the commands, and typing narrows them", async () => {
 test("a new item is previewed and created with what was understood", async () => {
   const made = await app();
   await userEvent.type(bar(), "/new Call Mia tomorrow 12:00 !high #wor");
-  expect(preview()).toBe("Call Mia" + "tomorrow 12:00" + "High" + "Work");
+  expect(preview()).toBe("Call Mia" + "tomorrow 12:00 PM" + "High" + "Work");
   await userEvent.keyboard("{Enter}");
   expect((bar() as HTMLInputElement).value).toBe("");
   await waitFor(() => expect(made.sent("POST", "/users/@me/items")).toHaveLength(1));

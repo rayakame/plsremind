@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { useLocation } from "wouter";
+import { useItem } from "../hub/hooks.js";
 import { useT } from "../i18n/index.js";
 import { Bar } from "../bar/bar.js";
 import { Button } from "../ui/controls.js";
@@ -10,6 +11,7 @@ import { Sidebar } from "./sidebar.js";
 
 export function Shell(props: { panel: ReactNode; children: ReactNode }) {
   const { selected } = useSelection();
+  const shown = useItem(selected) !== undefined;
   const t = useT();
   const [drawer, setDrawer] = useState(false);
   const [path] = useLocation();
@@ -24,7 +26,7 @@ export function Shell(props: { panel: ReactNode; children: ReactNode }) {
   }, [drawer]);
 
   return (
-    <div className={selected !== undefined ? "app with-panel" : "app"}>
+    <div className={shown ? "app with-panel" : "app"}>
       <Sidebar open={drawer} onNavigate={() => setDrawer(false)} />
       {drawer && <div className="backdrop only-narrow" onClick={() => setDrawer(false)} />}
       <main className="main fixed">

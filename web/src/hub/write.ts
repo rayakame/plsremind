@@ -179,10 +179,11 @@ function updateItem(
 
 export function setDone(hub: Writer, item: Item, done: boolean): Promise<void> {
   const status = done ? "done" : "open";
+  const completedAt = done ? new Date() : null;
   return updateItem(
     hub,
     item,
-    (before) => ({ ...before, status, completedAt: done ? new Date() : null }),
+    (before) => ({ ...before, status, completedAt }),
     (id, nonce) => hub.client.rest.updateItem(id, { status }, { nonce }),
   );
 }
@@ -344,7 +345,7 @@ export function updateProfile(hub: Writer, changes: UserChanges): Promise<void> 
   return hub.view
     .apply(
       [{ kind: "profile", update: (before) => ({ ...before, ...changes }) }],
-      (nonce) => hub.client.rest.updateUser(changes, { nonce }),
+      (nonce) => inOrder(hub, "profile", () => hub.client.rest.updateUser(changes, { nonce })),
       { user: hub.userId },
     )
     .then(() => undefined);
@@ -364,7 +365,10 @@ export function setPlan(
           update: (before) => ({ ...before, ...plan, isDefault: false }),
         },
       ],
-      (nonce) => hub.client.rest.setReminderPlan(priority, plan, { nonce }),
+      (nonce) =>
+        inOrder(hub, `plan:${priority}`, () =>
+          hub.client.rest.setReminderPlan(priority, plan, { nonce }),
+        ),
       { user: hub.userId },
     )
     .then(() => undefined);
@@ -377,7 +381,8 @@ export function setPrefs(hub: Writer, patch: Partial<Prefs>): Promise<void> {
   return hub.view
     .apply(
       [{ kind: "profile", update: (before) => ({ ...before, preferences }) }],
-      (nonce) => hub.client.rest.updateUser({ preferences }, { nonce }),
+      (nonce) =>
+        inOrder(hub, "profile", () => hub.client.rest.updateUser({ preferences }, { nonce })),
       { user: hub.userId },
     )
     .then(() => undefined);
@@ -456,10 +461,12 @@ export function moveList(hub: Writer, list: List, by: -1 | 1): Promise<void> {
         id,
         update: (before: List) => ({ ...before, position }),
       })),
-      async (nonce) =>
-        hub.client.rest.reorderLists(
-          { ids: await Promise.all(order.map((id) => settled(hub, id))) },
-          { nonce },
+      (nonce) =>
+        inOrder(hub, "lists", async () =>
+          hub.client.rest.reorderLists(
+            { ids: await Promise.all(order.map((id) => settled(hub, id))) },
+            { nonce },
+          ),
         ),
       { user: hub.userId },
     )

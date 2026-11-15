@@ -104,3 +104,27 @@ test("nothing done yet says so", async () => {
   await renderApp({ path: "/done" });
   expect(screen.getByText("Nothing done yet.")).toBeTruthy();
 });
+
+test("an older item that the cache does not hold opens on its own page and leaves when reopened", async () => {
+  const app = await renderApp({ path: "/done", sync: { history, history_cursor: "c1" } });
+  const older = done("o1", "Older", "2026-09-01T10:00:00Z");
+  app.route("GET", "/users/@me/items", { status: 200, body: { data: [older], next_cursor: null } });
+  app.route("GET", "/users/@me/items/o1", { status: 200, body: older });
+  app.route("PATCH", "/users/@me/items/o1", { status: 200, body: { ...older, status: "open" } });
+  await userEvent.click(screen.getByRole("button", { name: "Load older" }));
+  await waitFor(() => expect(titles()).toHaveLength(4));
+  fireEvent.click(screen.getByRole("checkbox", { name: "Reopen Older" }));
+  expect(titles()).toHaveLength(3);
+  await waitFor(() => expect(app.sent("PATCH", "/users/@me/items/o1")).toHaveLength(1));
+});
+
+test("clicking an older item opens its page instead of an empty column", async () => {
+  const app = await renderApp({ path: "/done", sync: { history, history_cursor: "c1" } });
+  const older = done("o1", "Older", "2026-09-01T10:00:00Z");
+  app.route("GET", "/users/@me/items", { status: 200, body: { data: [older], next_cursor: null } });
+  app.route("GET", "/users/@me/items/o1", { status: 200, body: older });
+  await userEvent.click(screen.getByRole("button", { name: "Load older" }));
+  await waitFor(() => expect(titles()).toHaveLength(4));
+  fireEvent.click(screen.getByRole("link", { name: "Older" }), { detail: 1 });
+  expect(app.path()).toBe("/items/o1");
+});

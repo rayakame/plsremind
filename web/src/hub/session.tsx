@@ -13,7 +13,7 @@ export type SessionState =
   | { phase: "loading" }
   | { phase: "unreachable" }
   | { phase: "setup"; info: Info; rest: RestClient }
-  | { phase: "signedOut"; info: Info; rest: RestClient }
+  | { phase: "signedOut"; info: Info; rest: RestClient; asked: boolean }
   | { phase: "ready"; info: Info; client: Client; view: OptimisticView; userId: string };
 
 const longestWait = 30_000;
@@ -26,6 +26,7 @@ export class Session {
   #client: Client | undefined;
   #generation = 0;
   #timer: ReturnType<typeof setTimeout> | undefined;
+  #asked = false;
 
   constructor(make: () => Client) {
     this.#make = make;
@@ -49,12 +50,13 @@ export class Session {
   }
 
   async signOut(): Promise<void> {
-    const rest = this.#client?.rest;
+    this.#asked = true;
     try {
-      await rest?.logout();
-    } finally {
-      this.reload();
+      await this.#client?.rest.logout();
+    } catch {
+      // Whether the session is gone shows in what the hub says next.
     }
+    this.reload();
   }
 
   #set(state: SessionState): void {
@@ -83,7 +85,9 @@ export class Session {
         if (!(error instanceof ApiError) || error.status !== 401) throw error;
         if (stale()) return;
         shown?.close();
-        return this.#set({ phase: "signedOut", info, rest: client.rest });
+        const asked = this.#asked;
+        this.#asked = false;
+        return this.#set({ phase: "signedOut", info, rest: client.rest, asked });
       }
       if (stale()) return;
       const view = optimistic(client);

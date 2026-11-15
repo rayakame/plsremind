@@ -1,4 +1,4 @@
-import type { Item } from "plsremind";
+import { ApiError, type Item } from "plsremind";
 import { useEffect, useState } from "react";
 import { Redirect, useLocation } from "wouter";
 import { useItem } from "../hub/hooks.js";
@@ -18,18 +18,21 @@ import { NotFound } from "./not-found.js";
 /** An item the cache does not hold, such as one completed long ago. */
 function useFetched(id: string, skip: boolean): Item | null | undefined {
   const { client } = useHub();
+  const { guard } = useNotices();
   const [fetched, setFetched] = useState<{ id: string; item: Item | null }>();
   useEffect(() => {
     if (skip) return;
     const abort = new AbortController();
     client.rest.getItem(id, { signal: abort.signal }).then(
       (item) => setFetched({ id, item }),
-      () => {
-        if (!abort.signal.aborted) setFetched({ id, item: null });
+      (error: unknown) => {
+        if (abort.signal.aborted) return;
+        if (error instanceof ApiError && error.status === 404) setFetched({ id, item: null });
+        else void guard(Promise.reject(error));
       },
     );
     return () => abort.abort();
-  }, [client, id, skip]);
+  }, [client, id, skip, guard]);
   return fetched?.id === id ? fetched.item : undefined;
 }
 

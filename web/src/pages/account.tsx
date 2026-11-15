@@ -54,8 +54,32 @@ function browserAccount() {
   };
 }
 
+const nextKey = "plsremind.next";
+
+/** Remembers the wanted page across a sign-in elsewhere, which always returns to the start. */
+function rememberNext(next: string | null): void {
+  try {
+    if (next) sessionStorage.setItem(nextKey, next);
+    else sessionStorage.removeItem(nextKey);
+  } catch {
+    // The start page then opens after signing in.
+  }
+}
+
+/** The page remembered before a sign-in elsewhere, once. */
+export function takeNext(): string | null {
+  try {
+    const next = sessionStorage.getItem(nextKey);
+    sessionStorage.removeItem(nextKey);
+    return next;
+  } catch {
+    return null;
+  }
+}
+
 function Providers(props: { info: Info; rest: RestClient; inviteCode?: string }) {
   const t = useT();
+  const next = new URLSearchParams(useSearch()).get("next");
   const others = props.info.loginMethods.filter((method) => method.type !== "password");
   if (others.length === 0) return null;
   return (
@@ -68,6 +92,7 @@ function Providers(props: { info: Info; rest: RestClient; inviteCode?: string })
             method.key,
             props.inviteCode ? { inviteCode: props.inviteCode } : {},
           )}
+          onClick={() => rememberNext(next)}
         >
           {t("account.continueWith", { name: method.name })}
         </a>

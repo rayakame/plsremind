@@ -66,11 +66,33 @@ test("a first connection that fails is tried again", async () => {
 });
 
 test("a write refused for want of a login leads to the login", async () => {
-  const app = await renderApp({ user: wireUser({ locale: "en", timezone: "Pacific/Kiritimati" }) });
+  const app = await renderApp({
+    path: "/lists/l2",
+    user: wireUser({ locale: "en", timezone: "Pacific/Kiritimati" }),
+  });
   app.route("PATCH", "/users/@me", { status: 401, body: { error: { code: "unauthorized" } } });
   app.setUser(null);
   fireEvent.click(screen.getByRole("button", { name: /^Use / }));
   await waitFor(() => expect(screen.getByLabelText("Username")).toBeTruthy());
+  expect(app.path()).toBe("/login?next=%2Flists%2Fl2");
+});
+
+test("signing out on purpose does not remember the page for the next person", async () => {
+  const app = await renderApp({ path: "/lists/l2" });
+  app.route("POST", "/auth/logout", () => {
+    app.setUser(null);
+    return { status: 204 };
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Sign out" }));
+  await waitFor(() => expect(screen.getByLabelText("Username")).toBeTruthy());
+  expect(app.path()).toBe("/login");
+});
+
+test("a page wanted before signing in elsewhere opens after coming back", async () => {
+  sessionStorage.setItem("plsremind.next", "/lists/l2");
+  const app = await renderApp();
+  await waitFor(() => expect(app.path()).toBe("/lists/l2"));
+  expect(sessionStorage.getItem("plsremind.next")).toBeNull();
 });
 
 test("the profile's language and theme apply", async () => {

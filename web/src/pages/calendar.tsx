@@ -6,8 +6,9 @@ import { useNow } from "../hub/now.js";
 import { readPrefs } from "../hub/prefs.js";
 import { locale, useT } from "../i18n/index.js";
 import { byDay } from "../model/calendar.js";
-import { useOpenItem, useSelection } from "../shell/selection.js";
-import { timeIn } from "../time/zone.js";
+import { filterItems } from "../model/search.js";
+import { useOpenItem, useOrder, useSelection } from "../shell/selection.js";
+import { formatTime } from "../time/format.js";
 import { addDays, monthGrid, weekStartOf } from "../time/zone.js";
 import { Button, Segmented } from "../ui/controls.js";
 import { Dialog } from "../ui/dialog.js";
@@ -45,7 +46,7 @@ export default function CalendarPage() {
   const done = useHistory();
   const bar = useBar();
   const narrow = useNarrow();
-  const { selected, select, setOrder } = useSelection();
+  const { selected, select } = useSelection();
   const openItem = useOpenItem();
   const [view, setView] = useState<View>(storedView);
   const [anchor, setAnchor] = useState(now.today);
@@ -61,12 +62,12 @@ export default function CalendarPage() {
         : Array.from({ length: 7 }, (_, i) => addDays(weekStartOf(anchor, weekStart), i)),
     [view, anchor, weekStart],
   );
-  const items = byDay(open, done, now.zone);
+  const items = byDay(filterItems(open, bar.filter), filterItems(done, bar.filter), now.zone);
   const order = useMemo(
     () => days.flatMap((day) => (items.get(day) ?? []).map((item) => item.id)),
     [days, items],
   );
-  useEffect(() => setOrder(order), [order, setOrder]);
+  useOrder(order);
 
   const changeView = (next: View) => {
     setView(next);
@@ -106,11 +107,11 @@ export default function CalendarPage() {
       <div className="between">
         <h1 className="h1">{format(anchor, { month: "long", year: "numeric" })}</h1>
         <div className="line">
-          <Button variant="icon" aria-label={t("item.previous")} onClick={() => step(-1)}>
+          <Button variant="icon" aria-label={t("cal.previous")} onClick={() => step(-1)}>
             <Icon name="left" />
           </Button>
           <Button onClick={() => setAnchor(now.today)}>{t("cal.today")}</Button>
-          <Button variant="icon" aria-label={t("item.next")} onClick={() => step(1)}>
+          <Button variant="icon" aria-label={t("cal.next")} onClick={() => step(1)}>
             <Icon name="right" />
           </Button>
           <Segmented
@@ -140,14 +141,22 @@ export default function CalendarPage() {
             day === chosen && "sel",
           ];
           return (
-            <div className={names.filter(Boolean).join(" ")} data-day={day} key={day}>
+            <div
+              className={names.filter(Boolean).join(" ")}
+              data-day={day}
+              key={day}
+              onClick={narrow ? () => setDefaultDue(day === chosen ? null : day) : undefined}
+            >
               <button
                 type="button"
                 className="n"
                 aria-label={format(day, { day: "numeric", month: "long" })}
                 aria-pressed={day === chosen}
                 aria-current={day === now.today ? "date" : undefined}
-                onClick={() => setDefaultDue(day === chosen ? null : day)}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  setDefaultDue(day === chosen ? null : day);
+                }}
               >
                 {Number(day.slice(8))}
               </button>
@@ -207,7 +216,7 @@ function DayList(props: {
             {item.title}
           </button>
           <span className="meta">
-            {item.allDay || !item.dueAt ? "" : timeIn(item.dueAt, props.zone)}
+            {item.allDay || !item.dueAt ? "" : formatTime(item.dueAt, props.zone)}
           </span>
         </Row>
       ))}

@@ -23,7 +23,7 @@ test("the bar creates, filters and takes a command @core", async ({ page, accoun
   await bar.press("Enter");
   const row = page.getByRole("listitem").filter({ hasText: "Pay the rent" });
   await expect(row).toContainText("High");
-  await expect(row).toContainText("tomorrow 12:00");
+  await expect(row).toContainText("tomorrow 12:00 PM");
   await expect
     .poll(async () => (await account.rest.listItems()).data.map((item) => item.title).sort())
     .toEqual(["Buy milk", "Hand in the report", "Pay the rent"]);

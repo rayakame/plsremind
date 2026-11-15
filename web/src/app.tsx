@@ -9,7 +9,7 @@ import { readPrefs } from "./hub/prefs.js";
 import { SessionProvider, useSession } from "./hub/session.js";
 import { describeCode } from "./hub/errors.js";
 import { setLocale, t, useT } from "./i18n/index.js";
-import { LoginPage, RegisterPage, SetupPage } from "./pages/account.js";
+import { LoginPage, RegisterPage, SetupPage, takeNext } from "./pages/account.js";
 import { DonePage } from "./pages/done.js";
 import { FindPage } from "./pages/find.js";
 import { ItemPage } from "./pages/item.js";
@@ -17,6 +17,7 @@ import { AllItemsPage, ListPage } from "./pages/items.js";
 import { Details } from "./shell/details.js";
 import { NotFound } from "./pages/not-found.js";
 import { SelectionProvider } from "./shell/selection.js";
+import { Boundary } from "./shell/boundary.js";
 import { NoticesProvider, useNotices } from "./shell/notices.js";
 import { localPath, routes } from "./shell/router.js";
 import { Shell } from "./shell/shell.js";
@@ -90,8 +91,12 @@ function AuthError() {
 }
 
 function SignedIn() {
-  const [path] = useLocation();
+  const [path, navigate] = useLocation();
   const search = new URLSearchParams(useSearch());
+  useEffect(() => {
+    const next = takeNext();
+    if (next && localPath(next) !== "/") navigate(localPath(next), { replace: true });
+  }, [navigate]);
   if (path === routes.login || path === routes.register || path === routes.setup) {
     return <Redirect to={localPath(search.get("next"))} replace />;
   }
@@ -103,34 +108,36 @@ function SignedIn() {
           <Keys />
           <AuthError />
           <Shell panel={<Details />}>
-            <Switch>
-              <Route path="/">
-                <AllItemsPage />
-              </Route>
-              <Route path="/lists/:id">{(params) => <ListPage id={params.id} />}</Route>
-              <Route path="/find">
-                <FindPage />
-              </Route>
-              <Route path="/calendar">
-                <Suspense fallback={null}>
-                  <CalendarPage />
-                </Suspense>
-              </Route>
-              <Route path="/done">
-                <DonePage />
-              </Route>
-              <Route path="/items/:id">{(params) => <ItemPage id={params.id} />}</Route>
-              <Route path="/settings/:area?/:section?">
-                {(params) => (
+            <Boundary>
+              <Switch>
+                <Route path="/">
+                  <AllItemsPage />
+                </Route>
+                <Route path="/lists/:id">{(params) => <ListPage id={params.id} />}</Route>
+                <Route path="/find">
+                  <FindPage />
+                </Route>
+                <Route path="/calendar">
                   <Suspense fallback={null}>
-                    <SettingsPage area={params.area} section={params.section} />
+                    <CalendarPage />
                   </Suspense>
-                )}
-              </Route>
-              <Route>
-                <NotFound />
-              </Route>
-            </Switch>
+                </Route>
+                <Route path="/done">
+                  <DonePage />
+                </Route>
+                <Route path="/items/:id">{(params) => <ItemPage id={params.id} />}</Route>
+                <Route path="/settings/:area?/:section?">
+                  {(params) => (
+                    <Suspense fallback={null}>
+                      <SettingsPage area={params.area} section={params.section} />
+                    </Suspense>
+                  )}
+                </Route>
+                <Route>
+                  <NotFound />
+                </Route>
+              </Switch>
+            </Boundary>
           </Shell>
         </BarProvider>
       </SelectionProvider>
@@ -163,7 +170,7 @@ function Gate() {
       const target = path + (search && !error ? `?${search}` : "");
       const query = new URLSearchParams();
       if (error) query.set("auth_error", error);
-      else if (target !== "/") query.set("next", target);
+      else if (target !== "/" && !state.asked) query.set("next", target);
       const tail = query.toString();
       return <Redirect to={routes.login + (tail ? `?${tail}` : "")} replace />;
     }

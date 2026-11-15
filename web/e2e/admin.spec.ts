@@ -1,3 +1,4 @@
+import { audit } from "./audit.js";
 import {
   address,
   admin,
@@ -27,7 +28,13 @@ test("an admin invites someone, sees them register, and blocks them", async ({ b
   const problems: string[] = [];
   watch(page, problems);
 
-  await page.goto("/settings/admin/invites");
+  for (const section of ["instance", "users", "providers", "connections", "invites"]) {
+    await page.goto(`/settings/admin/${section}`);
+    await expect(page.getByRole("navigation", { name: "Administration" })).toBeVisible();
+    await page.waitForLoadState("networkidle");
+    expect(await audit(page), section).toEqual([]);
+  }
+
   await page.getByRole("button", { name: "Create invite" }).click();
   const code = await page.getByRole("dialog").getByLabel("Invite code").inputValue();
   await page.getByRole("dialog").getByRole("button", { name: "Done" }).click();

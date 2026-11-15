@@ -3,6 +3,7 @@ import {
   parseDuration,
   type FollowUp,
   type Priority,
+  type QuietHours,
   type ReminderPlan,
 } from "plsremind";
 import { useState } from "react";
@@ -89,6 +90,29 @@ function PlanCard({ plan }: { plan: ReminderPlan }) {
   );
 }
 
+function QuietTimes(props: { quiet: QuietHours; onChange: (next: QuietHours) => void }) {
+  const t = useT();
+  const { quiet, onChange } = props;
+  const start = useDraft(quiet.start, (next) => onChange({ ...quiet, start: next }), {
+    required: true,
+    enter: true,
+  });
+  const end = useDraft(quiet.end, (next) => onChange({ ...quiet, end: next }), {
+    required: true,
+    enter: true,
+  });
+  return (
+    <div className="line">
+      <Field label={t("personal.quietFrom")}>
+        <Input type="time" {...start} />
+      </Field>
+      <Field label={t("personal.quietTo")}>
+        <Input type="time" {...end} />
+      </Field>
+    </div>
+  );
+}
+
 export function PersonalSettings() {
   const t = useT();
   const hub = useHub();
@@ -121,6 +145,8 @@ export function PersonalSettings() {
     },
     { enter: true },
   );
+  const base = profile.locale?.toLowerCase().split("-")[0] ?? "";
+  const language = base in languages ? base : (profile.locale ?? "");
   const quiet = profile.quietHours;
   const setQuiet = (next: { start: string; end: string } | null) =>
     void guard(updateProfile(hub, { quietHours: next }));
@@ -144,12 +170,15 @@ export function PersonalSettings() {
         </datalist>
         <Field label={t("personal.language")}>
           <Select
-            value={profile.locale?.toLowerCase().split("-")[0] ?? ""}
+            value={language}
             onChange={(event) =>
               void guard(updateProfile(hub, { locale: event.target.value || null }))
             }
           >
             <option value="">{t("personal.languageBrowser")}</option>
+            {language !== "" && !(language in languages) && (
+              <option value={language}>{language}</option>
+            )}
             {Object.keys(languages).map((tag) => (
               <option key={tag} value={tag}>
                 {languageNames[tag] ?? tag}
@@ -194,28 +223,7 @@ export function PersonalSettings() {
           checked={quiet !== null}
           onChange={(on) => setQuiet(on ? { start: "22:00", end: "07:00" } : null)}
         />
-        {quiet && (
-          <div className="line">
-            <Field label={t("personal.quietFrom")}>
-              <Input
-                type="time"
-                value={quiet.start}
-                onChange={(event) => {
-                  if (event.target.value) setQuiet({ ...quiet, start: event.target.value });
-                }}
-              />
-            </Field>
-            <Field label={t("personal.quietTo")}>
-              <Input
-                type="time"
-                value={quiet.end}
-                onChange={(event) => {
-                  if (event.target.value) setQuiet({ ...quiet, end: event.target.value });
-                }}
-              />
-            </Field>
-          </div>
-        )}
+        {quiet && <QuietTimes quiet={quiet} onChange={setQuiet} />}
       </Card>
 
       <section className="stack" aria-label={t("personal.plans")}>

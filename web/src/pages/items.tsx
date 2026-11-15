@@ -11,7 +11,7 @@ import { flatOrder, groupOpen, type GroupKey } from "../model/groups.js";
 import { filterItems } from "../model/search.js";
 import { useNotices } from "../shell/notices.js";
 import { routes } from "../shell/router.js";
-import { useOpenItem, useSelection } from "../shell/selection.js";
+import { useOpenItem, useOrder, useSelection } from "../shell/selection.js";
 import { Button, Segmented } from "../ui/controls.js";
 import { Icon } from "../ui/icon.js";
 import { useNarrow } from "../ui/layout-mode.js";
@@ -68,7 +68,7 @@ export function OpenItems(props: {
   const lists = useLists();
   const now = useNow();
   const narrow = useNarrow();
-  const { selected, select, setOrder } = useSelection();
+  const { selected, select } = useSelection();
   const open = useOpenItem();
   const bar = useBar();
   const filter = props.filter ?? bar.filter;
@@ -80,7 +80,7 @@ export function OpenItems(props: {
     () => [...flatOrder(groups), ...done.map((item) => item.id)],
     [groups, done],
   );
-  useEffect(() => setOrder(order), [order, setOrder]);
+  useOrder(order);
 
   const names = useMemo(() => new Map(lists.map((list) => [list.id, list.name])), [lists]);
   const labelled = useMemo(
@@ -180,7 +180,7 @@ function ListHeader(props: { list: List; sort: Sort; onSort: (sort: Sort) => voi
         >
           <Icon name="down" />
         </Button>
-        <Button onClick={() => setDialog("rename")}>{t("common.rename")}</Button>
+        {!list.isInbox && <Button onClick={() => setDialog("rename")}>{t("common.rename")}</Button>}
         {!list.isInbox && (
           <Button variant="icon" aria-label={t("list.delete")} onClick={() => setDialog("delete")}>
             <Icon name="trash" />

@@ -17,11 +17,13 @@ const nextTheme: Record<Prefs["theme"], Prefs["theme"]> = {
   dark: "system",
 };
 
+const notTyped = new Set(["checkbox", "radio", "button", "submit", "reset"]);
+
 function typing(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
+  if (target instanceof HTMLInputElement) return !notTyped.has(target.type);
   return (
     target.isContentEditable ||
-    target instanceof HTMLInputElement ||
     target instanceof HTMLTextAreaElement ||
     target instanceof HTMLSelectElement
   );
@@ -35,7 +37,7 @@ export function Keys() {
   const bar = useBar();
   const profile = useProfile();
   const prefs = readPrefs(profile.preferences);
-  const { selected, select, order } = useSelection();
+  const { selected, select, order, listed } = useSelection();
   const item = useItem(selected);
   const open = useOpenItem();
   const [help, setHelp] = useState(false);
@@ -59,14 +61,15 @@ export function Keys() {
     help: () => setHelp(true),
   };
   function move(by: number) {
-    if (order.length === 0) return;
+    if (!listed || order.length === 0) return;
     const at = selected === undefined ? -1 : order.indexOf(selected);
     const next = at < 0 ? (by > 0 ? 0 : order.length - 1) : at + by;
     select(order[Math.min(order.length - 1, Math.max(0, next))]);
   }
 
-  const latest = useRef({ run, keys: prefs.keys, prefix: bar.prefix, focus: bar.focus });
-  latest.current = { run, keys: prefs.keys, prefix: bar.prefix, focus: bar.focus };
+  const now = { run, keys: prefs.keys, prefix: bar.prefix, focus: bar.focus, listed };
+  const latest = useRef(now);
+  latest.current = now;
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -74,8 +77,9 @@ export function Keys() {
       if (typing(event.target) || document.querySelector('[role="dialog"]')) return;
       const now = latest.current;
       let action = bindings(now.keys).get(event.key);
-      if (event.key === "ArrowDown") action = "down";
-      if (event.key === "ArrowUp") action = "up";
+      if (now.listed && event.key === "ArrowDown") action = "down";
+      if (now.listed && event.key === "ArrowUp") action = "up";
+      if ((action === "down" || action === "up") && !now.listed) return;
       const onControl =
         event.target instanceof HTMLButtonElement || event.target instanceof HTMLAnchorElement;
       if (action === "open" && onControl) return;

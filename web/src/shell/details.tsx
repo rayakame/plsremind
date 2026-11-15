@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import { useItem } from "../hub/hooks.js";
+import { useHub } from "../hub/session.js";
 import { useT } from "../i18n/index.js";
 import { ItemFacts, ItemText } from "../pages/item/fields.js";
 import { Button } from "../ui/controls.js";
@@ -9,13 +10,15 @@ import { useOpenItem, useSelection } from "./selection.js";
 /** The selected item in a column next to the list. */
 export function Details() {
   const t = useT();
+  const { view } = useHub();
   const { selected, select } = useSelection();
   const item = useItem(selected);
   const open = useOpenItem();
 
+  const real = !item && selected?.startsWith("tmp_") ? view.resolveId(selected) : undefined;
   useEffect(() => {
-    if (selected !== undefined && !item) select(undefined);
-  }, [selected, item, select]);
+    if (real !== undefined) select(real);
+  }, [real, select]);
 
   if (!item) return null;
   return (

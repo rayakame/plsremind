@@ -48,6 +48,12 @@ test("at phone width everything is reachable by touch and nothing scrolls sidewa
     await expect(page.getByRole("heading", { level: 1, name: heading })).toBeVisible();
     expect(await sideways(), link).toBe(0);
   }
+  await page.goto("/calendar");
+  const cell = page.locator("[data-day]").nth(10);
+  await cell.tap({ position: { x: 30, y: 30 } });
+  await expect(cell.locator(".n")).toHaveAttribute("aria-pressed", "true");
+  expect((await cell.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+
   await page.goto("/settings/admin");
   await expect(page.getByRole("heading", { name: "Not found" })).toBeVisible();
 });

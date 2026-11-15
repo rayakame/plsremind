@@ -129,10 +129,12 @@ export function AdminUsers() {
         setUsers(page.data);
         setCursor(page.nextCursor);
       },
-      () => {},
+      (error: unknown) => {
+        if (!abort.signal.aborted) void guard(Promise.reject(error));
+      },
     );
     return () => abort.abort();
-  }, [client]);
+  }, [client, guard]);
 
   const more = async () => {
     if (cursor === null) return;

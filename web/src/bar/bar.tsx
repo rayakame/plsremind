@@ -27,7 +27,7 @@ export function Bar() {
   const [, navigate] = useLocation();
   const [, onList] = useRoute("/lists/:id");
   const [, onItem] = useRoute("/items/:id");
-  const item = useItem(selected ?? onItem?.id);
+  const item = useItem(onItem?.id ?? selected);
   const [form, setForm] = useState(false);
   const [at, setAt] = useState(0);
   const listbox = useId();
@@ -45,7 +45,15 @@ export function Bar() {
         : [];
   useEffect(() => setAt(0), [bar.text]);
 
-  const ctx: CommandContext = { hub, lists, item, listId, now, navigate };
+  const ctx: CommandContext = {
+    hub,
+    lists,
+    item,
+    listId,
+    defaultDue: bar.defaultDue,
+    now,
+    navigate,
+  };
   const understood =
     !typed || !exact
       ? null
@@ -55,6 +63,7 @@ export function Bar() {
 
   const create = (draft: ItemDraft) => void guard(createItem(hub, draft));
   const submit = () => {
+    if (typed) return run();
     const title = bar.filter.trim();
     if (bar.text.trim() === "") return setForm(true);
     if (title === "") return;
@@ -65,7 +74,7 @@ export function Bar() {
     });
     bar.setText("");
   };
-  const run = () => {
+  function run() {
     if (!typed) return;
     if (exact && Array.isArray(understood)) {
       const work = exact.run(typed.rest, ctx);
@@ -74,7 +83,7 @@ export function Bar() {
     } else if (!exact && offered[at]) {
       bar.setText(`${bar.prefix}${offered[at].name} `);
     }
-  };
+  }
 
   const onKeyDown = (event: KeyboardEvent) => {
     if (event.key === "Escape") {
@@ -113,6 +122,9 @@ export function Bar() {
             role="combobox"
             aria-expanded={typed !== null}
             aria-controls={typed ? listbox : undefined}
+            aria-activedescendant={
+              naming && offered[at] ? `${listbox}-${offered[at].name}` : undefined
+            }
             aria-label={t("bar.label")}
             placeholder={t("bar.placeholder", { prefix: bar.prefix })}
             className={typed ? "mono" : undefined}
@@ -143,6 +155,8 @@ export function Bar() {
                   key={command.name}
                   type="button"
                   role="option"
+                  id={`${listbox}-${command.name}`}
+                  tabIndex={-1}
                   aria-selected={naming && index === at}
                   className={naming && index === at ? "opt on" : "opt"}
                   onClick={() => bar.focus(`${bar.prefix}${command.name} `)}

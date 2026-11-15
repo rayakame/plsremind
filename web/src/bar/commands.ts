@@ -11,9 +11,9 @@ import {
 import { t, type Key } from "../i18n/index.js";
 import type { Now } from "../model/groups.js";
 import { routes } from "../shell/router.js";
-import { formatDay } from "../time/format.js";
+import { formatDay, formatMoment } from "../time/format.js";
 import { parseWhen, type When } from "../time/when.js";
-import { dayIn, timeIn } from "../time/zone.js";
+import { instantAt } from "../time/zone.js";
 import { listOf, parseNew, priorityOf } from "./parse.js";
 
 export interface CommandContext {
@@ -23,6 +23,8 @@ export interface CommandContext {
   item: Item | undefined;
   /** The list that is open, for new items. */
   listId: string | undefined;
+  /** The day chosen in the calendar, for new items without a time of their own. */
+  defaultDue: string | null;
   now: Now;
   navigate: (path: string) => void;
 }
@@ -38,7 +40,11 @@ export interface Command {
 }
 
 const whenText = (when: When, now: Now) =>
-  `${formatDay(when.day, now.today)}${when.time ? ` ${when.time}` : ""}`;
+  when.time
+    ? formatMoment(instantAt(when.day, when.time, now.zone), now.zone, now.today)
+    : formatDay(when.day, now.today);
+
+const dayOnly = (day: string | null): When | null => (day ? { day, time: null } : null);
 
 const places: Record<string, string> = {
   all: routes.items,
@@ -66,9 +72,10 @@ export const commands: readonly Command[] = [
     preview: (rest, ctx) => {
       const draft = parseNew(rest, { today: ctx.now.today, lists: ctx.lists });
       if (draft.title === "") return null;
+      const when = draft.when ?? dayOnly(ctx.defaultDue);
       return [
         draft.title,
-        ...(draft.when ? [whenText(draft.when, ctx.now)] : []),
+        ...(when ? [whenText(when, ctx.now)] : []),
         ...(draft.priority ? [t(`priority.${draft.priority}`)] : []),
         ...(draft.list ? [draft.list.name] : []),
         ...(draft.unknownList !== null ? [t("cmd.noList", { name: draft.unknownList })] : []),
@@ -80,7 +87,7 @@ export const commands: readonly Command[] = [
         title: draft.title,
         listId: draft.list?.id ?? ctx.listId,
         priority: draft.priority ?? undefined,
-        due: draft.when ?? undefined,
+        due: draft.when ?? dayOnly(ctx.defaultDue) ?? undefined,
       });
     },
   },
@@ -117,8 +124,7 @@ export const commands: readonly Command[] = [
     preview: (rest, ctx) => {
       try {
         const at = new Date(ctx.now.instant.getTime() + parseDuration(rest));
-        const day = formatDay(dayIn(at, ctx.now.zone), ctx.now.today);
-        return [t("cmd.remindAt", { time: `${day} ${timeIn(at, ctx.now.zone)}` })];
+        return [t("cmd.remindAt", { time: formatMoment(at, ctx.now.zone, ctx.now.today) })];
       } catch {
         return null;
       }

@@ -94,6 +94,22 @@ test("a connection is switched on, told to remind, and shows what it gets", asyn
   expect(app.sent("PUT", "/users/@me/connections/c1")[1]!.body).toEqual({ remind: false });
 });
 
+test("names that others chose are shown as text", async () => {
+  const markup = '<img src=x onerror="alert(1)">';
+  await settings("connections", {}, (made) => {
+    made.route("GET", "/users/@me/connections", {
+      status: 200,
+      body: [{ ...connection, name: markup, description: markup }],
+    });
+    made.route("GET", "/users/@me/identities", {
+      status: 200,
+      body: [{ ...identities[1], display_name: markup }],
+    });
+  });
+  await screen.findByRole("group", { name: markup });
+  expect(document.querySelector("img")).toBeNull();
+});
+
 test("a connection that needs an account elsewhere offers to link it", async () => {
   await settings("connections");
   const row = within(await screen.findByRole("group", { name: "Mail" }));

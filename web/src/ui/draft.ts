@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState, type ChangeEvent, type KeyboardEvent } from "react";
 
 /**
- * A text field that saves when it is left, not on every key. While it has the focus a newer
- * value from outside does not replace what is being typed.
+ * A field that saves when it is left, not on every key or every step of a date picker. While
+ * it has the focus a newer value from outside does not replace what is being typed.
  */
 export function useDraft(
   value: string,
@@ -14,7 +14,9 @@ export function useDraft(
   const base = useRef(value);
 
   useEffect(() => {
-    if (!focused.current) setText(value);
+    if (focused.current) return;
+    setText(value);
+    base.current = value;
   }, [value]);
 
   const commit = () => {

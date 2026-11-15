@@ -24,7 +24,7 @@ test("the calendar shows items on their day and creates on a chosen one @core", 
   await page.getByRole("button", { name: "Week" }).click();
   await expect(page.locator("[data-day]")).toHaveCount(7);
   await expect(page.getByRole("button", { name: "Dentist" })).toBeVisible();
-  await page.getByRole("button", { name: "Next" }).click();
+  await page.getByRole("button", { name: "Later", exact: true }).click();
   await expect(page.getByRole("button", { name: "Dentist" })).toBeHidden();
   expect(problems).toEqual([]);
 });

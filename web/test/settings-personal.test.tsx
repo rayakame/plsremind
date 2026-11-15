@@ -72,6 +72,7 @@ test("quiet hours are switched on with times and off again", async () => {
   await waitFor(() => expect(sent(app)).toHaveLength(1));
   expect(sent(app)[0]).toEqual({ quiet_hours: { start: "22:00", end: "07:00" } });
   fireEvent.change(screen.getByLabelText("From"), { target: { value: "23:30" } });
+  fireEvent.blur(screen.getByLabelText("From"));
   await waitFor(() => expect(sent(app)).toHaveLength(2));
   expect(sent(app)[1]).toEqual({ quiet_hours: { start: "23:30", end: "07:00" } });
   await userEvent.click(screen.getByRole("checkbox", { name: "Quiet hours" }));

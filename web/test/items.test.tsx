@@ -42,9 +42,9 @@ test("open items are grouped by how soon they are due", async () => {
   );
   expect(rows()).toEqual([
     "MissedInboxHighyesterday",
-    "TonightInboxtoday 21:00",
-    "ThursdayWorktomorrow 09:00",
-    "Next monthInboxDec 16 09:00",
+    "TonightInboxtoday 9:00 PM",
+    "ThursdayWorktomorrow 9:00 AM",
+    "Next monthInboxDec 16 9:00 AM",
     "SomedayInbox",
   ]);
 });
@@ -187,4 +187,9 @@ test("the group headings follow the profile's language", async () => {
   expect(screen.getAllByRole("heading", { level: 2 }).map((h) => h.textContent)).toContain(
     "Ohne Datum",
   );
+});
+
+test("the inbox cannot be renamed", async () => {
+  await renderApp({ path: "/lists/l1" });
+  expect(screen.queryByRole("button", { name: "Rename" })).toBeNull();
 });

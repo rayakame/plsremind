@@ -10,7 +10,7 @@ import { useT } from "../i18n/index.js";
 import { doneGroups, flatOrder } from "../model/groups.js";
 import { filterItems } from "../model/search.js";
 import { useNotices } from "../shell/notices.js";
-import { useOpenItem, useSelection } from "../shell/selection.js";
+import { useOpenItem, useOrder, useSelection } from "../shell/selection.js";
 import { Button, Field, Select } from "../ui/controls.js";
 import { useNarrow } from "../ui/layout-mode.js";
 import { VirtualRows } from "../ui/virtual-rows.js";
@@ -28,7 +28,7 @@ export function DonePage() {
   const now = useNow();
   const narrow = useNarrow();
   const { filter } = useBar();
-  const { selected, select, setOrder } = useSelection();
+  const { selected, select } = useSelection();
   const open = useOpenItem();
   const [listId, setListId] = useState("");
 
@@ -47,13 +47,28 @@ export function DonePage() {
     [groups, t],
   );
   const order = useMemo(() => flatOrder(groups), [groups]);
-  useEffect(() => setOrder(order), [order, setOrder]);
+  useOrder(order);
 
   const names = useMemo(() => new Map(lists.map((list) => [list.id, list.name])), [lists]);
-  const toggle = useCallback((item: Item) => void guard(setDone(hub, item, false)), [guard, hub]);
+  const { hide } = older;
+  const cached = useCallback(
+    (item: Item) => hub.view.user(hub.userId)?.item(item.id) !== undefined,
+    [hub],
+  );
+  const toggle = useCallback(
+    (item: Item) => {
+      if (cached(item)) return void guard(setDone(hub, item, false));
+      hide(item.id, true);
+      void setDone(hub, item, false).catch((error: unknown) => {
+        hide(item.id, false);
+        return guard(Promise.reject(error));
+      });
+    },
+    [cached, guard, hide, hub],
+  );
   const pick = useCallback(
-    (item: Item) => (narrow ? open(item.id) : select(item.id)),
-    [narrow, open, select],
+    (item: Item) => (narrow || !cached(item) ? open(item.id) : select(item.id)),
+    [cached, narrow, open, select],
   );
   const openItem = useCallback((item: Item) => open(item.id), [open]);
   const render = useCallback(

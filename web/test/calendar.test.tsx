@@ -81,13 +81,13 @@ test("the week starts where the user says", async () => {
 
 test("month and week can be switched and moved through", async () => {
   await calendar("2026-11-15T12:00:00Z");
-  await userEvent.click(screen.getByRole("button", { name: "Next" }));
+  await userEvent.click(screen.getByRole("button", { name: "Later" }));
   expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("December 2026");
   await userEvent.click(screen.getByRole("button", { name: "Today" }));
   await userEvent.click(screen.getByRole("button", { name: "Week" }));
   expect(document.querySelectorAll("[data-day]")).toHaveLength(7);
   expect(document.querySelector("[data-day]")!.getAttribute("data-day")).toBe("2026-11-09");
-  await userEvent.click(screen.getByRole("button", { name: "Previous" }));
+  await userEvent.click(screen.getByRole("button", { name: "Earlier" }));
   expect(document.querySelector("[data-day]")!.getAttribute("data-day")).toBe("2026-11-02");
 });
 
@@ -140,4 +140,30 @@ test("clicking an item shows its details", async () => {
   fireEvent.click(screen.getByRole("button", { name: "Dentist" }));
   const panel = within(screen.getByRole("complementary", { name: "Details" }));
   expect((panel.getByLabelText("Title") as HTMLInputElement).value).toBe("Dentist");
+});
+
+test("the new command and the bar's text respect the calendar", async () => {
+  const app = await calendar("2026-11-15T12:00:00Z", {
+    sync: {
+      items: [
+        timed("a", "Dentist", "2026-11-18T10:00:00Z"),
+        timed("b", "Haircut", "2026-11-19T10:00:00Z"),
+      ],
+    },
+  });
+  app.route("POST", "/users/@me/items", { status: 201, body: wireItem({ id: "n" }) });
+  const bar = screen.getByRole("combobox", { name: /Search, create/ });
+  await userEvent.type(bar, "hair");
+  expect(screen.queryByRole("button", { name: "Dentist" })).toBeNull();
+  expect(screen.getByRole("button", { name: "Haircut" })).toBeTruthy();
+  await userEvent.clear(bar);
+  await userEvent.click(screen.getByRole("button", { name: "November 20" }));
+  await userEvent.type(bar, "/new Vet !high{Enter}");
+  await waitFor(() => expect(app.sent("POST", "/users/@me/items")).toHaveLength(1));
+  expect(app.sent("POST", "/users/@me/items")[0]!.body).toEqual({
+    title: "Vet",
+    list_id: "l1",
+    priority: "high",
+    due_date: "2026-11-20",
+  });
 });

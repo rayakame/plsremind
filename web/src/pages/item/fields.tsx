@@ -188,6 +188,8 @@ export function ItemFacts({ item, readOnly = false }: Props) {
     void guard(
       patchItem(hub, item, { due: nextDay ? { day: nextDay, time: nextTime || null } : null }),
     );
+  const dayField = useDraft(day, (next) => setDue(next, next ? time : ""), { enter: true });
+  const timeField = useDraft(time, (next) => setDue(dayField.value || day, next), { enter: true });
 
   const [remind, setRemind] = useState("");
   const [remindError, setRemindError] = useState(false);
@@ -233,22 +235,12 @@ export function ItemFacts({ item, readOnly = false }: Props) {
     <div className="col">
       <Card>
         <Field label={t("item.dueDate")}>
-          <Input
-            type="date"
-            value={day}
-            readOnly={readOnly}
-            onChange={(event) => setDue(event.target.value, time)}
-          />
+          <Input type="date" readOnly={readOnly} {...dayField} />
         </Field>
-        {day !== "" && (
+        {dayField.value !== "" && (
           <>
             <Field label={t("item.dueTime")}>
-              <Input
-                type="time"
-                value={time}
-                readOnly={readOnly}
-                onChange={(event) => setDue(day, event.target.value)}
-              />
+              <Input type="time" readOnly={readOnly} {...timeField} />
             </Field>
             {!readOnly && (
               <Button variant="ghost" onClick={() => setDue("", "")}>

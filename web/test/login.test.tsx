@@ -60,6 +60,18 @@ test("other ways to sign in are links to the hub", async () => {
   );
 });
 
+test("signing in elsewhere remembers the page one came for", async () => {
+  await renderApp({
+    user: null,
+    path: "/login?next=%2Fcalendar",
+    info: { login_methods: [{ key: "gh", type: "github", name: "GitHub" }] },
+  });
+  const link = screen.getByRole("link", { name: "Continue with GitHub" });
+  link.addEventListener("click", (event) => event.preventDefault());
+  await userEvent.click(link);
+  expect(sessionStorage.getItem("plsremind.next")).toBe("/calendar");
+});
+
 test("registering sends the browser's zone and language, and the invite code when one is needed", async () => {
   const app = await renderApp({ user: null, path: "/register", info: { registration: "invite" } });
   app.route("POST", "/auth/register", {

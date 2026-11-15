@@ -213,3 +213,34 @@ test("two changes to one item reach the hub in the order they were made", async 
     { due_at: "2030-01-15T11:00:00.000Z" },
   ]);
 });
+
+test("changes to the preferences, the profile and the order of lists also go out in order", async () => {
+  const hub = await connectedHub();
+  const first = deferred<{ status: number; body: unknown }>();
+  let asked = 0;
+  hub.route("PATCH", "/users/@me", () =>
+    ++asked === 1 ? first.promise : { status: 200, body: {} },
+  );
+  const { setPrefs, updateProfile } = await import("../src/hub/write.js");
+  void setPrefs(hub.own, { theme: "dark" });
+  void setPrefs(hub.own, { weekStart: "sunday" });
+  void updateProfile(hub.own, { displayName: "M" });
+  await settle();
+  expect(hub.sent("PATCH", "/users/@me")).toHaveLength(1);
+  first.resolve({ status: 200, body: {} });
+  await settle();
+  expect(hub.sent("PATCH", "/users/@me").map((call) => call.body)).toEqual([
+    { preferences: { theme: "dark" } },
+    { preferences: { theme: "dark", weekStart: "sunday" } },
+    { display_name: "M" },
+  ]);
+});
+
+test("the time of completion is fixed when the change is made", async () => {
+  const hub = await connectedHub();
+  hub.route("PATCH", "/users/@me/items/a", () => new Promise(() => {}));
+  void setDone(hub.own, hub.mine().item("a")!, true);
+  const first = hub.mine().item("a");
+  await hub.send("item.updated", change("u1", wireItem({ id: "b", title: "Other" })));
+  expect(hub.mine().item("a")!.completedAt).toEqual(first!.completedAt);
+});

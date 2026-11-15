@@ -51,10 +51,21 @@ export function useOlderDone() {
     }
   }, [client, cursor, loading]);
 
+  const [hidden, setHidden] = useState<ReadonlySet<string>>(new Set());
   const items = useMemo(() => {
     const known = new Set([...history, ...open].map((item) => item.id));
-    return loaded.items.filter((item) => !known.has(item.id));
-  }, [loaded.items, history, open]);
+    return loaded.items.filter((item) => !known.has(item.id) && !hidden.has(item.id));
+  }, [loaded.items, history, open, hidden]);
 
-  return { items, more: cursor !== null, loading, loadMore };
+  /** Takes an item out of the list ahead of the hub, or puts it back. */
+  const hide = useCallback((id: string, on: boolean) => {
+    setHidden((before) => {
+      const next = new Set(before);
+      if (on) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  }, []);
+
+  return { items, more: cursor !== null, loading, loadMore, hide };
 }

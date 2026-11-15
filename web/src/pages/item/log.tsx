@@ -1,5 +1,5 @@
 import type { ReminderLogEntry } from "plsremind";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNow } from "../../hub/now.js";
 import { useHub } from "../../hub/session.js";
 import { useT } from "../../i18n/index.js";
@@ -16,11 +16,16 @@ export function ReminderLog(props: { itemId: string }) {
   const now = useNow();
   const [entries, setEntries] = useState<readonly ReminderLogEntry[]>();
   const [cursor, setCursor] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const shown = useRef(props.itemId);
   const { itemId } = props;
 
   useEffect(() => {
     const abort = new AbortController();
+    shown.current = itemId;
     setEntries(undefined);
+    setCursor(null);
+    setLoading(false);
     client.rest.listReminderLog({ itemId, limit: 20 }, { signal: abort.signal }).then(
       (page) => {
         setEntries(page.data);
@@ -32,8 +37,11 @@ export function ReminderLog(props: { itemId: string }) {
   }, [client, itemId]);
 
   const more = async () => {
-    if (cursor === null) return;
+    if (cursor === null || loading) return;
+    setLoading(true);
     const page = await guard(client.rest.listReminderLog({ itemId, limit: 20, cursor }));
+    if (shown.current !== itemId) return;
+    setLoading(false);
     if (!page) return;
     setEntries((before) => [...(before ?? []), ...page.data]);
     setCursor(page.nextCursor);
@@ -60,7 +68,11 @@ export function ReminderLog(props: { itemId: string }) {
           ))}
         </div>
       )}
-      {cursor !== null && <Button onClick={() => void more()}>{t("item.loadMore")}</Button>}
+      {cursor !== null && (
+        <Button disabled={loading} onClick={() => void more()}>
+          {t("item.loadMore")}
+        </Button>
+      )}
     </Card>
   );
 }

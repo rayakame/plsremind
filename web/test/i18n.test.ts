@@ -26,10 +26,10 @@ test("a placeholder appears in both languages wherever it appears in one", () =>
 });
 
 test("texts follow the chosen language and fill their placeholders", () => {
-  expect(t("nav.open", { count: 3 })).toBe("3 open");
+  expect(t("cal.more", { count: 3 })).toBe("3 more");
   setLocale("de-AT");
   expect(locale()).toBe("de-AT");
-  expect(t("nav.open", { count: 3 })).toBe("3 offen");
+  expect(t("cal.more", { count: 3 })).toBe("3 weitere");
   setLocale("fr");
   expect(t("nav.all")).toBe("All items");
   expect(locale()).toBe("en");

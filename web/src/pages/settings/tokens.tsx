@@ -29,7 +29,7 @@ export function SecretDialog(props: {
     }
   };
   return (
-    <Dialog title={props.title} onClose={props.onClose}>
+    <Dialog title={props.title} onClose={props.onClose} sticky>
       <p className="text">{t("tokens.once")}</p>
       <Field label={props.label}>
         <Input

@@ -2,7 +2,6 @@ import type { Texts } from "./en.js";
 
 export const de: Texts = {
   "nav.all": "Alle Einträge",
-  "nav.open": "{count} offen",
   "when.today": "heute",
   "when.tomorrow": "morgen",
   "when.yesterday": "gestern",
@@ -50,7 +49,7 @@ export const de: Texts = {
   "errors.delivery_closed": "Diese Erinnerung wurde schon zurückgezogen.",
   "errors.forbidden": "Das darfst du nicht.",
   "errors.identity_taken": "Dieses Konto ist schon mit einem anderen Nutzer verknüpft.",
-  "errors.inbox_protected": "Die Inbox kann nicht gelöscht werden.",
+  "errors.inbox_protected": "Die Inbox kann nicht umbenannt oder gelöscht werden.",
   "errors.internal": "Im Hub ist ein Fehler aufgetreten.",
   "errors.invalid_credentials": "Benutzername oder Passwort stimmen nicht.",
   "errors.invalid_cursor": "Diese Liste hat sich geändert. Lade sie neu.",
@@ -61,7 +60,7 @@ export const de: Texts = {
   "errors.item_done": "Dieser Eintrag ist schon erledigt.",
   "errors.last_admin": "Der letzte Admin kann nicht entfernt oder gesperrt werden.",
   "errors.last_identity": "Das ist dein einziger Weg, dich anzumelden.",
-  "errors.last_login_method": "Mindestens ein Anmeldeweg muss an bleiben.",
+  "errors.last_login_method": "Mindestens ein Anmeldeweg muss aktiv bleiben.",
   "errors.link_disabled": "Verknüpfen ist auf diesem Weg abgeschaltet.",
   "errors.list_limit": "Du hast die Höchstzahl an Listen erreicht.",
   "errors.login_disabled": "Anmelden ist auf diesem Weg abgeschaltet.",
@@ -123,7 +122,7 @@ export const de: Texts = {
   "item.remindMe": "Erinnere mich",
   "item.remindHint": "2h oder morgen 12:00",
   "item.remindError": "Schreib eine Dauer wie 2h oder Tag und Uhrzeit wie morgen 12:00.",
-  "item.removeReminder": "Erinnerung um {time} entfernen",
+  "item.removeReminder": "Erinnerung {time} entfernen",
   "item.override": "Geplante Erinnerungen",
   "item.overridePlan": "Wie im Plan",
   "item.overrideOff": "Aus",
@@ -340,4 +339,9 @@ export const de: Texts = {
   "aconn.delete": "{name} löschen",
   "aconn.deleteText": "Niemand wird mehr darüber erinnert.",
   "aconn.none": "Es sind keine Verbindungen installiert.",
+  "errors.reload": "Neu laden",
+  "errors.reloadText":
+    "Diese Seite ließ sich nicht anzeigen. Neu laden hilft meistens, etwa nach einem Update.",
+  "cal.previous": "Früher",
+  "cal.next": "Später",
 };

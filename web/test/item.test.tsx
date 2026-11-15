@@ -61,13 +61,13 @@ test("an item's page shows it whole, with what was sent so far", async () => {
   const log = within(screen.getByRole("region", { name: "Sent reminders" }));
   await waitFor(() => expect(log.getAllByRole("listitem")).toHaveLength(1));
   expect(log.getByRole("listitem").textContent).toBe(
-    "1d before" + "yesterday 19:00" + "Discord: delivered",
+    "1d before" + "yesterday 7:00 PM" + "Discord: delivered",
   );
   expect(app.sent("GET", "/users/@me/reminder-log")[0]!.path).toContain("item_id=a");
   await userEvent.click(log.getByRole("button", { name: "Load more" }));
   await waitFor(() => expect(log.getAllByRole("listitem")).toHaveLength(2));
   expect(log.getAllByRole("listitem")[1]!.textContent).toBe(
-    "When due" + "yesterday 19:00" + "Missed",
+    "When due" + "yesterday 7:00 PM" + "Missed",
   );
   expect(log.queryByRole("button", { name: "Load more" })).toBeNull();
 });

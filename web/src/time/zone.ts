@@ -65,8 +65,12 @@ export function timeIn(instant: Date, zone: string): string {
 export function instantAt(day: string, time: string, zone: string): Date {
   const [hour, minute] = time.split(":").map(Number);
   const guess = utc(day) + (hour! * 60 + minute!) * 60_000;
-  const first = guess - offsetAt(guess, zone);
-  return new Date(guess - offsetAt(first, zone));
+  const before = offsetAt(guess, zone);
+  const after = offsetAt(guess - before, zone);
+  if (before === after) return new Date(guess - before);
+  if (offsetAt(guess - after, zone) === after) return new Date(guess - after);
+  // The clocks skip this time: it then means the moment that much after the jump.
+  return new Date(guess - Math.min(before, after));
 }
 
 export function addDays(day: string, days: number): string {

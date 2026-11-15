@@ -15,8 +15,8 @@ let addresses = 0;
 /** The hub counts anonymous requests per address, so every caller gets its own. */
 export function address(): string {
   addresses++;
-  const salt = randomBytes(3);
-  return `10.${salt[0]}.${salt[1]}.${(salt[2]! % 250) + 1}`;
+  const salt = randomBytes(1);
+  return `10.${salt[0]}.${(process.pid + (addresses >> 8)) % 256}.${addresses % 256}`;
 }
 
 export function unique(name: string): string {

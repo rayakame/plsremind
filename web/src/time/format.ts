@@ -1,6 +1,6 @@
 import type { Item } from "plsremind";
 import { locale, t } from "../i18n/index.js";
-import { addDays, dayIn, timeIn } from "./zone.js";
+import { addDays, dayIn } from "./zone.js";
 
 function noon(day: string): Date {
   return new Date(`${day}T12:00:00Z`);
@@ -24,6 +24,25 @@ export function formatDay(day: string, today: string): string {
   }).format(noon(day));
 }
 
+const clocks = new Map<string, Intl.DateTimeFormat>();
+
+/** A time of day the way the user's language writes it: "21:00" or "9:00 PM". */
+export function formatTime(instant: Date, zone: string): string {
+  const key = `${locale()}|${zone}`;
+  let clock = clocks.get(key);
+  if (!clock) {
+    clock = new Intl.DateTimeFormat(locale(), { timeStyle: "short", timeZone: zone });
+    clocks.set(key, clock);
+  }
+  // Engines disagree on the kind of space before AM and PM.
+  return clock.format(instant).replace(/\s/g, " ");
+}
+
+/** A moment as "tomorrow 19:00" or "Fri 08:00". */
+export function formatMoment(instant: Date, zone: string, today: string): string {
+  return `${formatDay(dayIn(instant, zone), today)} ${formatTime(instant, zone)}`;
+}
+
 export function formatDue(
   item: Pick<Item, "dueAt" | "dueDate" | "allDay">,
   zone: string,
@@ -31,7 +50,7 @@ export function formatDue(
 ): string {
   if (item.allDay && item.dueDate) return formatDay(item.dueDate, today);
   if (!item.dueAt) return "";
-  return `${formatDay(dayIn(item.dueAt, zone), today)} ${timeIn(item.dueAt, zone)}`;
+  return formatMoment(item.dueAt, zone, today);
 }
 
 /** A full date and time for places with room, in the user's language. */

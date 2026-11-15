@@ -58,3 +58,14 @@ test("a month is shown as six whole weeks", () => {
   expect(monthGrid("2026-11", "sunday")[0]).toBe("2026-11-01");
   expect(new Set(monthGrid("2026-03", "monday")).size).toBe(42);
 });
+
+test("a skipped time moves forward in zones west of Greenwich too, and a skipped midnight starts the day late", () => {
+  const newYork = instantAt("2026-03-08", "02:30", "America/New_York");
+  expect(timeIn(newYork, "America/New_York")).toBe("03:30");
+  const santiago = instantAt("2026-09-06", "00:00", "America/Santiago");
+  expect(dayIn(santiago, "America/Santiago")).toBe("2026-09-06");
+  expect(timeIn(santiago, "America/Santiago")).toBe("01:00");
+  expect(instantAt("2026-11-01", "12:00", "America/New_York").toISOString()).toBe(
+    "2026-11-01T17:00:00.000Z",
+  );
+});

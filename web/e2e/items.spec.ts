@@ -54,13 +54,18 @@ test("text of any length and shape stays inside its row @core", async ({ page, a
   const overflow = await page.evaluate(() => {
     const root = document.documentElement;
     const rows = [...document.querySelectorAll("[role=listitem]")];
-    const list = document.querySelector("[role=list]")!.getBoundingClientRect();
+    const beyond = (row: Element) => {
+      const edge = row.getBoundingClientRect().right;
+      const parts = [...row.querySelectorAll("a, span, input")];
+      return Math.max(...parts.map((part) => Math.ceil(part.getBoundingClientRect().right - edge)));
+    };
     return {
       page: root.scrollWidth - root.clientWidth,
-      rows: rows.map((row) => Math.round(row.getBoundingClientRect().right - list.right)),
+      rows: rows.map((row) => Math.max(0, beyond(row))),
+      clipped: rows.map((row) => getComputedStyle(row.querySelector("a")!).textOverflow),
     };
   });
-  expect(overflow).toEqual({ page: 0, rows: [0, 0] });
+  expect(overflow).toEqual({ page: 0, rows: [0, 0], clipped: ["ellipsis", "ellipsis"] });
   await openNav(page);
   const nav = await page.locator("nav").boundingBox();
   const link = await page.getByRole("link", { name: /^y+/ }).boundingBox();

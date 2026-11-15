@@ -61,9 +61,11 @@ test("a change from elsewhere does not overwrite what is being typed", async () 
 test("a day alone is a whole-day deadline, a time makes it exact, and both can go", async () => {
   const { app, panel } = await opened();
   fireEvent.change(panel.getByLabelText("Due date"), { target: { value: "2026-11-20" } });
+  fireEvent.blur(panel.getByLabelText("Due date"));
   await waitFor(() => expect(app.sent("PATCH", item)).toHaveLength(1));
   expect(app.sent("PATCH", item)[0]!.body).toEqual({ due_date: "2026-11-20" });
   fireEvent.change(panel.getByLabelText("Due time"), { target: { value: "12:00" } });
+  fireEvent.blur(panel.getByLabelText("Due time"));
   await waitFor(() => expect(app.sent("PATCH", item)).toHaveLength(2));
   expect(app.sent("PATCH", item)[1]!.body).toEqual({ due_at: "2026-11-20T11:00:00.000Z" });
   await userEvent.click(panel.getByRole("button", { name: "Remove due date" }));
@@ -206,12 +208,12 @@ test("upcoming reminders come from the hub and follow a changed plan", async () 
   });
   await waitFor(() => expect(card.getAllByRole("listitem")).toHaveLength(2));
   expect(card.getAllByRole("listitem").map((row) => row.textContent)).toEqual([
-    "1d before" + "tomorrow 19:00",
-    "Set by you" + "Fri 08:00",
+    "1d before" + "tomorrow 7:00 PM",
+    "Set by you" + "Fri 8:00 AM",
   ]);
   await app.send("plan.updated", change("u1", wirePlan({ before: ["2h"], is_default: false })));
   await waitFor(() => expect(card.getAllByRole("listitem")).toHaveLength(1));
-  expect(card.getByRole("listitem").textContent).toBe("When due" + "Fri 19:00");
+  expect(card.getByRole("listitem").textContent).toBe("When due" + "Fri 7:00 PM");
 });
 
 test("an item deleted elsewhere closes its details", async () => {
@@ -225,4 +227,73 @@ test("the details close and open the item large", async () => {
   await userEvent.click(panel.getByRole("button", { name: "Open large" }));
   expect(app.path()).toBe("/items/a");
   expect(screen.queryByRole("complementary", { name: "Details" })).toBeNull();
+});
+
+test("a date typed digit by digit is saved once, when the field is left", async () => {
+  const { app, panel } = await opened();
+  const date = panel.getByLabelText("Due date");
+  date.focus();
+  for (const value of ["0002-11-20", "0020-11-20", "0202-11-20", "2026-11-20"]) {
+    fireEvent.change(date, { target: { value } });
+  }
+  expect(app.sent("PATCH", item)).toHaveLength(0);
+  await userEvent.tab();
+  await waitFor(() => expect(app.sent("PATCH", item)).toHaveLength(1));
+  expect(app.sent("PATCH", item)[0]!.body).toEqual({ due_date: "2026-11-20" });
+});
+
+test("ticking a subitem does not ask for the upcoming reminders again", async () => {
+  const sub = { id: "s1", item_id: "a", title: "Outline", done: false, position: 0 };
+  const { app, panel } = await opened({
+    sync: {
+      items: [wireItem({ id: "a", subitems: [sub] }), wireItem({ id: "b", title: "Other" })],
+    },
+  });
+  app.route("PATCH", `${item}/subitems/s1`, { status: 200, body: { ...sub, done: true } });
+  await waitFor(() => expect(app.sent("GET", `${item}/schedule`)).toHaveLength(1));
+  await userEvent.click(panel.getByRole("checkbox", { name: "Outline" }));
+  await app.send(
+    "item.updated",
+    change(
+      "u1",
+      wireItem({ id: "a", subitems: [{ ...sub, done: true }], updated_at: "2026-11-11T11:00:01Z" }),
+    ),
+  );
+  await new Promise((resolve) => setTimeout(resolve, 600));
+  expect(app.sent("GET", `${item}/schedule`)).toHaveLength(1);
+});
+
+test("the details stay open when a selected draft becomes the real item", async () => {
+  const app = await renderApp();
+  let nonce = "";
+  app.route("POST", "/users/@me/items", (call) => {
+    nonce = call.headers["x-request-nonce"]!;
+    return new Promise(() => {});
+  });
+  await userEvent.type(
+    screen.getByRole("combobox", { name: /Search, create/ }),
+    "Fresh{Control>}{Enter}{/Control}",
+  );
+  fireEvent.click(screen.getByRole("link", { name: "Fresh" }), { detail: 1 });
+  expect(screen.getByRole("complementary", { name: "Details" })).toBeTruthy();
+  await waitFor(() => expect(nonce).not.toBe(""));
+  await app.send("item.created", change("u1", wireItem({ id: "real", title: "Fresh" }), nonce));
+  const panel = within(screen.getByRole("complementary", { name: "Details" }));
+  expect((panel.getByLabelText("Title") as HTMLInputElement).value).toBe("Fresh");
+});
+
+test("names of subitems are shown as text", async () => {
+  const markup = '<img src=x onerror="alert(1)">';
+  const sub = { id: "s1", item_id: "a", title: markup, done: false, position: 0 };
+  const { panel } = await opened({
+    sync: {
+      items: [
+        wireItem({ id: "a", subitems: [sub], note: markup }),
+        wireItem({ id: "b", title: "Other" }),
+      ],
+    },
+  });
+  expect(panel.getAllByDisplayValue(markup)).toHaveLength(2);
+  expect((panel.getByLabelText("Note") as HTMLTextAreaElement).value).toBe(markup);
+  expect(document.querySelector("img")).toBeNull();
 });

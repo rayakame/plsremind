@@ -7,6 +7,8 @@ export function Dialog(props: {
   title: string;
   onClose: () => void;
   wide?: boolean | undefined;
+  /** Closes only through its own buttons, for content that cannot be shown again. */
+  sticky?: boolean | undefined;
   children: ReactNode;
 }) {
   const box = useRef<HTMLDivElement>(null);
@@ -24,7 +26,7 @@ export function Dialog(props: {
   function onKeyDown(event: KeyboardEvent) {
     if (event.key === "Escape") {
       event.stopPropagation();
-      props.onClose();
+      if (!props.sticky) props.onClose();
       return;
     }
     if (event.key !== "Tab" || !box.current) return;
@@ -45,7 +47,7 @@ export function Dialog(props: {
     <div
       className="scrim"
       onMouseDown={(event) => {
-        if (event.target === event.currentTarget) props.onClose();
+        if (event.target === event.currentTarget && !props.sticky) props.onClose();
       }}
     >
       <div

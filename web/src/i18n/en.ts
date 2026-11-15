@@ -1,6 +1,5 @@
 export const en = {
   "nav.all": "All items",
-  "nav.open": "{count} open",
   "when.today": "today",
   "when.tomorrow": "tomorrow",
   "when.yesterday": "yesterday",
@@ -46,7 +45,7 @@ export const en = {
   "errors.delivery_closed": "This reminder was already withdrawn.",
   "errors.forbidden": "You are not allowed to do this.",
   "errors.identity_taken": "This account is already linked to another user.",
-  "errors.inbox_protected": "The inbox cannot be deleted.",
+  "errors.inbox_protected": "The inbox cannot be renamed or deleted.",
   "errors.internal": "The hub ran into an error.",
   "errors.invalid_credentials": "Wrong username or password.",
   "errors.invalid_cursor": "This list changed. Load it again.",
@@ -119,7 +118,7 @@ export const en = {
   "item.remindMe": "Remind me",
   "item.remindHint": "2h or tomorrow 12:00",
   "item.remindError": "Write a duration like 2h or a day and time like tomorrow 12:00.",
-  "item.removeReminder": "Remove the reminder at {time}",
+  "item.removeReminder": "Remove the reminder {time}",
   "item.override": "Planned reminders",
   "item.overridePlan": "As planned",
   "item.overrideOff": "Off",
@@ -333,6 +332,11 @@ export const en = {
   "aconn.delete": "Delete {name}",
   "aconn.deleteText": "Nobody is reminded through it any more.",
   "aconn.none": "No connections are installed.",
+  "errors.reload": "Reload",
+  "errors.reloadText":
+    "This page could not be shown. Reloading usually helps, for example after an update.",
+  "cal.previous": "Earlier",
+  "cal.next": "Later",
 } as const;
 
 export type Key = keyof typeof en;

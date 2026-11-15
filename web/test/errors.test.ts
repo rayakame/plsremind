@@ -34,7 +34,7 @@ test("every error code the hub can answer with has a text", () => {
 
 test("a failed call is described in the user's words where the code is known", () => {
   expect(describeError(new ApiError(409, "inbox_protected", "The inbox cannot be removed."))).toBe(
-    "The inbox cannot be deleted.",
+    "The inbox cannot be renamed or deleted.",
   );
   expect(describeError(new ApiError(409, "brand_new_code", "Said by the hub."))).toBe(
     "Said by the hub.",
