@@ -169,7 +169,7 @@ function durations(text: string): number[] | undefined {
   if (parts.length === 0) return undefined;
   try {
     const all = parts.map(parseDuration);
-    return all.every((one) => one > 0) ? all : undefined;
+    return all.every((one) => Number.isFinite(one) && one > 0) ? all : undefined;
   } catch {
     return undefined;
   }

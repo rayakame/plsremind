@@ -501,11 +501,15 @@ export function setPrefs(hub: Writer, patch: Partial<Prefs>): Promise<void> {
           const base = memory.prefs.reduce(mergePrefs, { ...confirmed });
           const preferences = mergePrefs(base, patch);
           await hub.client.rest.updateUser({ preferences }, { nonce, signal });
-          memory.prefs.push(patch);
+          memory.prefs = [...memory.prefs.map((sent) => without(sent, patch)), patch];
         }),
       { user: hub.userId },
     )
     .then(() => undefined);
+}
+
+function without(sent: Partial<Prefs>, newer: Partial<Prefs>): Partial<Prefs> {
+  return Object.fromEntries(Object.entries(sent).filter(([key]) => !(key in newer)));
 }
 
 function holds(preferences: unknown, patch: Partial<Prefs>): boolean {

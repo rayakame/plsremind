@@ -358,4 +358,9 @@ test("a duration of nothing is not a time to remind at", async () => {
   await userEvent.tab();
   expect(panel.getByText("Write durations like 1d, 2h.")).toBeTruthy();
   expect(app.sent("PATCH", item)).toHaveLength(0);
+  await userEvent.clear(panel.getByLabelText("Remind before the deadline"));
+  await userEvent.type(panel.getByLabelText("Remind before the deadline"), `${"9".repeat(400)}d`);
+  await userEvent.tab();
+  expect(panel.getByText("Write durations like 1d, 2h.")).toBeTruthy();
+  expect(app.sent("PATCH", item)).toHaveLength(0);
 });

@@ -66,17 +66,15 @@ export function useCheckedDraft<T>(
   save: (parsed: T) => void,
   options: { required?: boolean; enter?: boolean } = {},
 ) {
-  const [invalid, setInvalid] = useState(false);
-  const refused = useRef<string | undefined>(undefined);
+  const [refused, setRefused] = useState<string>();
   const field = useDraft(
     value,
     (next) => {
       const parsed = read(next);
-      refused.current = parsed === undefined ? next : undefined;
-      setInvalid(parsed === undefined);
+      setRefused(parsed === undefined ? next : undefined);
       if (parsed !== undefined) save(parsed);
     },
     options,
   );
-  return { invalid: invalid && field.value === refused.current, field };
+  return { invalid: refused !== undefined && field.value === refused, field };
 }

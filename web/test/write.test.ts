@@ -338,3 +338,22 @@ test("deleting a draft waits for it to become real instead of giving up at the n
   await removing;
   expect(hub.sent("DELETE", "/users/@me/items/real")).toHaveLength(1);
 });
+
+test("an answered preference that a later one replaced does not come back", async () => {
+  const hub = await connectedHub();
+  hub.route("PATCH", "/users/@me", (call) => ({
+    status: 200,
+    body: wireUser({ locale: "en", ...(call.body as object) }),
+  }));
+  const { setPrefs } = await import("../src/hub/write.js");
+  await setPrefs(hub.own, { theme: "dark" });
+  await setPrefs(hub.own, { theme: "light" });
+  await hub.send(
+    "user.updated",
+    change("u1", wireUser({ locale: "en", preferences: { theme: "light" } })),
+  );
+  await setPrefs(hub.own, { weekStart: "sunday" });
+  expect(hub.sent("PATCH", "/users/@me").at(-1)!.body).toEqual({
+    preferences: { theme: "light", weekStart: "sunday" },
+  });
+});

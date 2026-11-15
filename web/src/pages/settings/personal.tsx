@@ -33,7 +33,7 @@ function durations(text: string): number[] | undefined {
     .filter(Boolean);
   try {
     const all = parts.map(parseDuration);
-    return all.every((one) => one > 0) ? all : undefined;
+    return all.every((one) => Number.isFinite(one) && one > 0) ? all : undefined;
   } catch {
     return undefined;
   }

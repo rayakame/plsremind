@@ -20,6 +20,7 @@ export function ReminderLog(props: { itemId: string }) {
   const [failed, setFailed] = useState(false);
   const [round, setRound] = useState(0);
   const load = useRef(0);
+  const paging = useRef<AbortController | undefined>(undefined);
   const { itemId } = props;
 
   useEffect(() => {
@@ -38,19 +39,30 @@ export function ReminderLog(props: { itemId: string }) {
         if (!abort.signal.aborted) setFailed(true);
       },
     );
-    return () => abort.abort();
+    return () => {
+      abort.abort();
+      paging.current?.abort();
+    };
   }, [client, itemId, round]);
 
   const more = async () => {
     if (cursor === null || loading) return;
     const mine = load.current;
+    const abort = (paging.current = new AbortController());
     setLoading(true);
-    const page = await guard(client.rest.listReminderLog({ itemId, limit: 20, cursor }));
-    if (load.current !== mine) return;
+    try {
+      const page = await client.rest.listReminderLog(
+        { itemId, limit: 20, cursor },
+        { signal: abort.signal },
+      );
+      if (load.current !== mine) return;
+      setEntries((before) => [...(before ?? []), ...page.data]);
+      setCursor(page.nextCursor);
+    } catch (error) {
+      if (load.current !== mine || abort.signal.aborted) return;
+      void guard(Promise.reject(error));
+    }
     setLoading(false);
-    if (!page) return;
-    setEntries((before) => [...(before ?? []), ...page.data]);
-    setCursor(page.nextCursor);
   };
 
   const result = (entry: ReminderLogEntry) =>
