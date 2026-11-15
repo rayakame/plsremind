@@ -168,3 +168,15 @@ test("a command on an item's page is about that item, whatever was selected befo
   await waitFor(() => expect(app.sent("PATCH", "/users/@me/items/b")).toHaveLength(1));
   expect(app.sent("PATCH", "/users/@me/items/a")).toHaveLength(0);
 });
+
+test("the prefix and the single keys cannot take each other's character", () => {
+  expect(rebind({}, "complete", "/", "/")).toEqual({ ok: false, conflict: null });
+  expect(rebind({}, "complete", "!", "/")).toEqual({ ok: true, overrides: { complete: "!" } });
+});
+
+test("x completes the item whose page is open", async () => {
+  const app = await renderApp({ sync, path: "/items/b" });
+  app.route("PATCH", "/users/@me/items/b", { status: 200, body: wireItem({ id: "b" }) });
+  await userEvent.keyboard("x");
+  await waitFor(() => expect(app.sent("PATCH", "/users/@me/items/b")).toHaveLength(1));
+});

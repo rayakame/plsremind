@@ -18,5 +18,5 @@ export function useNarrow(): boolean {
 /** The height of a row in the style system, as a number for virtual lists. */
 export function rowHeight(): number {
   const height = getComputedStyle(document.documentElement).getPropertyValue("--h");
-  return Number.parseFloat(height) || 44;
+  return Number.parseFloat(height) || 1;
 }

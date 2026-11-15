@@ -55,13 +55,14 @@ export function bindings(
 export type Rebound =
   { ok: true; overrides: Record<string, string> } | { ok: false; conflict: ActionId | null };
 
-/** Gives an action another key, unless another action already has it. */
+/** Gives an action another key, unless another action or the command prefix already has it. */
 export function rebind(
   overrides: Readonly<Record<string, string>>,
   action: ActionId,
   key: string,
+  prefix = "",
 ): Rebound {
-  if (key === "" || key === " ") return { ok: false, conflict: null };
+  if (key === "" || key === " " || key === prefix) return { ok: false, conflict: null };
   const other = bindings(overrides).get(key);
   if (other !== undefined && other !== action) return { ok: false, conflict: other };
   const next = { ...overrides };

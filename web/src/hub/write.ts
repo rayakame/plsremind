@@ -1,3 +1,4 @@
+import { NetworkError } from "plsremind";
 import type {
   Client,
   FollowUp,
@@ -42,8 +43,8 @@ export interface ItemPatch {
 
 const isDraft = (id: string) => id.startsWith("tmp_");
 const waitForDraft = 15_000;
+const waitForAnswer = 30_000;
 
-/** The real id of an object, waiting for the hub's answer if it is still a draft. */
 function settled(hub: Writer, id: string): Promise<string> {
   if (!isDraft(id)) return Promise.resolve(id);
   const known = hub.view.resolveId(id);
@@ -51,9 +52,15 @@ function settled(hub: Writer, id: string): Promise<string> {
   return new Promise((resolve, reject) => {
     const stop = hub.view.subscribe(() => {
       const real = hub.view.resolveId(id);
-      if (real === undefined) return;
-      finish();
-      resolve(real);
+      if (real !== undefined) {
+        finish();
+        return resolve(real);
+      }
+      const state = hub.view.user(hub.userId);
+      if (!state?.item(id) && !state?.list(id)) {
+        finish();
+        reject(new Error("The object was never created."));
+      }
     });
     const timer = setTimeout(() => {
       finish();
@@ -66,30 +73,94 @@ function settled(hub: Writer, id: string): Promise<string> {
   });
 }
 
-const chains = new WeakMap<OptimisticView, Map<string, Promise<unknown>>>();
-const parts = new WeakMap<OptimisticView, Map<string, string>>();
+interface Memory {
+  /** The last call about each object, by the id it was first known under. */
+  chains: Map<string, Promise<unknown>>;
+  /** Drafts of items and lists made here, to find the chain of the object they became. */
+  drafts: Set<string>;
+  /** Subitems and reminders made here: draft id to real id and back. */
+  parts: Map<string, string>;
+  partDrafts: Map<string, string>;
+  /** How many calls about each object have come back, and who wants to know. */
+  answered: Map<string, number>;
+  listeners: Set<() => void>;
+}
 
-/** Runs the calls about one object one after the other, in the order they were made. */
+const memories = new WeakMap<OptimisticView, Memory>();
+
+function memoryOf(hub: Writer): Memory {
+  let memory = memories.get(hub.view);
+  if (!memory) {
+    memory = {
+      chains: new Map(),
+      drafts: new Set(),
+      parts: new Map(),
+      partDrafts: new Map(),
+      answered: new Map(),
+      listeners: new Set(),
+    };
+    memories.set(hub.view, memory);
+  }
+  return memory;
+}
+
+// A call without an answer would hold back every later change to the same object for good.
+function limited<T>(work: Promise<T>): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(
+      () => reject(new NetworkError("The hub did not answer in time.")),
+      waitForAnswer,
+    );
+    work.then(resolve, reject).finally(() => clearTimeout(timer));
+  });
+}
+
+function chainKey(hub: Writer, id: string): string {
+  if (isDraft(id)) return id;
+  for (const draft of memoryOf(hub).drafts) {
+    if (hub.view.resolveId(draft) === id) return draft;
+  }
+  return id;
+}
+
+// Requests are not ordered on the wire, so the calls about one object go out one by one.
 function inOrder<T>(hub: Writer, id: string, work: () => Promise<T>): Promise<T> {
-  let byObject = chains.get(hub.view);
-  if (!byObject) chains.set(hub.view, (byObject = new Map()));
-  const next = (byObject.get(id) ?? Promise.resolve()).then(work, work);
-  byObject.set(
-    id,
-    next.catch(() => {}),
-  );
+  const memory = memoryOf(hub);
+  const key = chainKey(hub, id);
+  const run = () => limited(work());
+  const next = (memory.chains.get(key) ?? Promise.resolve()).then(run, run);
+  const after = () => {
+    memory.answered.set(key, (memory.answered.get(key) ?? 0) + 1);
+    for (const listener of [...memory.listeners]) listener();
+  };
+  memory.chains.set(key, next.then(after, after));
   return next;
 }
 
-/** The real id of a subitem or reminder that was created in this session, or the id itself. */
+/** How many calls about an object the hub has answered, to tell when to look at it again. */
+export function answeredCalls(hub: Writer, id: string): number {
+  return memoryOf(hub).answered.get(chainKey(hub, id)) ?? 0;
+}
+
+export function onAnsweredCall(hub: Writer, listener: () => void): () => void {
+  const { listeners } = memoryOf(hub);
+  listeners.add(listener);
+  return () => listeners.delete(listener);
+}
+
 function partId(hub: Writer, id: string): string {
-  return parts.get(hub.view)?.get(id) ?? id;
+  return memoryOf(hub).parts.get(id) ?? id;
 }
 
 function learnPart(hub: Writer, draft: string, real: string): void {
-  let known = parts.get(hub.view);
-  if (!known) parts.set(hub.view, (known = new Map()));
-  known.set(draft, real);
+  const memory = memoryOf(hub);
+  memory.parts.set(draft, real);
+  memory.partDrafts.set(real, draft);
+}
+
+/** A key for a subitem or reminder that stays the same when a draft becomes real. */
+export function partKey(hub: Writer, id: string): string {
+  return memoryOf(hub).partDrafts.get(id) ?? id;
 }
 
 function zoneOf(hub: Writer): string {
@@ -97,7 +168,6 @@ function zoneOf(hub: Writer): string {
   return profile?.timezone ?? "UTC";
 }
 
-/** A due time as the item shows it and as the hub wants it. */
 function dueFields(due: When | null, zone: string) {
   if (!due) {
     return {
@@ -150,12 +220,15 @@ export async function createItem(hub: Writer, draft: ItemDraft): Promise<string>
     ...(draft.priority ? { priority: draft.priority } : {}),
     ...due?.sent,
   };
+  memoryOf(hub).drafts.add(id);
   const created = await hub.view.apply(
     [{ kind: "item", create: item }],
     async (_nonce, nonceFor) =>
-      hub.client.rest.createItem(
-        { ...input, listId: await settled(hub, listId) },
-        { nonce: nonceFor(id) },
+      limited(
+        hub.client.rest.createItem(
+          { ...input, listId: await settled(hub, listId) },
+          { nonce: nonceFor(id) },
+        ),
       ),
     { user: hub.userId },
   );
@@ -194,7 +267,12 @@ export function patchItem(hub: Writer, item: Item, patch: ItemPatch): Promise<vo
   return updateItem(
     hub,
     item,
-    (before) => ({ ...before, ...plain, ...fields?.shown }),
+    (before) => ({
+      ...before,
+      ...plain,
+      ...(plain.listId ? { listId: hub.view.resolveId(plain.listId) ?? plain.listId } : {}),
+      ...fields?.shown,
+    }),
     async (id, nonce) =>
       hub.client.rest.updateItem(
         id,
@@ -288,12 +366,17 @@ export function moveSubitem(hub: Writer, item: Item, subitem: Subitem, by: -1 | 
     item,
     (before) => ({
       ...before,
-      subitems: order.flatMap((id, position) => {
-        const one = before.subitems.find(
-          (candidate) => candidate.id === id || candidate.id === partId(hub, id),
-        );
-        return one ? [{ ...one, position }] : [];
-      }),
+      subitems: [
+        ...order.flatMap((id, position) => {
+          const one = before.subitems.find(
+            (candidate) => candidate.id === id || candidate.id === partId(hub, id),
+          );
+          return one ? [{ ...one, position }] : [];
+        }),
+        ...before.subitems.filter(
+          (one) => !order.some((id) => one.id === id || one.id === partId(hub, id)),
+        ),
+      ],
     }),
     (id, nonce) =>
       hub.client.rest.reorderSubitems(id, { ids: order.map((one) => partId(hub, one)) }, { nonce }),
@@ -374,6 +457,10 @@ export function setPlan(
     .then(() => undefined);
 }
 
+export function resetPlan(hub: Writer, priority: Priority): Promise<void> {
+  return inOrder(hub, `plan:${priority}`, () => hub.client.rest.resetReminderPlan(priority));
+}
+
 /** Changes the dashboard's own preferences and keeps what other clients stored. */
 export function setPrefs(hub: Writer, patch: Partial<Prefs>): Promise<void> {
   const profile = hub.view.user(hub.userId)?.profile as User | undefined;
@@ -401,9 +488,10 @@ export async function createList(hub: Writer, name: string): Promise<string> {
     createdAt: now,
     updatedAt: now,
   };
+  memoryOf(hub).drafts.add(id);
   const created = await hub.view.apply(
     [{ kind: "list", create: list }],
-    (_nonce, nonceFor) => hub.client.rest.createList({ name }, { nonce: nonceFor(id) }),
+    (_nonce, nonceFor) => limited(hub.client.rest.createList({ name }, { nonce: nonceFor(id) })),
     { user: hub.userId },
   );
   return created.id;

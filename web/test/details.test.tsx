@@ -242,25 +242,26 @@ test("a date typed digit by digit is saved once, when the field is left", async 
   expect(app.sent("PATCH", item)[0]!.body).toEqual({ due_date: "2026-11-20" });
 });
 
-test("ticking a subitem does not ask for the upcoming reminders again", async () => {
-  const sub = { id: "s1", item_id: "a", title: "Outline", done: false, position: 0 };
-  const { app, panel } = await opened({
-    sync: {
-      items: [wireItem({ id: "a", subitems: [sub] }), wireItem({ id: "b", title: "Other" })],
-    },
-  });
-  app.route("PATCH", `${item}/subitems/s1`, { status: 200, body: { ...sub, done: true } });
+test("the upcoming reminders are asked for again once the hub answered a change, not before", async () => {
+  const { app, panel } = await opened();
+  const answer = deferred<Answer>();
+  app.route("PATCH", item, () => answer.promise);
   await waitFor(() => expect(app.sent("GET", `${item}/schedule`)).toHaveLength(1));
-  await userEvent.click(panel.getByRole("checkbox", { name: "Outline" }));
+  await userEvent.selectOptions(panel.getByLabelText("Priority"), "High");
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  expect(app.sent("GET", `${item}/schedule`)).toHaveLength(1);
+  answer.resolve({ status: 200, body: wireItem({ id: "a", priority: "high" }) });
+  await waitFor(() => expect(app.sent("GET", `${item}/schedule`)).toHaveLength(2));
+});
+
+test("a change made elsewhere asks for the upcoming reminders again", async () => {
+  const { app } = await opened();
+  await waitFor(() => expect(app.sent("GET", `${item}/schedule`)).toHaveLength(1));
   await app.send(
     "item.updated",
-    change(
-      "u1",
-      wireItem({ id: "a", subitems: [{ ...sub, done: true }], updated_at: "2026-11-11T11:00:01Z" }),
-    ),
+    change("u1", wireItem({ id: "a", priority: "high", updated_at: "2026-11-11T11:00:01Z" })),
   );
-  await new Promise((resolve) => setTimeout(resolve, 600));
-  expect(app.sent("GET", `${item}/schedule`)).toHaveLength(1);
+  await waitFor(() => expect(app.sent("GET", `${item}/schedule`)).toHaveLength(2));
 });
 
 test("the details stay open when a selected draft becomes the real item", async () => {
@@ -296,4 +297,56 @@ test("names of subitems are shown as text", async () => {
   expect(panel.getAllByDisplayValue(markup)).toHaveLength(2);
   expect((panel.getByLabelText("Note") as HTMLTextAreaElement).value).toBe(markup);
   expect(document.querySelector("img")).toBeNull();
+});
+
+test("what was typed is saved when the field goes away with the cursor still in it", async () => {
+  const { app, panel } = await opened();
+  await userEvent.type(panel.getByLabelText("Note"), "typed and then closed");
+  await userEvent.keyboard("{Escape}");
+  fireEvent.click(panel.getByRole("button", { name: "Close" }));
+  expect(screen.queryByRole("complementary", { name: "Details" })).toBeNull();
+  await waitFor(() => expect(app.sent("PATCH", item)).toHaveLength(1));
+  expect(app.sent("PATCH", item)[0]!.body).toEqual({ note: "typed and then closed" });
+});
+
+test("typing into a draft goes on when it becomes the real item", async () => {
+  const app = await renderApp();
+  let nonce = "";
+  app.route("POST", "/users/@me/items", (call) => {
+    nonce = call.headers["x-request-nonce"]!;
+    return new Promise(() => {});
+  });
+  app.route("PATCH", "/users/@me/items/real", { status: 200, body: wireItem({ id: "real" }) });
+  await userEvent.type(
+    screen.getByRole("combobox", { name: /Search, create/ }),
+    "Fresh{Control>}{Enter}{/Control}",
+  );
+  fireEvent.click(screen.getByRole("link", { name: "Fresh" }), { detail: 1 });
+  const note = within(screen.getByRole("complementary", { name: "Details" })).getByLabelText(
+    "Note",
+  );
+  await userEvent.type(note, "half a sen");
+  await waitFor(() => expect(nonce).not.toBe(""));
+  await app.send("item.created", change("u1", wireItem({ id: "real", title: "Fresh" }), nonce));
+  expect(document.activeElement).toBe(note);
+  await userEvent.type(note, "tence");
+  expect((note as HTMLTextAreaElement).value).toBe("half a sentence");
+  await userEvent.tab();
+  await waitFor(() => expect(app.sent("PATCH", "/users/@me/items/real")).toHaveLength(1));
+  expect(app.sent("PATCH", "/users/@me/items/real")[0]!.body).toEqual({ note: "half a sentence" });
+});
+
+test("an error under a field goes when the field shows another value", async () => {
+  const { app, panel } = await opened();
+  await userEvent.selectOptions(panel.getByLabelText("Planned reminders"), "Own times");
+  const times = panel.getByLabelText("Remind before the deadline");
+  await userEvent.type(times, "soon");
+  await userEvent.tab();
+  expect(panel.getByText("Write durations like 1d, 2h.")).toBeTruthy();
+  await app.send(
+    "item.updated",
+    change("u1", wireItem({ id: "a", reminder_override: { mode: "custom", before: ["1d"] } })),
+  );
+  expect((times as HTMLInputElement).value).toBe("1d");
+  expect(panel.queryByText("Write durations like 1d, 2h.")).toBeNull();
 });

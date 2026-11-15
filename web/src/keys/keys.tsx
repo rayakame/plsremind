@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useRoute } from "wouter";
 import { useBar } from "../bar/context.js";
 import { useItem, useProfile } from "../hub/hooks.js";
 import { readPrefs, type Prefs } from "../hub/prefs.js";
@@ -38,7 +39,8 @@ export function Keys() {
   const profile = useProfile();
   const prefs = readPrefs(profile.preferences);
   const { selected, select, order, listed } = useSelection();
-  const item = useItem(selected);
+  const [, onItem] = useRoute("/items/:id");
+  const item = useItem(onItem?.id ?? selected);
   const open = useOpenItem();
   const [help, setHelp] = useState(false);
 

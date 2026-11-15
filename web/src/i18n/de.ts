@@ -344,4 +344,7 @@ export const de: Texts = {
     "Diese Seite ließ sich nicht anzeigen. Neu laden hilft meistens, etwa nach einem Update.",
   "cal.previous": "Früher",
   "cal.next": "Später",
+  "item.loadFailed": "Dieser Eintrag ließ sich nicht laden.",
+  "common.retry": "Noch einmal versuchen",
+  "personal.keyReserved": "{key} ist das Befehlspräfix.",
 };

@@ -57,7 +57,6 @@ export function useOlderDone() {
     return loaded.items.filter((item) => !known.has(item.id) && !hidden.has(item.id));
   }, [loaded.items, history, open, hidden]);
 
-  /** Takes an item out of the list ahead of the hub, or puts it back. */
   const hide = useCallback((id: string, on: boolean) => {
     setHidden((before) => {
       const next = new Set(before);

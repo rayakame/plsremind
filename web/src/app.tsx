@@ -28,7 +28,6 @@ const SettingsPage = lazy(() => import("./pages/settings/index.js"));
 
 const themeKey = "plsremind.theme";
 
-/** Applies the profile's language and theme to the document. */
 function Preferences() {
   const profile = useProfile();
   const { theme } = readPrefs(profile.preferences);
@@ -74,7 +73,6 @@ function Message(props: { title: string; text?: string }) {
   );
 }
 
-/** Says why linking an account elsewhere failed, once, and tidies the address. */
 function AuthError() {
   const { notify } = useNotices();
   const [path, navigate] = useLocation();
@@ -85,8 +83,10 @@ function AuthError() {
     if (!code || told.current === code) return;
     told.current = code;
     notify(describeCode(code) ?? t("errors.unexpected"), "danger");
-    navigate(path, { replace: true });
-  }, [code, notify, navigate, path]);
+    const rest = new URLSearchParams(search);
+    rest.delete("auth_error");
+    navigate(rest.size > 0 ? `${path}?${rest}` : path, { replace: true });
+  }, [code, notify, navigate, path, search]);
   return null;
 }
 

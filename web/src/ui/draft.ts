@@ -28,6 +28,16 @@ export function useDraft(
     return true;
   };
 
+  // A field that is taken off the page while it has the focus gets no blur.
+  const last = useRef(commit);
+  last.current = commit;
+  useEffect(
+    () => () => {
+      if (focused.current) last.current();
+    },
+    [],
+  );
+
   return {
     value: text,
     onChange: (event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
@@ -44,4 +54,29 @@ export function useDraft(
       if (options.enter && event.key === "Enter") commit();
     },
   };
+}
+
+/**
+ * A draft field whose text has to mean something. What cannot be read is not saved and
+ * marks the field for as long as it shows that text.
+ */
+export function useCheckedDraft<T>(
+  value: string,
+  read: (text: string) => T | undefined,
+  save: (parsed: T) => void,
+  options: { required?: boolean; enter?: boolean } = {},
+) {
+  const [invalid, setInvalid] = useState(false);
+  const refused = useRef<string | undefined>(undefined);
+  const field = useDraft(
+    value,
+    (next) => {
+      const parsed = read(next);
+      refused.current = parsed === undefined ? next : undefined;
+      setInvalid(parsed === undefined);
+      if (parsed !== undefined) save(parsed);
+    },
+    options,
+  );
+  return { invalid: invalid && field.value === refused.current, field };
 }

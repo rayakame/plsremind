@@ -6,6 +6,7 @@ import (
 	"embed"
 	"io/fs"
 	"mime"
+	"net/url"
 	"path"
 	"strings"
 	"sync"
@@ -76,21 +77,41 @@ func acceptsGzip(header string) bool {
 
 // The browser's own WebSocket address of the hub. Older browsers do not count it under 'self'.
 func socketOrigin(publicURL string) string {
-	if rest, ok := strings.CutPrefix(publicURL, "https://"); ok {
-		return "wss://" + rest
+	u, err := url.Parse(publicURL)
+	if err != nil || u.Host == "" || strings.ContainsAny(u.Host, " ;,'\"") {
+		return ""
 	}
-	if rest, ok := strings.CutPrefix(publicURL, "http://"); ok {
-		return "ws://" + rest
+	switch u.Scheme {
+	case "https":
+		return "wss://" + u.Host
+	case "http":
+		return "ws://" + u.Host
 	}
 	return ""
+}
+
+// load reads every file once. Reading from the embedded files copies them on each call.
+func load(files fs.FS) map[string][]byte {
+	loaded := map[string][]byte{}
+	_ = fs.WalkDir(files, ".", func(name string, entry fs.DirEntry, err error) error {
+		if err != nil || entry.IsDir() || strings.HasPrefix(path.Base(name), ".") {
+			return nil
+		}
+		if data, err := fs.ReadFile(files, name); err == nil {
+			loaded[name] = data
+		}
+		return nil
+	})
+	return loaded
 }
 
 // WebHandler serves the dashboard's files and answers every other path with its page, so
 // client-side routes work on reload.
 func WebHandler(files fs.FS, publicURL string) fiber.Handler {
-	index, err := fs.ReadFile(files, "index.html")
+	loaded := load(files)
+	index, built := loaded["index.html"]
 	policy := strings.Replace(pagePolicy, "%s", socketOrigin(publicURL), 1)
-	if err != nil {
+	if !built {
 		index, policy = webPlaceholder, placeholderPolicy
 	}
 	zipped := &packed{files: map[string][]byte{}}
@@ -105,8 +126,8 @@ func WebHandler(files fs.FS, publicURL string) fiber.Handler {
 	return func(c fiber.Ctx) error {
 		c.Set(fiber.HeaderXContentTypeOptions, "nosniff")
 		name := strings.TrimPrefix(path.Clean("/"+c.Path()), "/")
-		if name != "" && name != "index.html" && fs.ValidPath(name) {
-			if data, err := fs.ReadFile(files, name); err == nil {
+		if name != "index.html" {
+			if data, ok := loaded[name]; ok {
 				kind := mime.TypeByExtension(path.Ext(name))
 				if kind == "" {
 					kind = fiber.MIMEOctetStream

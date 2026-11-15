@@ -9,6 +9,7 @@ import {
   addSubitem,
   moveSubitem,
   patchItem,
+  partKey,
   patchSubitem,
   removeReminder,
   removeSubitem,
@@ -18,7 +19,7 @@ import { useNotices } from "../../shell/notices.js";
 import { parseWhen } from "../../time/when.js";
 import { dayIn, instantAt, timeIn } from "../../time/zone.js";
 import { Button, Field, Input, Select, TextArea } from "../../ui/controls.js";
-import { useDraft } from "../../ui/draft.js";
+import { useCheckedDraft, useDraft } from "../../ui/draft.js";
 import { Icon } from "../../ui/icon.js";
 import { Card, Row, Rows } from "../../ui/layout.js";
 import { formatMoment, reminderLabel } from "./labels.js";
@@ -64,7 +65,7 @@ export function ItemText({ item, readOnly = false, compact = false }: Props) {
           <Rows>
             {item.subitems.map((subitem, index) => (
               <SubitemRow
-                key={subitem.id}
+                key={partKey(hub, subitem.id)}
                 item={item}
                 subitem={subitem}
                 first={index === 0}
@@ -213,19 +214,15 @@ export function ItemFacts({ item, readOnly = false }: Props) {
   const stored = item.reminderOverride?.mode ?? "plan";
   const [pending, setPending] = useState<"custom">();
   const mode = pending ?? stored;
-  const [beforeError, setBeforeError] = useState(false);
-  const before = useDraft(
+  const before = useCheckedDraft(
     (item.reminderOverride?.before ?? []).map(formatDuration).join(", "),
-    (next) => {
-      const parsed = durations(next);
-      setBeforeError(!parsed);
-      if (!parsed) return;
+    durations,
+    (parsed) => {
       setPending(undefined);
       void guard(patchItem(hub, item, { reminderOverride: { mode: "custom", before: parsed } }));
     },
   );
   const setMode = (next: string) => {
-    setBeforeError(false);
     if (next === "custom") return setPending("custom");
     setPending(undefined);
     void guard(patchItem(hub, item, { reminderOverride: next === "off" ? { mode: "off" } : null }));
@@ -237,7 +234,7 @@ export function ItemFacts({ item, readOnly = false }: Props) {
         <Field label={t("item.dueDate")}>
           <Input type="date" readOnly={readOnly} {...dayField} />
         </Field>
-        {dayField.value !== "" && (
+        {(dayField.value !== "" || day !== "") && (
           <>
             <Field label={t("item.dueTime")}>
               <Input type="time" readOnly={readOnly} {...timeField} />
@@ -318,9 +315,9 @@ export function ItemFacts({ item, readOnly = false }: Props) {
           {mode === "custom" && (
             <Field
               label={t("item.overrideBefore")}
-              error={beforeError ? t("item.overrideError") : undefined}
+              error={before.invalid ? t("item.overrideError") : undefined}
             >
-              <Input placeholder="1d, 2h" {...before} />
+              <Input placeholder="1d, 2h" {...before.field} />
             </Field>
           )}
         </Card>

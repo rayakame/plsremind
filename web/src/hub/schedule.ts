@@ -1,21 +1,14 @@
 import type { Item, ScheduledReminder } from "plsremind";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import { usePlans, useProfile } from "./hooks.js";
 import { useHub } from "./session.js";
+import { answeredCalls, onAnsweredCall } from "./write.js";
 
-// Long enough for a change shown ahead to have reached the hub before the schedule is asked for.
-const settle = 400;
-
-/** The parts of an item that decide when the hub reminds about it. */
-function scheduleKey(item: Item): string {
-  return JSON.stringify([
-    item.status,
-    item.dueAt?.getTime() ?? null,
-    item.dueDate,
-    item.priority,
-    item.reminderOverride,
-    item.reminders.map((reminder) => [reminder.id, reminder.remindAt.getTime()]),
-  ]);
+function remindersKey(item: Item): string {
+  return item.reminders
+    .filter((reminder) => !reminder.id.startsWith("tmp_"))
+    .map((reminder) => `${reminder.id}@${reminder.remindAt.getTime()}`)
+    .join();
 }
 
 /**
@@ -23,33 +16,30 @@ function scheduleKey(item: Item): string {
  * the last answer stays while a newer one loads.
  */
 export function useSchedule(item: Item | undefined): readonly ScheduledReminder[] | undefined {
-  const { client } = useHub();
+  const hub = useHub();
+  const { client } = hub;
   const plans = usePlans();
   const profile = useProfile();
   const [loaded, setLoaded] = useState<{ id: string; entries: readonly ScheduledReminder[] }>();
   const id = item?.id;
   const open = item?.status === "open" && !id?.startsWith("tmp_");
-  const key = item ? scheduleKey(item) : "";
+  // Asked again when the hub changed the item, when a reminder came or went, and when a
+  // call of our own came back. A change that is only shown ahead would get the old answer.
+  const confirmed = item?.updatedAt.getTime();
+  const reminders = item ? remindersKey(item) : "";
+  const subscribe = useCallback((notify: () => void) => onAnsweredCall(hub, notify), [hub]);
+  const answered = useSyncExternalStore(subscribe, () => (id ? answeredCalls(hub, id) : 0));
   const quiet = profile.quietHours ? `${profile.quietHours.start}-${profile.quietHours.end}` : "";
-  const first = loaded?.id !== id;
 
   useEffect(() => {
     if (!id || !open) return;
     const abort = new AbortController();
-    const timer = setTimeout(
-      () =>
-        client.rest.getItemSchedule(id, { signal: abort.signal }).then(
-          (entries) => setLoaded({ id, entries }),
-          () => {},
-        ),
-      first ? 0 : settle,
+    client.rest.getItemSchedule(id, { signal: abort.signal }).then(
+      (entries) => setLoaded({ id, entries }),
+      () => {},
     );
-    return () => {
-      clearTimeout(timer);
-      abort.abort();
-    };
-    // "first" only picks the delay; it must not start another request once the answer is in.
-  }, [client, id, open, key, plans, quiet, profile.timezone]);
+    return () => abort.abort();
+  }, [client, id, open, confirmed, reminders, answered, plans, quiet, profile.timezone]);
 
   if (!id || !open) return [];
   return loaded?.id === id ? loaded.entries : undefined;

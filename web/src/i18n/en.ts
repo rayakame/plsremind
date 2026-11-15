@@ -337,6 +337,9 @@ export const en = {
     "This page could not be shown. Reloading usually helps, for example after an update.",
   "cal.previous": "Earlier",
   "cal.next": "Later",
+  "item.loadFailed": "This item could not be loaded.",
+  "common.retry": "Try again",
+  "personal.keyReserved": "{key} is the command prefix.",
 } as const;
 
 export type Key = keyof typeof en;

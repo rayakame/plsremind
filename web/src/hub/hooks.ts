@@ -51,6 +51,21 @@ export function useItem(id: string | undefined): Item | undefined {
   return useKinds(bothKinds, (state) => (id === undefined ? undefined : state?.item(id)));
 }
 
+/**
+ * Follows a draft to the object it became. The key stays what it was, so that what shows
+ * the object is not rebuilt in the middle of typing.
+ */
+export function useResolved(id: string | undefined): { id: string | undefined; key: string } {
+  const { view } = useHub();
+  const alias = useRef<{ real: string; key: string } | undefined>(undefined);
+  const real = id?.startsWith("tmp_") ? view.resolveId(id) : undefined;
+  if (id && real) alias.current = { real, key: id };
+  const resolved = real ?? id;
+  const known = alias.current;
+  const key = known && known.real === resolved ? known.key : (resolved ?? "");
+  return { id: resolved, key };
+}
+
 const connectionEvents = ["ready", "resumed", "disconnected", "closed"] as const;
 
 export function useConnection(): ClientStatus {

@@ -17,7 +17,8 @@ export function KeysEditor() {
   const hub = useHub();
   const { guard } = useNotices();
   const profile = useProfile();
-  const { keys: overrides } = readPrefs(profile.preferences);
+  const { keys: overrides, prefix } = readPrefs(profile.preferences);
+  const [reserved, setReserved] = useState<string>();
   const [changing, setChanging] = useState<ActionId>();
   const [taken, setTaken] = useState<{ key: string; action: ActionId }>();
   const keys = keysOf(overrides);
@@ -32,13 +33,15 @@ export function KeysEditor() {
     if (ignored.has(event.key) || event.ctrlKey || event.altKey || event.metaKey) return;
     event.preventDefault();
     event.stopPropagation();
-    const result = rebind(overrides, action, event.key);
+    const result = rebind(overrides, action, event.key, prefix);
     if (!result.ok) {
-      if (result.conflict) setTaken({ key: event.key, action: result.conflict });
+      setTaken(result.conflict ? { key: event.key, action: result.conflict } : undefined);
+      setReserved(event.key === prefix ? event.key : undefined);
       return;
     }
     setChanging(undefined);
     setTaken(undefined);
+    setReserved(undefined);
     void guard(setPrefs(hub, { keys: result.overrides }));
   };
 
@@ -48,6 +51,11 @@ export function KeysEditor() {
       {taken && (
         <Notice tone="danger" flat>
           {t("personal.keyTaken", { key: taken.key, action: t(`keys.${taken.action}`) })}
+        </Notice>
+      )}
+      {reserved !== undefined && (
+        <Notice tone="danger" flat>
+          {t("personal.keyReserved", { key: reserved })}
         </Notice>
       )}
       {actions.map((action) => (

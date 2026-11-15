@@ -145,7 +145,11 @@ export default function CalendarPage() {
               className={names.filter(Boolean).join(" ")}
               data-day={day}
               key={day}
-              onClick={narrow ? () => setDefaultDue(day === chosen ? null : day) : undefined}
+              onClick={(event) => {
+                if (narrow || event.target === event.currentTarget) {
+                  setDefaultDue(day === chosen ? null : day);
+                }
+              }}
             >
               <button
                 type="button"

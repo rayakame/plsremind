@@ -69,7 +69,7 @@ test("signing in elsewhere remembers the page one came for", async () => {
   const link = screen.getByRole("link", { name: "Continue with GitHub" });
   link.addEventListener("click", (event) => event.preventDefault());
   await userEvent.click(link);
-  expect(sessionStorage.getItem("plsremind.next")).toBe("/calendar");
+  expect(sessionStorage.getItem("plsremind.next")).toMatch(/^\d+ \/calendar$/);
 });
 
 test("registering sends the browser's zone and language, and the invite code when one is needed", async () => {

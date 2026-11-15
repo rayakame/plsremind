@@ -10,12 +10,13 @@ import { useState } from "react";
 import { usePlans, useProfile } from "../../hub/hooks.js";
 import { isPrefix, readPrefs, type Prefs } from "../../hub/prefs.js";
 import { useHub } from "../../hub/session.js";
-import { setPlan, setPrefs, updateProfile } from "../../hub/write.js";
+import { resetPlan, setPlan, setPrefs, updateProfile } from "../../hub/write.js";
 import { languages, useT } from "../../i18n/index.js";
 import { useNotices } from "../../shell/notices.js";
 import { isZone } from "../../time/zone.js";
 import { Button, Field, Input, Segmented, Select, Toggle } from "../../ui/controls.js";
-import { useDraft } from "../../ui/draft.js";
+import { keysOf } from "../../keys/actions.js";
+import { useCheckedDraft, useDraft } from "../../ui/draft.js";
 import { Card } from "../../ui/layout.js";
 import { KeysEditor } from "./keys-editor.js";
 
@@ -41,13 +42,12 @@ function PlanCard({ plan }: { plan: ReminderPlan }) {
   const t = useT();
   const hub = useHub();
   const { guard } = useNotices();
-  const [error, setError] = useState(false);
-  const before = useDraft(plan.before.map(formatDuration).join(", "), (next) => {
-    const parsed = durations(next);
-    setError(!parsed);
-    if (parsed)
-      void guard(setPlan(hub, plan.priority, { before: parsed, followUp: plan.followUp }));
-  });
+  const before = useCheckedDraft(
+    plan.before.map(formatDuration).join(", "),
+    durations,
+    (parsed) =>
+      void guard(setPlan(hub, plan.priority, { before: parsed, followUp: plan.followUp })),
+  );
   return (
     <fieldset
       className="card"
@@ -56,8 +56,11 @@ function PlanCard({ plan }: { plan: ReminderPlan }) {
       <legend className="label">
         {t("personal.planOf", { priority: t(`priority.${plan.priority}`) })}
       </legend>
-      <Field label={t("item.overrideBefore")} error={error ? t("item.overrideError") : undefined}>
-        <Input placeholder="1d, 2h" {...before} />
+      <Field
+        label={t("item.overrideBefore")}
+        error={before.invalid ? t("item.overrideError") : undefined}
+      >
+        <Input placeholder="1d, 2h" {...before.field} />
       </Field>
       <Field label={t("personal.followUp")}>
         <Select
@@ -79,10 +82,7 @@ function PlanCard({ plan }: { plan: ReminderPlan }) {
         </Select>
       </Field>
       {!plan.isDefault && (
-        <Button
-          variant="ghost"
-          onClick={() => void guard(hub.client.rest.resetReminderPlan(plan.priority))}
-        >
+        <Button variant="ghost" onClick={() => void guard(resetPlan(hub, plan.priority))}>
           {t("personal.planReset")}
         </Button>
       )}
@@ -120,29 +120,23 @@ export function PersonalSettings() {
   const profile = useProfile();
   const plans = usePlans();
   const prefs = readPrefs(profile.preferences);
-  const [zoneError, setZoneError] = useState(false);
-  const [prefixError, setPrefixError] = useState(false);
 
   const name = useDraft(
     profile.displayName,
     (next) => void guard(updateProfile(hub, { displayName: next })),
     { required: true, enter: true },
   );
-  const zone = useDraft(
+  const zone = useCheckedDraft(
     profile.timezone,
-    (next) => {
-      const valid = isZone(next.trim()) && next.trim() !== "";
-      setZoneError(!valid);
-      if (valid) void guard(updateProfile(hub, { timezone: next.trim() }));
-    },
+    (next) => (next.trim() !== "" && isZone(next.trim()) ? next.trim() : undefined),
+    (timezone) => void guard(updateProfile(hub, { timezone })),
     { enter: true },
   );
-  const prefix = useDraft(
+  const taken = new Set(Object.values(keysOf(prefs.keys)));
+  const prefix = useCheckedDraft(
     prefs.prefix,
-    (next) => {
-      setPrefixError(!isPrefix(next));
-      if (isPrefix(next)) void guard(setPrefs(hub, { prefix: next }));
-    },
+    (next) => (isPrefix(next) && !taken.has(next) ? next : undefined),
+    (next) => void guard(setPrefs(hub, { prefix: next })),
     { enter: true },
   );
   const base = profile.locale?.toLowerCase().split("-")[0] ?? "";
@@ -159,9 +153,9 @@ export function PersonalSettings() {
         </Field>
         <Field
           label={t("personal.timezone")}
-          error={zoneError ? t("personal.timezoneError") : undefined}
+          error={zone.invalid ? t("personal.timezoneError") : undefined}
         >
-          <Input list="zones" {...zone} />
+          <Input list="zones" {...zone.field} />
         </Field>
         <datalist id="zones">
           {zones.map((one) => (
@@ -237,9 +231,9 @@ export function PersonalSettings() {
       <Card title={t("personal.commands")}>
         <Field
           label={t("personal.prefix")}
-          error={prefixError ? t("personal.prefixError") : undefined}
+          error={prefix.invalid ? t("personal.prefixError") : undefined}
         >
-          <Input maxLength={2} {...prefix} />
+          <Input maxLength={2} {...prefix.field} />
         </Field>
         <KeysEditor />
       </Card>

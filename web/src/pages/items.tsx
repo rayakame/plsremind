@@ -2,7 +2,7 @@ import type { Item, List } from "plsremind";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useLocation } from "wouter";
 import { useBar } from "../bar/context.js";
-import { useHistory, useItems, useLists } from "../hub/hooks.js";
+import { useHistory, useItems, useLists, useResolved } from "../hub/hooks.js";
 import { useNow } from "../hub/now.js";
 import { useHub } from "../hub/session.js";
 import { moveList, removeList, renameList, setDone } from "../hub/write.js";
@@ -216,7 +216,14 @@ export function ListPage(props: { id: string }) {
   const lists = useLists();
   const items = useItems();
   const history = useHistory();
-  const list = lists.find((one) => one.id === props.id);
+  const [, navigate] = useLocation();
+  const { select } = useSelection();
+  const { id, key } = useResolved(props.id);
+  const list = lists.find((one) => one.id === id);
+  useEffect(() => {
+    if (id !== undefined && id !== props.id) navigate(routes.list(id), { replace: true });
+  }, [id, props.id, navigate]);
+  useEffect(() => () => select(undefined), [key, select]);
   const [sort, setSort] = useState<Sort>(() => storedSort(props.id));
   useEffect(() => setSort(storedSort(props.id)), [props.id]);
 

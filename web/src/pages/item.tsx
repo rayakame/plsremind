@@ -1,7 +1,7 @@
 import { ApiError, type Item } from "plsremind";
 import { useEffect, useState } from "react";
-import { Redirect, useLocation } from "wouter";
-import { useItem } from "../hub/hooks.js";
+import { useLocation } from "wouter";
+import { useItem, useResolved } from "../hub/hooks.js";
 import { useHub } from "../hub/session.js";
 import { removeItem, setDone } from "../hub/write.js";
 import { useT } from "../i18n/index.js";
@@ -15,25 +15,36 @@ import { ItemFacts, ItemText } from "./item/fields.js";
 import { ReminderLog } from "./item/log.js";
 import { NotFound } from "./not-found.js";
 
-/** An item the cache does not hold, such as one completed long ago. */
-function useFetched(id: string, skip: boolean): Item | null | undefined {
+type Fetched = { item: Item | null } | { failed: true };
+
+function useFetched(id: string, skip: boolean): { state: Fetched | undefined; retry: () => void } {
   const { client } = useHub();
   const { guard } = useNotices();
-  const [fetched, setFetched] = useState<{ id: string; item: Item | null }>();
+  const [fetched, setFetched] = useState<{ id: string; state: Fetched }>();
+  const [round, setRound] = useState(0);
   useEffect(() => {
     if (skip) return;
     const abort = new AbortController();
     client.rest.getItem(id, { signal: abort.signal }).then(
-      (item) => setFetched({ id, item }),
+      (item) => setFetched({ id, state: { item } }),
       (error: unknown) => {
         if (abort.signal.aborted) return;
-        if (error instanceof ApiError && error.status === 404) setFetched({ id, item: null });
-        else void guard(Promise.reject(error));
+        if (error instanceof ApiError && error.status === 404) {
+          return setFetched({ id, state: { item: null } });
+        }
+        setFetched({ id, state: { failed: true } });
+        void guard(Promise.reject(error));
       },
     );
     return () => abort.abort();
-  }, [client, id, skip, guard]);
-  return fetched?.id === id ? fetched.item : undefined;
+  }, [client, id, skip, guard, round]);
+  return {
+    state: fetched?.id === id ? fetched.state : undefined,
+    retry: () => {
+      setFetched(undefined);
+      setRound((before) => before + 1);
+    },
+  };
 }
 
 export function ItemPage(props: { id: string }) {
@@ -42,18 +53,33 @@ export function ItemPage(props: { id: string }) {
   const { guard } = useNotices();
   const { order } = useSelection();
   const [, navigate] = useLocation();
-  const live = useItem(props.id);
+  const { id, key } = useResolved(props.id);
+  const shown = id ?? props.id;
+  const live = useItem(shown);
   const [seen, setSeen] = useState<string>();
   const [deleting, setDeleting] = useState(false);
   useEffect(() => {
     if (live) setSeen(live.id);
   }, [live]);
-  const gone = !live && seen === props.id;
-  const fetched = useFetched(props.id, live !== undefined || gone || props.id.startsWith("tmp_"));
+  useEffect(() => {
+    if (shown !== props.id) navigate(routes.item(shown), { replace: true });
+  }, [shown, props.id, navigate]);
+  const draft = shown.startsWith("tmp_");
+  const gone = !live && (seen === shown || draft);
+  const fetched = useFetched(shown, live !== undefined || gone);
 
-  const real = props.id.startsWith("tmp_") ? hub.view.resolveId(props.id) : undefined;
-  if (!live && real) return <Redirect to={routes.item(real)} replace />;
-  const item = live ?? (gone ? null : fetched);
+  if (!live && !gone && fetched.state && "failed" in fetched.state) {
+    return (
+      <>
+        <h1 className="h1">{t("item.loadFailed")}</h1>
+        <div className="line">
+          <Button onClick={fetched.retry}>{t("common.retry")}</Button>
+        </div>
+      </>
+    );
+  }
+  const loaded = fetched.state && "item" in fetched.state ? fetched.state.item : undefined;
+  const item = live ?? (gone ? null : loaded);
   if (item === undefined) return null;
   if (item === null) return <NotFound />;
 
@@ -96,9 +122,9 @@ export function ItemPage(props: { id: string }) {
         </div>
       </div>
       <div className="split">
-        <ItemText key={`text:${item.id}`} item={item} readOnly={!live} />
+        <ItemText key={`text:${key}`} item={item} readOnly={!live} />
         <div className="col">
-          <ItemFacts key={`facts:${item.id}`} item={item} readOnly={!live} />
+          <ItemFacts key={`facts:${key}`} item={item} readOnly={!live} />
           <ReminderLog itemId={item.id} />
         </div>
       </div>

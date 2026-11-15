@@ -51,7 +51,7 @@ export function Sidebar(props: { open: boolean; onNavigate: () => void }) {
       {link(routes.settings(), t("nav.settings"), undefined, path.startsWith("/settings"))}
       <div className="between">
         <span className="label">{profile.displayName}</span>
-        <Button variant="ghost" onClick={() => void session.signOut()}>
+        <Button variant="ghost" onClick={() => void guard(session.signOut())}>
           {t("nav.signOut")}
         </Button>
       </div>

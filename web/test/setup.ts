@@ -9,6 +9,9 @@ if (typeof HTMLElement !== "undefined") {
     Object.defineProperty(HTMLElement.prototype, name, { configurable: true, get: () => size });
   }
 
+  // The style file is not loaded in tests, and a virtual list needs the height of a row.
+  document.documentElement.style.setProperty("--h", "44px");
+
   afterEach(() => {
     sessionStorage.clear();
     localStorage.clear();

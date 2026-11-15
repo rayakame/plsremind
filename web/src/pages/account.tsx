@@ -38,11 +38,12 @@ function useSubmit(work: () => Promise<unknown>) {
     setError(undefined);
     try {
       await work();
+      rememberNext(null);
       session.reload();
     } catch (failure) {
       setError(describeError(failure));
-      setBusy(false);
     }
+    setBusy(false);
   };
   return { error, busy, submit };
 }
@@ -55,11 +56,13 @@ function browserAccount() {
 }
 
 const nextKey = "plsremind.next";
+// A sign-in elsewhere that was abandoned must not steer a later one.
+const nextFor = 10 * 60_000;
 
-/** Remembers the wanted page across a sign-in elsewhere, which always returns to the start. */
+// A sign-in elsewhere always returns to the start page, so the wanted one is kept here.
 function rememberNext(next: string | null): void {
   try {
-    if (next) sessionStorage.setItem(nextKey, next);
+    if (next) sessionStorage.setItem(nextKey, `${Date.now()} ${next}`);
     else sessionStorage.removeItem(nextKey);
   } catch {
     // The start page then opens after signing in.
@@ -69,9 +72,12 @@ function rememberNext(next: string | null): void {
 /** The page remembered before a sign-in elsewhere, once. */
 export function takeNext(): string | null {
   try {
-    const next = sessionStorage.getItem(nextKey);
+    const stored = sessionStorage.getItem(nextKey);
     sessionStorage.removeItem(nextKey);
-    return next;
+    if (!stored) return null;
+    const at = stored.indexOf(" ");
+    const fresh = Date.now() - Number(stored.slice(0, at)) < nextFor;
+    return fresh ? stored.slice(at + 1) : null;
   } catch {
     return null;
   }

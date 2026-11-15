@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useConnection, useProfile } from "../hub/hooks.js";
 import { useHub } from "../hub/session.js";
+import { updateProfile } from "../hub/write.js";
 import { useT } from "../i18n/index.js";
 import { Button } from "../ui/controls.js";
 import { Notice } from "../ui/layout.js";
@@ -26,7 +27,7 @@ function wasDismissed(zone: string): boolean {
 /** Offers to move the profile to the browser's time zone when the two differ. */
 export function ZoneLine() {
   const t = useT();
-  const { client, view } = useHub();
+  const hub = useHub();
   const { guard } = useNotices();
   const profile = useProfile();
   const browser = Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -41,13 +42,7 @@ export function ZoneLine() {
       // The line then returns on the next load.
     }
   };
-  const adopt = () =>
-    guard(
-      view.apply(
-        [{ kind: "profile", update: (before) => ({ ...before, timezone: browser }) }],
-        (nonce) => client.rest.updateUser({ timezone: browser }, { nonce }),
-      ),
-    );
+  const adopt = () => guard(updateProfile(hub, { timezone: browser }));
 
   return (
     <Notice

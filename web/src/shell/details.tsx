@@ -1,6 +1,5 @@
 import { useEffect } from "react";
-import { useItem } from "../hub/hooks.js";
-import { useHub } from "../hub/session.js";
+import { useItem, useResolved } from "../hub/hooks.js";
 import { useT } from "../i18n/index.js";
 import { ItemFacts, ItemText } from "../pages/item/fields.js";
 import { Button } from "../ui/controls.js";
@@ -10,15 +9,14 @@ import { useOpenItem, useSelection } from "./selection.js";
 /** The selected item in a column next to the list. */
 export function Details() {
   const t = useT();
-  const { view } = useHub();
   const { selected, select } = useSelection();
-  const item = useItem(selected);
+  const { id, key } = useResolved(selected);
+  const item = useItem(id);
   const open = useOpenItem();
 
-  const real = !item && selected?.startsWith("tmp_") ? view.resolveId(selected) : undefined;
   useEffect(() => {
-    if (real !== undefined) select(real);
-  }, [real, select]);
+    if (id !== undefined && id !== selected) select(id);
+  }, [id, selected, select]);
 
   if (!item) return null;
   return (
@@ -32,8 +30,8 @@ export function Details() {
           <Icon name="close" />
         </Button>
       </div>
-      <ItemText key={`text:${item.id}`} item={item} compact />
-      <ItemFacts key={`facts:${item.id}`} item={item} />
+      <ItemText key={`text:${key}`} item={item} compact />
+      <ItemFacts key={`facts:${key}`} item={item} />
     </aside>
   );
 }

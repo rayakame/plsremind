@@ -6,3 +6,4 @@ hub/internal/server/webdist/*
 !hub/internal/server/webdist/.gitkeep
 web/test-results
 web/playwright-report
+**/.env

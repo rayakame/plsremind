@@ -50,13 +50,15 @@ export class Session {
   }
 
   async signOut(): Promise<void> {
+    await this.#client?.rest.logout();
     this.#asked = true;
-    try {
-      await this.#client?.rest.logout();
-    } catch {
-      // Whether the session is gone shows in what the hub says next.
-    }
     this.reload();
+  }
+
+  /** Takes over a new name of the instance without starting over. */
+  rename(name: string): void {
+    if (this.state.phase === "loading" || this.state.phase === "unreachable") return;
+    this.#set({ ...this.state, info: { ...this.state.info, name } });
   }
 
   #set(state: SessionState): void {

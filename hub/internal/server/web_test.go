@@ -185,3 +185,21 @@ func TestWebHandlerCompressesWhatTheBrowserCanRead(t *testing.T) {
 	res, _ = get("/assets/logo.png", "gzip")
 	require.Empty(t, res.Header.Get("Content-Encoding"))
 }
+
+func TestWebHandlerNamesOnlyTheHostForSockets(t *testing.T) {
+	files := fstest.MapFS{"index.html": {Data: []byte("<!doctype html>dashboard")}, ".gitkeep": {}}
+	for public, want := range map[string]string{
+		"https://todo.example.com/base?x=1;y": "connect-src 'self' wss://todo.example.com;",
+		"http://localhost:8080":               "connect-src 'self' ws://localhost:8080;",
+		"not a url":                           "connect-src 'self' ;",
+	} {
+		app := fiber.New()
+		app.Get("/*", server.WebHandler(files, public))
+		req, _ := http.NewRequest("GET", "/.gitkeep", nil)
+		res, err := app.Test(req)
+		require.NoError(t, err)
+		body, _ := io.ReadAll(res.Body)
+		require.Contains(t, res.Header.Get("Content-Security-Policy"), want, public)
+		require.Contains(t, string(body), "dashboard", "a file kept for git is not part of the dashboard")
+	}
+}

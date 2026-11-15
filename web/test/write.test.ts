@@ -1,5 +1,5 @@
 import { ApiError } from "plsremind";
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
 import {
   createItem,
   createList,
@@ -179,7 +179,7 @@ test("a change to a subitem that is still a draft waits for it and then names th
   const nonce = hub.sent("POST", "/users/@me/items/a/subitems")[0]!.headers["x-request-nonce"]!;
   await hub.send("item.updated", change("u1", wireItem({ id: "a", subitems: [real] }), nonce));
   created.resolve({ status: 201, body: real });
-  await settle();
+  for (let i = 0; i < 5; i++) await settle();
   expect(
     hub
       .mine()
@@ -243,4 +243,61 @@ test("the time of completion is fixed when the change is made", async () => {
   const first = hub.mine().item("a");
   await hub.send("item.updated", change("u1", wireItem({ id: "b", title: "Other" })));
   expect(hub.mine().item("a")!.completedAt).toEqual(first!.completedAt);
+});
+
+test("a call that never gets an answer gives up, is taken back and lets the next one through", async () => {
+  vi.useFakeTimers();
+  try {
+    const hub = await connectedHub();
+    let asked = 0;
+    hub.route("PATCH", "/users/@me/items/a", (call) => {
+      asked++;
+      return asked === 1
+        ? new Promise(() => {})
+        : { status: 200, body: wireItem({ id: "a", ...(call.body as object) }) };
+    });
+    const stuck = patchItem(hub.own, hub.mine().item("a")!, { title: "Never arrives" });
+    const failure = stuck.catch((error: unknown) => error);
+    const next = patchItem(hub.own, hub.mine().item("a")!, { note: "Arrives" });
+    await vi.advanceTimersByTimeAsync(29_000);
+    expect(hub.sent("PATCH", "/users/@me/items/a")).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(2_000);
+    expect((await failure) as Error).toBeInstanceOf(Error);
+    await next;
+    expect(hub.sent("PATCH", "/users/@me/items/a")).toHaveLength(2);
+    expect(hub.mine().item("a")!.title).toBe("Hand in the report");
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+test("changes made to a draft and to the item it became go out in one order", async () => {
+  const hub = await connectedHub();
+  const created = deferred<{ status: number; body: unknown }>();
+  const first = deferred<{ status: number; body: unknown }>();
+  hub.route("POST", "/users/@me/items", () => created.promise);
+  let asked = 0;
+  hub.route("PATCH", "/users/@me/items/real", () =>
+    ++asked === 1 ? first.promise : { status: 200, body: wireItem({ id: "real" }) },
+  );
+  const making = createItem(hub.own, { title: "Fresh" });
+  const draft = hub.mine().items().at(-1)!;
+  void patchItem(hub.own, draft, { title: "One" });
+  await settle();
+  const nonce = hub.sent("POST", "/users/@me/items")[0]!.headers["x-request-nonce"]!;
+  await hub.send("item.created", change("u1", wireItem({ id: "real", title: "Fresh" }), nonce));
+  created.resolve({ status: 201, body: wireItem({ id: "real", title: "Fresh" }) });
+  await making;
+  await settle();
+  void patchItem(hub.own, hub.mine().item("real")!, { title: "Two" });
+  await settle();
+  expect(hub.sent("PATCH", "/users/@me/items/real").map((call) => call.body)).toEqual([
+    { title: "One" },
+  ]);
+  first.resolve({ status: 200, body: wireItem({ id: "real" }) });
+  await settle();
+  expect(hub.sent("PATCH", "/users/@me/items/real").map((call) => call.body)).toEqual([
+    { title: "One" },
+    { title: "Two" },
+  ]);
 });

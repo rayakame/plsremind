@@ -1,6 +1,6 @@
 import type { Registration, Settings } from "plsremind";
 import { useLoaded } from "../../../hub/loaded.js";
-import { useHub } from "../../../hub/session.js";
+import { useHub, useSessionStore } from "../../../hub/session.js";
 import { useT } from "../../../i18n/index.js";
 import { useNotices } from "../../../shell/notices.js";
 import { Field, Input, Segmented } from "../../../ui/controls.js";
@@ -10,10 +10,13 @@ import { Card } from "../../../ui/layout.js";
 function Form(props: { settings: Settings; onChange: (next: Settings) => void }) {
   const t = useT();
   const { client } = useHub();
+  const session = useSessionStore();
   const { guard } = useNotices();
   const save = async (changes: { name?: string; registration?: Registration }) => {
     const next = await guard(client.rest.updateSettings(changes));
-    if (next) props.onChange(next);
+    if (!next) return;
+    props.onChange(next);
+    session.rename(next.name);
   };
   const name = useDraft(props.settings.name, (next) => void save({ name: next }), {
     required: true,

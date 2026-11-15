@@ -89,7 +89,7 @@ test("signing out on purpose does not remember the page for the next person", as
 });
 
 test("a page wanted before signing in elsewhere opens after coming back", async () => {
-  sessionStorage.setItem("plsremind.next", "/lists/l2");
+  sessionStorage.setItem("plsremind.next", `${Date.now()} /lists/l2`);
   const app = await renderApp();
   await waitFor(() => expect(app.path()).toBe("/lists/l2"));
   expect(sessionStorage.getItem("plsremind.next")).toBeNull();
