@@ -1,15 +1,7 @@
 import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
-import {
-  change,
-  deferred,
-  renderApp,
-  wireItem,
-  wirePlan,
-  wireUser,
-  type Answer,
-} from "./support.js";
+import { change, deferred, renderApp, wireItem, wirePlan, type Answer } from "./support.js";
 
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ["Date"] });
@@ -371,30 +363,4 @@ test("a duration of nothing is not a time to remind at", async () => {
   await userEvent.tab();
   expect(panel.getByText("Write durations like 1d, 2h.")).toBeTruthy();
   expect(app.sent("PATCH", item)).toHaveLength(0);
-});
-
-test("the time field uses the user's clock and reads what is typed in either notation", async () => {
-  const { app, panel } = await opened({
-    user: wireUser({ locale: "de", preferences: { clock: "12h" } }),
-    sync: {
-      items: [
-        wireItem({ id: "a", due_at: "2026-11-18T17:00:00Z" }),
-        wireItem({ id: "b", title: "Other" }),
-      ],
-    },
-  });
-  const time = panel.getByLabelText("Uhrzeit") as HTMLInputElement;
-  expect(time.value).toBe("6:00 PM");
-  expect(screen.getAllByRole("listitem")[0]!.textContent).toContain("6:00 PM");
-  await userEvent.clear(time);
-  await userEvent.type(time, "19:30");
-  await userEvent.tab();
-  await waitFor(() => expect(app.sent("PATCH", item)).toHaveLength(1));
-  expect(app.sent("PATCH", item)[0]!.body).toEqual({ due_at: "2026-11-18T18:30:00.000Z" });
-  expect(time.value).toBe("7:30 PM");
-  await userEvent.clear(time);
-  await userEvent.type(time, "irgendwann");
-  await userEvent.tab();
-  expect(panel.getByText("Schreib eine Uhrzeit wie 18:00 oder 6:00 PM.")).toBeTruthy();
-  expect(app.sent("PATCH", item)).toHaveLength(1);
 });

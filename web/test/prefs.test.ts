@@ -1,7 +1,7 @@
 import { expect, test } from "vitest";
 import { mergePrefs, readPrefs } from "../src/hub/prefs.js";
 
-const defaults = { theme: "system", weekStart: "monday", prefix: "/", clock: "auto", keys: {} };
+const defaults = { theme: "system", weekStart: "monday", prefix: "/", keys: {} };
 
 test("missing or malformed preferences fall back to the defaults", () => {
   expect(readPrefs({})).toEqual(defaults);
@@ -16,14 +16,9 @@ test("missing or malformed preferences fall back to the defaults", () => {
 });
 
 test("stored preferences are read", () => {
-  const stored = {
-    theme: "dark",
-    weekStart: "sunday",
-    prefix: "!",
-    clock: "12h",
-    keys: { up: "p" },
-  };
-  expect(readPrefs(stored)).toEqual(stored);
+  expect(readPrefs({ theme: "dark", weekStart: "sunday", prefix: "!", keys: { up: "p" } })).toEqual(
+    { theme: "dark", weekStart: "sunday", prefix: "!", keys: { up: "p" } },
+  );
 });
 
 test("a change keeps what other clients stored", () => {

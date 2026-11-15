@@ -1,19 +1,14 @@
-import type { ClockChoice } from "../time/clock.js";
-
 /** What the dashboard keeps in the profile's free preferences. */
 export interface Prefs {
   theme: "system" | "light" | "dark";
   weekStart: "monday" | "sunday";
   prefix: string;
-  /** How times of day are written; "auto" follows the language. */
-  clock: ClockChoice;
   /** Action to key, only where it differs from the default. */
   keys: Record<string, string>;
 }
 
 const themes = ["system", "light", "dark"];
 const weekStarts = ["monday", "sunday"];
-const clocks = ["auto", "12h", "24h"];
 
 export function isPrefix(value: unknown): value is string {
   return typeof value === "string" && [...value].length === 1 && !/[\p{L}\p{N}\s]/u.test(value);
@@ -36,7 +31,6 @@ export function readPrefs(preferences: unknown): Prefs {
       ? (stored.weekStart as Prefs["weekStart"])
       : "monday",
     prefix: isPrefix(stored.prefix) ? stored.prefix : "/",
-    clock: clocks.includes(stored.clock as string) ? (stored.clock as ClockChoice) : "auto",
     keys,
   };
 }
