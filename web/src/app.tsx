@@ -9,6 +9,7 @@ import { readPrefs } from "./hub/prefs.js";
 import { SessionProvider, useSession } from "./hub/session.js";
 import { setLocale, useT } from "./i18n/index.js";
 import { LoginPage, RegisterPage, SetupPage } from "./pages/account.js";
+import { DonePage } from "./pages/done.js";
 import { FindPage } from "./pages/find.js";
 import { ItemPage } from "./pages/item.js";
 import { AllItemsPage, ListPage } from "./pages/items.js";
@@ -101,7 +102,7 @@ function SignedIn() {
                 </Suspense>
               </Route>
               <Route path="/done">
-                <Placeholder title={t("nav.done")} />
+                <DonePage />
               </Route>
               <Route path="/items/:id">{(params) => <ItemPage id={params.id} />}</Route>
               <Route path="/settings/:area?">

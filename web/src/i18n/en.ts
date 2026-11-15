@@ -195,6 +195,14 @@ export const en = {
   "cal.today": "Today",
   "cal.more": "{count} more",
   "cal.nothing": "Nothing on this day.",
+  "done.today": "Today",
+  "done.yesterday": "Yesterday",
+  "done.week": "This week",
+  "done.month": "This month",
+  "done.older": "Earlier",
+  "done.loadOlder": "Load older",
+  "done.empty": "Nothing done yet.",
+  "done.allLists": "All lists",
 } as const;
 
 export type Key = keyof typeof en;

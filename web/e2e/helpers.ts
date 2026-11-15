@@ -1,5 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { test as base, expect, type BrowserContext, type Page } from "@playwright/test";
+import pg from "pg";
 import { RestClient, type User } from "plsremind";
 import { proxyHeader } from "../../sdk/ts/test/hub/launch.js";
 
@@ -119,4 +120,38 @@ export async function openNav(page: Page): Promise<void> {
   if ((await menu.isVisible()) && (await menu.getAttribute("aria-expanded")) === "false") {
     await menu.click();
   }
+}
+
+async function sql(text: string, values: unknown[]): Promise<void> {
+  const client = new pg.Client({ connectionString: databaseUrl });
+  await client.connect();
+  try {
+    await client.query(text, values);
+  } finally {
+    await client.end();
+  }
+}
+
+/** Puts open items straight into the database, for amounts REST would take minutes for. */
+export async function seedOpen(userId: string, count: number): Promise<void> {
+  await sql(
+    `INSERT INTO items (id, user_id, list_id, title, status, due_at, created_at, updated_at)
+     SELECT gen_random_uuid(), $1, (SELECT id FROM lists WHERE user_id = $1 AND is_inbox),
+            'Seeded ' || n, 'open',
+            CASE WHEN n % 3 = 0 THEN NULL ELSE now() + make_interval(hours => n) END,
+            now(), now()
+     FROM generate_series(1, $2) AS n`,
+    [userId, count],
+  );
+}
+
+/** Puts completed items into the database, one second apart, the first being the newest. */
+export async function seedDone(userId: string, count: number): Promise<void> {
+  await sql(
+    `INSERT INTO items (id, user_id, list_id, title, status, completed_at, created_at, updated_at)
+     SELECT gen_random_uuid(), $1, (SELECT id FROM lists WHERE user_id = $1 AND is_inbox),
+            'Done ' || n, 'done', now() - make_interval(secs => n), now(), now()
+     FROM generate_series(1, $2) AS n`,
+    [userId, count],
+  );
 }

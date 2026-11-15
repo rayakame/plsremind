@@ -199,4 +199,12 @@ export const de: Texts = {
   "cal.today": "Heute",
   "cal.more": "{count} weitere",
   "cal.nothing": "Nichts an diesem Tag.",
+  "done.today": "Heute",
+  "done.yesterday": "Gestern",
+  "done.week": "Diese Woche",
+  "done.month": "Diesen Monat",
+  "done.older": "Früher",
+  "done.loadOlder": "Ältere laden",
+  "done.empty": "Noch nichts erledigt.",
+  "done.allLists": "Alle Listen",
 };
