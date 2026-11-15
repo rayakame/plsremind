@@ -108,10 +108,13 @@ export function watch(page: Page, problems: string[]): void {
   page.on("pageerror", (error) => problems.push(String(error)));
 }
 
-export async function restartHub(): Promise<void> {
-  const response = await fetch(`${process.env.PLSREMIND_E2E_CONTROL}/restart`, { method: "POST" });
-  if (response.status !== 204) throw new Error(`restart answered ${response.status}`);
+async function control(what: "halt" | "resume"): Promise<void> {
+  const response = await fetch(`${process.env.PLSREMIND_E2E_CONTROL}/${what}`, { method: "POST" });
+  if (response.status !== 204) throw new Error(`${what} answered ${response.status}`);
 }
+
+export const haltHub = () => control("halt");
+export const resumeHub = () => control("resume");
 
 /** Opens the navigation where it is a drawer. */
 export async function openNav(page: Page): Promise<void> {

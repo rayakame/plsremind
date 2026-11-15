@@ -70,7 +70,8 @@ const places: Record<string, string> = {
 function placeOf(rest: string, ctx: CommandContext): { path: string; label: string } | null {
   const wanted = rest.trim().toLowerCase();
   if (wanted === "") return null;
-  const place = places[wanted];
+  // With the hash a list is meant, also one that is named like a page.
+  const place = wanted.startsWith("#") ? undefined : places[wanted];
   if (place !== undefined) return { path: place, label: wanted };
   const list = listOf(wanted, ctx.lists);
   return list ? { path: routes.list(list.id), label: list.name } : null;
@@ -88,6 +89,7 @@ function whole(
   values: readonly { value: string; label?: string; describe?: string }[],
 ): Choice[] {
   return values
+    .filter((one) => !rest.startsWith("#") || one.label?.startsWith("#"))
     .filter((one) => starts(one.value, rest.replace(/^#/, "")) || starts(one.describe ?? "", rest))
     .map((one) => ({
       text: `${prefix}${name} ${one.label ?? one.value}`,
@@ -167,7 +169,11 @@ export const commands: readonly Command[] = [
         { value: "calendar", describe: t("nav.calendar") },
         { value: "done", describe: t("nav.done") },
         { value: "settings", describe: t("nav.settings") },
-        ...ctx.lists.map((list) => ({ value: list.name, describe: t("item.list") })),
+        ...ctx.lists.map((list) => ({
+          value: list.name,
+          label: `#${list.name}`,
+          describe: t("item.list"),
+        })),
       ]),
     preview: (rest, ctx) => {
       const place = placeOf(rest, ctx);

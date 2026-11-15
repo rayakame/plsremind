@@ -21,11 +21,13 @@ export function Shell(props: { panel: ReactNode; children: ReactNode }) {
     if (!drawer) return;
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
+      event.preventDefault();
       setDrawer(false);
       menu.current?.focus();
     };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    // Ahead of the single keys, so that Escape closes the drawer and nothing else.
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
   }, [drawer]);
 
   return (

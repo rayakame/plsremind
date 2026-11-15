@@ -19,7 +19,12 @@ export function Dialog(props: {
     const first = box.current?.querySelector<HTMLElement>(focusable);
     (first ?? box.current)?.focus();
     return () => {
-      if (before instanceof HTMLElement) before.focus();
+      if (!(before instanceof HTMLElement)) return;
+      // An opener that was disabled meanwhile cannot take the focus; something next to it can.
+      const near = before.matches(":disabled")
+        ? before.closest("fieldset, section, main")?.querySelector<HTMLElement>(focusable)
+        : before;
+      near?.focus();
     };
   }, []);
 

@@ -73,7 +73,7 @@ export async function audit(page: Page): Promise<string[]> {
         (labelled ? document.getElementById(labelled)?.textContent : null) ??
         (control.id ? document.querySelector(`label[for="${control.id}"]`)?.textContent : null) ??
         control.closest("label")?.textContent ??
-        control.textContent;
+        (control.matches("button, a") ? control.textContent : null);
       if (!name?.trim()) problems.push(`no name: ${control.outerHTML.slice(0, 80)}`);
       const option = control.getAttribute("role") === "option";
       if (control.tabIndex < 0 && !option) {

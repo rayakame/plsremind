@@ -102,3 +102,25 @@ test("a dialog without anything to tab to keeps the focus and still closes on Es
   fireEvent.keyDown(dialog, { key: "Escape" });
   expect(closed).toHaveBeenCalledOnce();
 });
+
+test("a dialog whose opener was disabled meanwhile gives the focus to something near it", () => {
+  function Page({ open, busy }: { open: boolean; busy: boolean }) {
+    return (
+      <fieldset>
+        <button disabled={busy}>opener</button>
+        <button>neighbour</button>
+        {open && (
+          <Dialog title="Rename" onClose={() => {}}>
+            <button>inside</button>
+          </Dialog>
+        )}
+      </fieldset>
+    );
+  }
+  const { rerender } = render(<Page open={false} busy={false} />);
+  screen.getByRole("button", { name: "opener" }).focus();
+  rerender(<Page open busy={false} />);
+  rerender(<Page open busy />);
+  rerender(<Page open={false} busy />);
+  expect(document.activeElement).toBe(screen.getByRole("button", { name: "neighbour" }));
+});

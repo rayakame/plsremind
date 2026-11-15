@@ -75,6 +75,7 @@ export function ConnectionSettings() {
   const unlink = async (identity: Identity) => {
     if ((await guard(client.rest.unlinkIdentity(identity.id).then(() => true))) === true) {
       identities.setData((before) => before?.filter((one) => one.id !== identity.id));
+      connections.reload();
     }
   };
 

@@ -10,8 +10,11 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
 
   const control = createServer((request, response) => {
     const done = (status: number) => response.writeHead(status).end();
-    if (request.method !== "POST" || request.url !== "/restart") return done(404);
-    hub.restart().then(
+    const act = { "/restart": hub.restart, "/halt": hub.halt, "/resume": hub.resume }[
+      request.url ?? ""
+    ];
+    if (request.method !== "POST" || !act) return done(404);
+    act().then(
       () => done(204),
       () => done(500),
     );

@@ -12,6 +12,9 @@ export interface LaunchedHub {
   databaseUrl: string;
   /** Stops the hub the way a deployment would and starts it again on the same database. */
   restart(): Promise<void>;
+  /** The two halves of a restart, for tests that look at the time in between. */
+  halt(): Promise<void>;
+  resume(): Promise<void>;
   stop(): Promise<void>;
 }
 
@@ -147,6 +150,8 @@ export async function launchHub(options: { publicUrl?: string } = {}): Promise<L
       url,
       databaseUrl,
       restart: () => stopHub("SIGTERM").then(startHub),
+      halt: () => stopHub("SIGTERM"),
+      resume: startHub,
       stop,
     };
   } catch (error) {

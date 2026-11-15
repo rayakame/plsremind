@@ -71,6 +71,7 @@ export default function CalendarPage() {
 
   const changeView = (next: View) => {
     setView(next);
+    if (bar.defaultDue) setAnchor(bar.defaultDue);
     try {
       sessionStorage.setItem("plsremind.calendar", next);
     } catch {

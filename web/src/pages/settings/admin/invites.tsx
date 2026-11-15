@@ -21,9 +21,13 @@ export function AdminInvites() {
   const invites = useLoaded((signal) => client.rest.listInvites({ signal }), client);
   const [days, setDays] = useState(7);
   const [code, setCode] = useState<string>();
+  const [busy, setBusy] = useState(false);
 
   const create = async () => {
+    if (busy) return;
+    setBusy(true);
     const created = await guard(client.rest.createInvite({ expiresIn: days * day }));
+    setBusy(false);
     if (!created) return;
     const { code: secret, ...kept } = created;
     setCode(secret);
@@ -68,7 +72,7 @@ export function AdminInvites() {
           </Select>
         </Field>
         <div className="line">
-          <Button variant="primary" onClick={() => void create()}>
+          <Button variant="primary" disabled={busy} onClick={() => void create()}>
             {t("invite.create")}
           </Button>
         </div>

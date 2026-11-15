@@ -64,8 +64,7 @@ test("within a group the order follows the due time or the priority", () => {
 test("the same input gives the very same result", () => {
   const items = [item({ id: "a" })];
   const now = nowIn(zone, "monday", new Date("2026-11-09T05:00:00Z"));
-  const again = nowIn(zone, "monday", new Date("2026-11-09T05:00:20Z"));
-  expect(groupOpen(items, now, "due")).toBe(groupOpen(items, again, "due"));
+  expect(groupOpen(items, now, "due")).toBe(groupOpen(items, now, "due"));
   expect(groupOpen(items, now, "priority")).not.toBe(groupOpen(items, now, "due"));
 });
 
@@ -102,4 +101,12 @@ test("a search folds case and accents and wants every word", () => {
   expect(filterItems(items, "   ")).toBe(items);
   expect(filterItems(items, "rep")).toBe(filterItems(items, "rep"));
   expect(filterItems(items, "zzz")).toEqual([]);
+});
+
+test("an item whose time passes within the same minute becomes overdue", () => {
+  const items = [timed("a", "2026-11-09T12:00:30Z")];
+  const before = nowIn(zone, "monday", new Date("2026-11-09T12:00:10Z"));
+  const after = nowIn(zone, "monday", new Date("2026-11-09T12:00:40Z"));
+  expect(shape(groupOpen(items, before, "due"))).toEqual(["today: a"]);
+  expect(shape(groupOpen(items, after, "due"))).toEqual(["overdue: a"]);
 });

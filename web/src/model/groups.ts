@@ -52,8 +52,7 @@ export function groupOpen(
   now: Now,
   sort: "due" | "priority",
 ): readonly Group[] {
-  const minute = Math.floor(now.instant.getTime() / 60_000);
-  const key = `${now.zone}|${now.today}|${now.weekEnd}|${minute}|${sort}`;
+  const key = `${now.zone}|${now.today}|${now.weekEnd}|${now.instant.getTime()}|${sort}`;
   const memo = openMemo.get(items);
   if (memo?.key === key) return memo.result;
 

@@ -313,3 +313,17 @@ test("a connection is installed, limited, given a new token and removed", async 
   await userEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Delete" }));
   await waitFor(() => expect(screen.queryByRole("group", { name: "Discord bot" })).toBeNull());
 });
+
+test("a name the hub refuses falls back to the stored one", async () => {
+  const app = await page("instance");
+  app.route("PATCH", "/admin/settings", {
+    status: 422,
+    body: { error: { code: "validation_failed", message: "no", fields: { name: "is too long" } } },
+  });
+  const name = (await screen.findByLabelText("Name of this instance")) as HTMLInputElement;
+  await userEvent.clear(name);
+  await userEvent.type(name, "Something else");
+  await userEvent.tab();
+  expect(await screen.findByRole("alert")).toBeTruthy();
+  await waitFor(() => expect(name.value).toBe("plsremind"));
+});

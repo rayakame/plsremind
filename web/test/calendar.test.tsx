@@ -176,3 +176,13 @@ test("Escape lets go of the chosen day", async () => {
     "false",
   );
 });
+
+test("switching to the week shows the week of the chosen day", async () => {
+  await calendar("2026-11-03T12:00:00Z");
+  await userEvent.click(screen.getByRole("button", { name: "November 25" }));
+  await userEvent.click(screen.getByRole("button", { name: "Week" }));
+  expect(document.querySelector("[data-day]")!.getAttribute("data-day")).toBe("2026-11-23");
+  expect(screen.getByRole("button", { name: "November 25" }).getAttribute("aria-pressed")).toBe(
+    "true",
+  );
+});

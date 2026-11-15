@@ -1,5 +1,4 @@
-import type { Registration, Settings } from "plsremind";
-import { useRef } from "react";
+import type { Client, Registration, Settings } from "plsremind";
 import { useLoaded } from "../../../hub/loaded.js";
 import { useHub, useSessionStore } from "../../../hub/session.js";
 import { useT } from "../../../i18n/index.js";
@@ -8,22 +7,26 @@ import { Field, Input, Segmented } from "../../../ui/controls.js";
 import { useDraft } from "../../../ui/draft.js";
 import { Card } from "../../../ui/layout.js";
 
+const saving = new WeakMap<Client, Promise<unknown>>();
+
 function Form(props: { settings: Settings; onChange: (next: Settings) => void }) {
   const t = useT();
   const { client } = useHub();
   const session = useSessionStore();
   const { guard } = useNotices();
-  const saving = useRef<Promise<unknown>>(Promise.resolve());
   // One after the other: each answer carries all settings and would undo a newer change.
   const save = (changes: { name?: string; registration?: Registration }) => {
-    saving.current = saving.current.then(async () => {
+    const saved = (saving.get(client) ?? Promise.resolve()).then(async () => {
       const next = await guard(client.rest.updateSettings(changes));
-      if (!next) return;
+      if (!next) return false;
       props.onChange(next);
       session.rename(next.name);
+      return true;
     });
+    saving.set(client, saved);
+    return saved;
   };
-  const name = useDraft(props.settings.name, (next) => void save({ name: next }), {
+  const name = useDraft(props.settings.name, (next) => save({ name: next }), {
     required: true,
     enter: true,
   });

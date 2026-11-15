@@ -53,42 +53,44 @@ function PasswordCard() {
         </Notice>
       )}
       {changed && <Notice flat>{t("pw.changed")}</Notice>}
-      <form className="stack" onSubmit={(event) => void submit(event)}>
-        {has ? (
-          <Field label={t("pw.current")}>
+      <form onSubmit={(event) => void submit(event)}>
+        <fieldset className="stack" disabled={busy}>
+          {has ? (
+            <Field label={t("pw.current")}>
+              <Input
+                type="password"
+                autoComplete="current-password"
+                value={current}
+                onChange={(event) => setCurrent(event.target.value)}
+                required
+              />
+            </Field>
+          ) : (
+            <Field label={t("account.username")}>
+              <Input
+                autoComplete="username"
+                autoCapitalize="none"
+                value={username}
+                onChange={(event) => setUsername(event.target.value)}
+                required
+              />
+            </Field>
+          )}
+          <Field label={t("pw.new")}>
             <Input
               type="password"
-              autoComplete="current-password"
-              value={current}
-              onChange={(event) => setCurrent(event.target.value)}
+              autoComplete="new-password"
+              value={next}
+              onChange={(event) => setNext(event.target.value)}
               required
             />
           </Field>
-        ) : (
-          <Field label={t("account.username")}>
-            <Input
-              autoComplete="username"
-              autoCapitalize="none"
-              value={username}
-              onChange={(event) => setUsername(event.target.value)}
-              required
-            />
-          </Field>
-        )}
-        <Field label={t("pw.new")}>
-          <Input
-            type="password"
-            autoComplete="new-password"
-            value={next}
-            onChange={(event) => setNext(event.target.value)}
-            required
-          />
-        </Field>
-        <div className="line">
-          <Button variant="primary" type="submit" disabled={busy}>
-            {t(has ? "pw.change" : "pw.set")}
-          </Button>
-        </div>
+          <div className="line">
+            <Button variant="primary" type="submit" disabled={busy}>
+              {t(has ? "pw.change" : "pw.set")}
+            </Button>
+          </div>
+        </fieldset>
       </form>
     </Card>
   );

@@ -205,8 +205,8 @@ test("a command shows what its argument may be, and typing narrows it", async ()
     "calendar" + "Calendar",
     "done" + "Done",
     "settings" + "Settings",
-    "Inbox" + "List",
-    "Work" + "List",
+    "#Inbox" + "List",
+    "#Work" + "List",
   ]);
   await userEvent.type(bar(), "c");
   expect(choices()).toEqual(["calendar" + "Calendar"]);
@@ -254,4 +254,19 @@ test("inside a new item the lists follow a hash and the priorities an exclamatio
   await userEvent.keyboard("{ArrowDown}{ArrowDown}{ArrowDown}{Enter}");
   expect((bar() as HTMLInputElement).value).toBe("/new Call Mia #work !high ");
   expect(preview()).toBe("Call Mia" + "High" + "Work");
+});
+
+test("a list named like a page is reached with the hash", async () => {
+  const { wireList } = await import("./support.js");
+  const made = await app({
+    sync: {
+      lists: [wireList(), wireList({ id: "l5", name: "Settings", position: 1, is_inbox: false })],
+    },
+  });
+  await userEvent.type(bar(), "/go #set");
+  expect(choices()).toEqual(["#Settings" + "List"]);
+  await userEvent.keyboard("{ArrowDown}{Enter}");
+  expect(made.path()).toBe("/lists/l5");
+  await userEvent.type(bar(), "/go settings{Enter}");
+  expect(made.path()).toBe("/settings/personal");
 });

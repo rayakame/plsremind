@@ -23,7 +23,7 @@ function PasswordDialog(props: { user: AdminUser; onClose: () => void }) {
     if (done) props.onClose();
   };
   return (
-    <Dialog title={t("admin.newPassword")} onClose={props.onClose}>
+    <Dialog title={t("admin.newPassword")} onClose={props.onClose} sticky={busy}>
       <p className="text">{t("admin.newPasswordText", { name: props.user.displayName })}</p>
       <form className="stack" onSubmit={(event) => void submit(event)}>
         <Field label={t("admin.newPassword")}>
@@ -39,7 +39,7 @@ function PasswordDialog(props: { user: AdminUser; onClose: () => void }) {
           <Button variant="primary" type="submit" disabled={busy}>
             {t("common.save")}
           </Button>
-          <Button variant="ghost" onClick={props.onClose}>
+          <Button variant="ghost" disabled={busy} onClick={props.onClose}>
             {t("common.cancel")}
           </Button>
         </div>
@@ -121,6 +121,7 @@ export function AdminUsers() {
   const { guard } = useNotices();
   const [users, setUsers] = useState<readonly AdminUser[]>([]);
   const [cursor, setCursor] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     const abort = new AbortController();
@@ -137,8 +138,10 @@ export function AdminUsers() {
   }, [client, guard]);
 
   const more = async () => {
-    if (cursor === null) return;
+    if (cursor === null || loading) return;
+    setLoading(true);
     const page = await guard(client.rest.listUsers({ limit: 50, cursor }));
+    setLoading(false);
     if (!page) return;
     setUsers((before) => [...before, ...page.data]);
     setCursor(page.nextCursor);
@@ -159,7 +162,9 @@ export function AdminUsers() {
       ))}
       {cursor !== null && (
         <div className="line">
-          <Button onClick={() => void more()}>{t("item.loadMore")}</Button>
+          <Button disabled={loading} onClick={() => void more()}>
+            {t("item.loadMore")}
+          </Button>
         </div>
       )}
     </>

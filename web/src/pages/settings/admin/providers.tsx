@@ -56,52 +56,54 @@ function ProviderCard(props: {
   return (
     <fieldset className="card" aria-label={provider.name}>
       <legend className="label">{provider.key}</legend>
-      <form className="stack" onSubmit={(event) => void save(event)}>
-        <Field label={t("provider.name")}>
-          <Input value={name} onChange={(event) => setName(event.target.value)} required />
-        </Field>
-        <Toggle label={t("provider.login")} checked={login} onChange={setLogin} />
-        {external && (
-          <>
-            <Toggle label={t("provider.link")} checked={link} onChange={setLink} />
-            <Field label={t("provider.clientId")}>
-              <Input
-                value={clientId}
-                autoComplete="off"
-                onChange={(event) => setClientId(event.target.value)}
-              />
-            </Field>
-            <Field label={t("provider.clientSecret")}>
-              <Input
-                type="password"
-                autoComplete="new-password"
-                value={secret}
-                placeholder={provider.hasClientSecret ? t("provider.secretStored") : ""}
-                onChange={(event) => setSecret(event.target.value)}
-              />
-            </Field>
-            {provider.type === "oidc" && (
-              <Field label={t("provider.issuer")}>
+      <form onSubmit={(event) => void save(event)}>
+        <fieldset className="stack" disabled={busy}>
+          <Field label={t("provider.name")}>
+            <Input value={name} onChange={(event) => setName(event.target.value)} required />
+          </Field>
+          <Toggle label={t("provider.login")} checked={login} onChange={setLogin} />
+          {external && (
+            <>
+              <Toggle label={t("provider.link")} checked={link} onChange={setLink} />
+              <Field label={t("provider.clientId")}>
                 <Input
-                  type="url"
-                  value={issuer}
-                  onChange={(event) => setIssuer(event.target.value)}
+                  value={clientId}
+                  autoComplete="off"
+                  onChange={(event) => setClientId(event.target.value)}
                 />
               </Field>
-            )}
-          </>
-        )}
-        <div className="line">
-          <Button variant="primary" type="submit" disabled={busy}>
-            {t("common.save")}
-          </Button>
-          {!builtIn.has(provider.key) && (
-            <Button variant="danger" onClick={() => setDeleting(true)}>
-              {t("common.delete")}
-            </Button>
+              <Field label={t("provider.clientSecret")}>
+                <Input
+                  type="password"
+                  autoComplete="new-password"
+                  value={secret}
+                  placeholder={provider.hasClientSecret ? t("provider.secretStored") : ""}
+                  onChange={(event) => setSecret(event.target.value)}
+                />
+              </Field>
+              {provider.type === "oidc" && (
+                <Field label={t("provider.issuer")}>
+                  <Input
+                    type="url"
+                    value={issuer}
+                    onChange={(event) => setIssuer(event.target.value)}
+                  />
+                </Field>
+              )}
+            </>
           )}
-          {saved && <span className="dim">{t("provider.saved")}</span>}
-        </div>
+          <div className="line">
+            <Button variant="primary" type="submit" disabled={busy}>
+              {t("common.save")}
+            </Button>
+            {!builtIn.has(provider.key) && (
+              <Button variant="danger" onClick={() => setDeleting(true)}>
+                {t("common.delete")}
+              </Button>
+            )}
+            {saved && <span className="dim">{t("provider.saved")}</span>}
+          </div>
+        </fieldset>
       </form>
       {deleting && (
         <ConfirmDialog

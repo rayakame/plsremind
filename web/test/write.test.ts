@@ -238,11 +238,14 @@ test("changes to the preferences, the profile and the order of lists also go out
 
 test("the time of completion is fixed when the change is made", async () => {
   const hub = await connectedHub();
-  hub.route("PATCH", "/users/@me/items/a", () => new Promise(() => {}));
-  void setDone(hub.own, hub.mine().item("a")!, true);
+  const answer = deferred<{ status: number; body: unknown }>();
+  hub.route("PATCH", "/users/@me/items/a", () => answer.promise);
+  const done = setDone(hub.own, hub.mine().item("a")!, true);
   const first = hub.mine().item("a");
   await hub.send("item.updated", change("u1", wireItem({ id: "b", title: "Other" })));
   expect(hub.mine().item("a")!.completedAt).toEqual(first!.completedAt);
+  answer.resolve({ status: 200, body: wireItem({ id: "a", status: "done" }) });
+  await done;
 });
 
 test("a call that never gets an answer gives up, is taken back and lets the next one through", async () => {

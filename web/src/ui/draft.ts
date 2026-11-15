@@ -6,12 +6,14 @@ import { useEffect, useRef, useState, type ChangeEvent, type KeyboardEvent } fro
  */
 export function useDraft(
   value: string,
-  save: (next: string) => void,
+  save: (next: string) => void | Promise<boolean>,
   options: { required?: boolean; enter?: boolean } = {},
 ) {
   const [text, setText] = useState(value);
   const focused = useRef(false);
   const base = useRef(value);
+  const stored = useRef(value);
+  stored.current = value;
 
   useEffect(() => {
     if (focused.current) return;
@@ -24,7 +26,12 @@ export function useDraft(
     if (next === base.current) return false;
     if (options.required && next === "") return false;
     base.current = next;
-    save(next);
+    // A save that reports failure leaves the stored value, which the field then shows again.
+    void Promise.resolve(save(next)).then((saved) => {
+      if (saved !== false || focused.current) return;
+      setText(stored.current);
+      base.current = stored.current;
+    });
     return true;
   };
 
