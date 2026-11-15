@@ -224,8 +224,11 @@ await view.apply(
 - A change creates, updates or removes an `item` or a `list`, or updates a `plan` or the
   `profile`. For a new object, take an id from `view.tempId()`; `view.resolveId(tempId)`
   gives the real one once it is known.
-  It answers once the real object has taken the draft's place. Several new objects of
-  one kind in a single `apply` are matched to the hub's events in the order they arrive.
+  It answers once the real object has taken the draft's place.
+- When one `apply` creates several objects of one kind, send each create with a nonce of
+  its own, which the call gets as a second argument: `(nonce, nonceFor) =>
+client.rest.createItem(body, { nonce: nonceFor(tempId) })`. Without it the view matches
+  each new object to the draft it resembles most, which cannot tell identical drafts apart.
 - Read the view from `view.subscribe`, not from a listener on `client.cache`: only the
   view's own listeners are called after it has taken a change in.
 - `apply` is for the caller's own user unless you pass `{ user }` as the third argument.

@@ -30,11 +30,12 @@ export type Change =
 export interface OptimisticView extends Cache {
   /**
    * Shows the changes at once, runs the call and returns its result. The call gets a nonce
-   * to pass on to REST. If it rejects, the changes are taken back and the error is rethrown.
+   * to pass on to REST, and a function that gives a nonce of its own for the request that
+   * creates a draft. If it rejects, the changes are taken back and the error is rethrown.
    */
   apply<T>(
     changes: readonly Change[],
-    call: (nonce: string) => Promise<T>,
+    call: (nonce: string, nonceFor: (tempId: string) => string) => Promise<T>,
     options?: { user?: string },
   ): Promise<T>;
   /** An id for an object that is created ahead of the hub. */
@@ -50,6 +51,7 @@ interface Entry {
   id: string;
   readonly create: Item | List | undefined;
   readonly update: ((value: never) => unknown) | undefined;
+  readonly nonce: string | undefined;
   readonly batch: Batch;
 }
 
@@ -437,7 +439,9 @@ function build(client: Client): OptimisticView {
     let best: Entry | undefined;
     let most = -1;
     for (const entry of user.entries) {
-      if (!entry.create || entry.kind !== kind || entry.batch.nonce !== nonce) continue;
+      if (!entry.create || entry.kind !== kind) continue;
+      if (entry.nonce === nonce) return entry;
+      if (entry.batch.nonce !== nonce) continue;
       const known = answered.get(entry.id);
       if (known === born) return entry;
       if (known !== undefined) continue;
@@ -471,12 +475,12 @@ function build(client: Client): OptimisticView {
           ? draftOf(user, kind, cause.nonce, born)
           : undefined;
       for (const entry of [...user.entries]) {
+        if (entry === draft) {
+          answered.set(entry.id, born!);
+          remove(entry, kinds);
+          continue;
+        }
         if (cause && kind === entry.kind && cause.nonce === entry.batch.nonce) {
-          if (entry === draft) {
-            answered.set(entry.id, born!);
-            remove(entry, kinds);
-            continue;
-          }
           const changed = born === undefined && (kind === "profile" || cause.id === entry.id);
           if (!entry.create && changed) {
             remove(entry, kinds);
@@ -493,7 +497,7 @@ function build(client: Client): OptimisticView {
 
   async function apply<T>(
     changes: readonly Change[],
-    call: (nonce: string) => Promise<T>,
+    call: (nonce: string, nonceFor: (tempId: string) => string) => Promise<T>,
     options: { user?: string } = {},
   ): Promise<T> {
     const principal = client.principal;
@@ -508,6 +512,15 @@ function build(client: Client): OptimisticView {
       entries: new Set(),
       answered: false,
       timer: undefined,
+    };
+    const perDraft = new Map<string, string>();
+    for (const change of changes) {
+      if ("create" in change) perDraft.set(change.create.id, randomText(16));
+    }
+    const nonceFor = (tempId: string) => {
+      const nonce = perDraft.get(tempId);
+      if (nonce === undefined) throw new TypeError(`No draft in this call has the id ${tempId}.`);
+      return nonce;
     };
     const user = userOf(userId);
     const kinds = new Set<CacheKind>();
@@ -526,6 +539,7 @@ function build(client: Client): OptimisticView {
                   : change.id,
           create: "create" in change ? change.create : undefined,
           update: "update" in change ? (change.update as Entry["update"]) : undefined,
+          nonce: "create" in change ? nonceFor(change.create.id) : undefined,
           batch,
         };
         if (entry.create) {
@@ -548,7 +562,7 @@ function build(client: Client): OptimisticView {
 
     let result: T;
     try {
-      result = await call(batch.nonce);
+      result = await call(batch.nonce, nonceFor);
     } catch (error) {
       withdraw(batch.entries);
       throw error;

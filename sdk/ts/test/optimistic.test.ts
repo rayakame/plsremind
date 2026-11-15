@@ -571,3 +571,30 @@ test("an update function that throws does not fail a call that went through", as
   expect(mine().item("a")!.title).toBe("Hand in the report");
   quiet.mockRestore();
 });
+
+test("identical drafts are told apart by the nonce each create is sent with", async () => {
+  const { view, mine, send } = await setup();
+  const [first, second] = [view.tempId(), view.tempId()];
+  const nonces: string[] = [];
+  void view.apply(
+    [
+      { kind: "item", create: fromWire<Item>(wireItem({ id: first, title: "same" })) },
+      { kind: "item", create: fromWire<Item>(wireItem({ id: second, title: "same" })) },
+      { kind: "item", id: first, update: rename("first") },
+      { kind: "item", id: second, update: rename("second") },
+    ],
+    (nonce, nonceFor) => {
+      nonces.push(nonce, nonceFor(first), nonceFor(second));
+      expect(() => nonceFor("tmp_unknown")).toThrow(TypeError);
+      return new Promise(() => {});
+    },
+  );
+  expect(new Set(nonces).size).toBe(3);
+  send("item.created", change("u1", wireItem({ id: "r2", title: "same" }), nonces[2]));
+  expect(view.resolveId(second)).toBe("r2");
+  expect(view.resolveId(first)).toBeUndefined();
+  expect(mine().item("r2")!.title).toBe("second");
+  send("item.created", change("u1", wireItem({ id: "r1", title: "same" }), nonces[1]));
+  expect(view.resolveId(first)).toBe("r1");
+  expect(mine().item("r1")!.title).toBe("first");
+});
