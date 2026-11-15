@@ -4,9 +4,11 @@ import { useT } from "../i18n/index.js";
 import { Button } from "../ui/controls.js";
 import { Icon } from "../ui/icon.js";
 import { ConnectionLine, ZoneLine } from "./lines.js";
+import { useSelection } from "./selection.js";
 import { Sidebar } from "./sidebar.js";
 
-export function Shell(props: { panel?: ReactNode; children: ReactNode }) {
+export function Shell(props: { panel: ReactNode; children: ReactNode }) {
+  const { selected } = useSelection();
   const t = useT();
   const [drawer, setDrawer] = useState(false);
   const [path] = useLocation();
@@ -21,7 +23,7 @@ export function Shell(props: { panel?: ReactNode; children: ReactNode }) {
   }, [drawer]);
 
   return (
-    <div className={props.panel ? "app with-panel" : "app"}>
+    <div className={selected !== undefined ? "app with-panel" : "app"}>
       <Sidebar open={drawer} onNavigate={() => setDrawer(false)} />
       {drawer && <div className="backdrop only-narrow" onClick={() => setDrawer(false)} />}
       <main className="main fixed">

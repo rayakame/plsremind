@@ -7,7 +7,9 @@ import { readPrefs } from "./hub/prefs.js";
 import { SessionProvider, useSession } from "./hub/session.js";
 import { setLocale, useT } from "./i18n/index.js";
 import { LoginPage, RegisterPage, SetupPage } from "./pages/account.js";
+import { ItemPage } from "./pages/item.js";
 import { AllItemsPage, ListPage } from "./pages/items.js";
+import { Details } from "./shell/details.js";
 import { NotFound } from "./pages/not-found.js";
 import { SelectionProvider } from "./shell/selection.js";
 import { NoticesProvider } from "./shell/notices.js";
@@ -77,7 +79,7 @@ function SignedIn() {
     <NoticesProvider>
       <Preferences />
       <SelectionProvider>
-        <Shell>
+        <Shell panel={<Details />}>
           <Switch>
             <Route path="/">
               <AllItemsPage />
@@ -89,9 +91,7 @@ function SignedIn() {
             <Route path="/done">
               <Placeholder title={t("nav.done")} />
             </Route>
-            <Route path="/items/:id">
-              <Placeholder title={t("nav.all")} />
-            </Route>
+            <Route path="/items/:id">{(params) => <ItemPage id={params.id} />}</Route>
             <Route path="/settings/:area?">
               <Placeholder title={t("nav.settings")} />
             </Route>

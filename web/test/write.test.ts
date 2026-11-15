@@ -150,3 +150,42 @@ test("items and lists are removed, renamed and moved ahead of the hub", async ()
   void createList(hub.own, "New");
   expect(hub.mine().lists().at(-1)).toMatchObject({ name: "New", isInbox: false, position: 2 });
 });
+
+test("a change to a subitem that is still a draft waits for it and then names the real one", async () => {
+  const hub = await connectedHub();
+  const created = deferred<{ status: number; body: unknown }>();
+  const real = { id: "s9", item_id: "a", title: "Outline", done: false, position: 0 };
+  hub.route("POST", "/users/@me/items/a/subitems", () => created.promise);
+  hub.route("PATCH", "/users/@me/items/a/subitems/s9", {
+    status: 200,
+    body: { ...real, done: true },
+  });
+  const { addSubitem, patchSubitem } = await import("../src/hub/write.js");
+
+  void addSubitem(hub.own, hub.mine().item("a")!, "Outline");
+  void addSubitem(hub.own, hub.mine().item("a")!, "Draft");
+  const draft = hub.mine().item("a")!.subitems[0]!;
+  void patchSubitem(hub.own, hub.mine().item("a")!, draft, { done: true });
+  expect(
+    hub
+      .mine()
+      .item("a")!
+      .subitems.map((one) => `${one.title}:${one.done}`),
+  ).toEqual(["Outline:true", "Draft:false"]);
+  await settle();
+  expect(hub.sent("POST", "/users/@me/items/a/subitems")).toHaveLength(1);
+  expect(hub.sent("PATCH", /subitems/)).toHaveLength(0);
+
+  const nonce = hub.sent("POST", "/users/@me/items/a/subitems")[0]!.headers["x-request-nonce"]!;
+  await hub.send("item.updated", change("u1", wireItem({ id: "a", subitems: [real] }), nonce));
+  created.resolve({ status: 201, body: real });
+  await settle();
+  expect(
+    hub
+      .mine()
+      .item("a")!
+      .subitems.map((one) => `${one.id}:${one.done}`)[0],
+  ).toBe("s9:true");
+  expect(hub.sent("POST", "/users/@me/items/a/subitems")).toHaveLength(2);
+  expect(hub.sent("PATCH", "/users/@me/items/a/subitems/s9")[0]!.body).toEqual({ done: true });
+});

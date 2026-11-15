@@ -62,6 +62,32 @@ function settled(hub: Writer, id: string): Promise<string> {
   });
 }
 
+const chains = new WeakMap<OptimisticView, Map<string, Promise<unknown>>>();
+const parts = new WeakMap<OptimisticView, Map<string, string>>();
+
+/** Runs the calls about one item's parts one after the other, in the order they were made. */
+function inOrder<T>(hub: Writer, itemId: string, work: () => Promise<T>): Promise<T> {
+  let byItem = chains.get(hub.view);
+  if (!byItem) chains.set(hub.view, (byItem = new Map()));
+  const next = (byItem.get(itemId) ?? Promise.resolve()).then(work, work);
+  byItem.set(
+    itemId,
+    next.catch(() => {}),
+  );
+  return next;
+}
+
+/** The real id of a subitem or reminder that was created in this session, or the id itself. */
+function partId(hub: Writer, id: string): string {
+  return parts.get(hub.view)?.get(id) ?? id;
+}
+
+function learnPart(hub: Writer, draft: string, real: string): void {
+  let known = parts.get(hub.view);
+  if (!known) parts.set(hub.view, (known = new Map()));
+  known.set(draft, real);
+}
+
 function zoneOf(hub: Writer): string {
   const profile = hub.view.user(hub.userId)?.profile;
   return profile?.timezone ?? "UTC";
@@ -199,8 +225,15 @@ export function addSubitem(hub: Writer, item: Item, title: string): Promise<void
   return updateItem(
     hub,
     item,
-    (before) => ({ ...before, subitems: [...before.subitems, draft] }),
-    (id, nonce) => hub.client.rest.createSubitem(id, { title }, { nonce }),
+    (before) =>
+      before.subitems.some((one) => one.id === partId(hub, draft.id))
+        ? before
+        : { ...before, subitems: [...before.subitems, draft] },
+    (id, nonce) =>
+      inOrder(hub, item.id, async () => {
+        const created = await hub.client.rest.createSubitem(id, { title }, { nonce });
+        learnPart(hub, draft.id, created.id);
+      }),
   );
 }
 
@@ -215,9 +248,14 @@ export function patchSubitem(
     item,
     (before) => ({
       ...before,
-      subitems: before.subitems.map((one) => (one.id === subitem.id ? { ...one, ...patch } : one)),
+      subitems: before.subitems.map((one) =>
+        one.id === subitem.id || one.id === partId(hub, subitem.id) ? { ...one, ...patch } : one,
+      ),
     }),
-    (id, nonce) => hub.client.rest.updateSubitem(id, subitem.id, patch, { nonce }),
+    (id, nonce) =>
+      inOrder(hub, item.id, () =>
+        hub.client.rest.updateSubitem(id, partId(hub, subitem.id), patch, { nonce }),
+      ),
   );
 }
 
@@ -227,9 +265,14 @@ export function removeSubitem(hub: Writer, item: Item, subitem: Subitem): Promis
     item,
     (before) => ({
       ...before,
-      subitems: before.subitems.filter((one) => one.id !== subitem.id),
+      subitems: before.subitems.filter(
+        (one) => one.id !== subitem.id && one.id !== partId(hub, subitem.id),
+      ),
     }),
-    (id, nonce) => hub.client.rest.deleteSubitem(id, subitem.id, { nonce }),
+    (id, nonce) =>
+      inOrder(hub, item.id, () =>
+        hub.client.rest.deleteSubitem(id, partId(hub, subitem.id), { nonce }),
+      ),
   );
 }
 
@@ -245,11 +288,20 @@ export function moveSubitem(hub: Writer, item: Item, subitem: Subitem, by: -1 | 
     (before) => ({
       ...before,
       subitems: order.flatMap((id, position) => {
-        const one = before.subitems.find((candidate) => candidate.id === id);
+        const one = before.subitems.find(
+          (candidate) => candidate.id === id || candidate.id === partId(hub, id),
+        );
         return one ? [{ ...one, position }] : [];
       }),
     }),
-    (id, nonce) => hub.client.rest.reorderSubitems(id, { ids: order }, { nonce }),
+    (id, nonce) =>
+      inOrder(hub, item.id, () =>
+        hub.client.rest.reorderSubitems(
+          id,
+          { ids: order.map((one) => partId(hub, one)) },
+          { nonce },
+        ),
+      ),
   );
 }
 
@@ -263,13 +315,20 @@ export function addReminder(hub: Writer, item: Item, at: Date): Promise<void> {
   return updateItem(
     hub,
     item,
-    (before) => ({
-      ...before,
-      reminders: [...before.reminders, draft].sort(
-        (a, b) => a.remindAt.getTime() - b.remindAt.getTime(),
-      ),
-    }),
-    (id, nonce) => hub.client.rest.createReminder(id, { at }, { nonce }),
+    (before) =>
+      before.reminders.some((one) => one.id === partId(hub, draft.id))
+        ? before
+        : {
+            ...before,
+            reminders: [...before.reminders, draft].sort(
+              (a, b) => a.remindAt.getTime() - b.remindAt.getTime(),
+            ),
+          },
+    (id, nonce) =>
+      inOrder(hub, item.id, async () => {
+        const created = await hub.client.rest.createReminder(id, { at }, { nonce });
+        learnPart(hub, draft.id, created.id);
+      }),
   );
 }
 
@@ -279,9 +338,14 @@ export function removeReminder(hub: Writer, item: Item, reminder: ManualReminder
     item,
     (before) => ({
       ...before,
-      reminders: before.reminders.filter((one) => one.id !== reminder.id),
+      reminders: before.reminders.filter(
+        (one) => one.id !== reminder.id && one.id !== partId(hub, reminder.id),
+      ),
     }),
-    (id, nonce) => hub.client.rest.deleteReminder(id, reminder.id, { nonce }),
+    (id, nonce) =>
+      inOrder(hub, item.id, () =>
+        hub.client.rest.deleteReminder(id, partId(hub, reminder.id), { nonce }),
+      ),
   );
 }
 

@@ -65,6 +65,9 @@ export function fakeHub(options: HubOptions = {}) {
     user ? { status: 200, body: user } : { status: 401, body: { error: { code: "unauthorized" } } },
   );
 
+  route("GET", /^\/users\/@me\/items\/[^/]+\/schedule/, { status: 200, body: [] });
+  route("GET", "/users/@me/reminder-log", { status: 200, body: { data: [], next_cursor: null } });
+
   const fetch = (async (input: RequestInfo | URL, init: RequestInit = {}) => {
     const url = new URL(String(input));
     const headers: Record<string, string> = {};

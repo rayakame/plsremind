@@ -39,7 +39,7 @@ export function NavItem({ active, count, children, ...rest }: NavItemProps) {
 
 export function Card(props: { title?: string | undefined; children: ReactNode }) {
   return (
-    <section className="card">
+    <section className="card" aria-label={props.title}>
       {props.title && <h3 className="label">{props.title}</h3>}
       {props.children}
     </section>
