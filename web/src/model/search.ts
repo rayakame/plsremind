@@ -8,28 +8,23 @@ export function fold(text: string): string {
   return text.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
 }
 
-/** The words of a text, each with a space in front, so that a word's start can be searched for. */
-function words(text: string): string {
-  return ` ${fold(text).replace(/[^\p{L}\p{N}]+/gu, " ")}`;
-}
-
 function haystack(item: Item): string {
   let text = folded.get(item);
-  if (text === undefined) folded.set(item, (text = words(`${item.title} ${item.note}`)));
+  if (text === undefined) folded.set(item, (text = fold(`${item.title}\n${item.note}`)));
   return text;
 }
 
-/** The items whose title or note has, for every word of the text, a word that starts with it. */
+/** The items whose title or note holds every word of the text. */
 export function filterItems<T extends Item>(items: readonly T[], text: string): readonly T[] {
-  const wanted = words(text).split(" ").filter(Boolean);
-  if (wanted.length === 0) return items;
-  const key = wanted.join(" ");
+  const words = fold(text).split(/\s+/).filter(Boolean);
+  if (words.length === 0) return items;
+  const key = words.join(" ");
   const before = memo.get(items);
   if (before?.text === key) return before.result as readonly T[];
   const result = Object.freeze(
     items.filter((item) => {
       const hay = haystack(item);
-      return wanted.every((word) => hay.includes(` ${word}`));
+      return words.every((word) => hay.includes(word));
     }),
   );
   memo.set(items, { text: key, result });
