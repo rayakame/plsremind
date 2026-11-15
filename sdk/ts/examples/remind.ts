@@ -30,6 +30,7 @@ function describe(delivery: Delivery): string {
   const meant = reminder.scheduledFor.toLocaleTimeString([], {
     hour: "2-digit",
     minute: "2-digit",
+    timeZone: user.timezone,
   });
   const late = delivery.late ? ` (was meant for ${meant})` : "";
   return `${user.displayName}: "${item.title}" ${what}${late}`;
@@ -65,6 +66,7 @@ client.on("closed", (event) => {
 });
 client.on("error", (event) => {
   console.error("could not confirm a reminder:", event.error);
+  if (once) process.exit(1);
 });
 
 await client.connect();

@@ -335,10 +335,13 @@ test("a socket that never says hello is given up after fifteen seconds", async (
   await vi.advanceTimersByTimeAsync(2000);
   await settle();
   expect(fake.current).not.toBe(silent);
-  fake.current.open();
-  fake.current.hello();
+  const next = fake.current;
+  next.open();
+  next.hello();
+  next.dispatch("RESUMED", {}, 3);
   await vi.advanceTimersByTimeAsync(20_000);
-  expect(fake.current.closedWith).toBeUndefined();
+  expect(fake.current).toBe(next);
+  expect(next.closedWith).toBeUndefined();
 });
 
 test("a first attempt that never gets a hello fails instead of hanging", async () => {

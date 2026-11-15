@@ -539,7 +539,7 @@ async function read<T>(
     throw new NetworkError(`The answer to ${method} ${target} broke off.`, cause);
   }
   let parsed: unknown;
-  let readable = true;
+  let readable = text !== "" || !response.ok || response.status === 204;
   if (text !== "") {
     try {
       parsed = JSON.parse(text);
@@ -562,13 +562,14 @@ async function read<T>(
     throw new ApiError(response.status, "unknown", `The hub answered ${response.status}.`);
   }
   if (!readable) {
-    throw new NetworkError(`The answer to ${method} ${target} was not JSON.`);
+    throw new NetworkError(`The answer to ${method} ${target} was empty or not JSON.`);
   }
   return fromWire<T>(parsed);
 }
 
 function pause(ms: number, signal: AbortSignal | undefined): Promise<void> {
   return new Promise((resolve, reject) => {
+    signal?.throwIfAborted();
     const timer = setTimeout(done, ms);
     function done() {
       signal?.removeEventListener("abort", aborted);

@@ -221,3 +221,24 @@ test("@me as the user is the caller's own path", async () => {
   await rest.listLists({ user: "@me" });
   expect(calls[0]!.url).toBe("https://hub.test/api/v1/users/@me/lists");
 });
+
+test("an empty answer where an object was promised becomes a NetworkError", async () => {
+  const { rest } = fake([{ status: 200 }]);
+  await expect(rest.getInfo()).rejects.toBeInstanceOf(NetworkError);
+  const gone = fake([{ status: 204 }]);
+  await expect(gone.rest.deleteItem("i1")).resolves.toBeUndefined();
+});
+
+test("an abort that happens just before the wait for a retry is not slept through", async () => {
+  const controller = new AbortController();
+  const fetch = (async () => {
+    controller.abort();
+    return new Response(null, { status: 429, headers: { "retry-after": "29" } });
+  }) as typeof globalThis.fetch;
+  const rest = new RestClient({ url: "https://hub.test/", fetch, token: "plsr_pat_x" });
+  const outcome = await Promise.race([
+    rest.listLists({ signal: controller.signal }).catch((e: unknown) => (e as Error).name),
+    new Promise((resolve) => setTimeout(() => resolve("still waiting"), 200)),
+  ]);
+  expect(outcome).toBe("AbortError");
+});

@@ -230,21 +230,17 @@ class ViewUser implements UserState {
       if (final && final.status === "open") items.push(final);
     }
     let history: Item[] = [];
+    for (const [id, final] of finals) {
+      if (!final) continue;
+      const before = this.#base.item(id)?.status;
+      if (final.status === "open" && before !== "open") items.push(final);
+      else if (final.status === "done" && before !== "done") history.push(final);
+    }
     for (const item of baseHistory) {
       const final = finals.has(item.id) ? finals.get(item.id) : item;
       if (final && final.status === "done") history.push(final);
     }
-    for (const [id, final] of finals) {
-      if (!final) continue;
-      const before = this.#base.item(id)?.status;
-      if (final.status === "open" && before !== "open") {
-        items.push(final);
-      } else if (final.status === "done" && before !== "done" && this.#keepsHistory()) {
-        const at = completedAt(final);
-        const index = history.findIndex((other) => completedAt(other) <= at);
-        history.splice(index < 0 ? history.length : index, 0, final);
-      }
-    }
+    history.sort((a, b) => completedAt(b) - completedAt(a));
     if (!this.#keepsHistory()) history = [];
     this.#items = {
       baseItems,
@@ -428,10 +424,31 @@ function build(client: Client): OptimisticView {
     if (behind(user, entry)) return false;
     const confirmed = user.confirmed(entry);
     if (!entry.update) return confirmed === undefined;
-    return (
-      confirmed !== undefined &&
-      same((entry.update as (v: unknown) => unknown)(confirmed), confirmed)
-    );
+    if (confirmed === undefined) return false;
+    try {
+      return same((entry.update as (v: unknown) => unknown)(confirmed), confirmed);
+    } catch {
+      return true;
+    }
+  }
+
+  /** The draft of this request that the newly created object most likely came from. */
+  function draftOf(user: ViewUser, kind: Kind, nonce: string, born: string): Entry | undefined {
+    let best: Entry | undefined;
+    let most = -1;
+    for (const entry of user.entries) {
+      if (!entry.create || entry.kind !== kind || entry.batch.nonce !== nonce) continue;
+      const known = answered.get(entry.id);
+      if (known === born) return entry;
+      if (known !== undefined) continue;
+      const real = user.confirmed({ ...entry, id: born }) as Record<string, unknown> | undefined;
+      const draft = entry.create as unknown as Record<string, unknown>;
+      const score = Object.keys(draft).filter(
+        (key) => key !== "id" && same(draft[key], real?.[key]),
+      ).length;
+      if (score > most) [best, most] = [entry, score];
+    }
+    return best;
   }
 
   function vanished(user: ViewUser, entry: Entry): boolean {
@@ -448,17 +465,20 @@ function build(client: Client): OptimisticView {
     } else if (user) {
       const cause = change.cause;
       const kind = cause ? eventKind(cause.name) : undefined;
-      let born = cause?.name.endsWith(".created") ? cause.id : undefined;
+      const born = cause?.name.endsWith(".created") ? cause.id : undefined;
+      const draft =
+        cause && kind && born !== undefined && typeof cause.nonce === "string"
+          ? draftOf(user, kind, cause.nonce, born)
+          : undefined;
       for (const entry of [...user.entries]) {
         if (cause && kind === entry.kind && cause.nonce === entry.batch.nonce) {
-          const known = answered.get(entry.id);
-          if (entry.create && born !== undefined && (known === undefined || known === born)) {
-            answered.set(entry.id, born);
-            born = undefined;
+          if (entry === draft) {
+            answered.set(entry.id, born!);
             remove(entry, kinds);
             continue;
           }
-          if (!entry.create && (kind === "profile" || cause.id === entry.id)) {
+          const changed = born === undefined && (kind === "profile" || cause.id === entry.id);
+          if (!entry.create && changed) {
             remove(entry, kinds);
             continue;
           }

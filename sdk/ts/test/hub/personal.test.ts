@@ -129,7 +129,10 @@ test("a dropped connection is resumed and misses nothing", async () => {
   tap.dropCurrent();
   await until("the drop", () => seen.includes("disconnected"));
   const item = await rest.createItem({ title: "while away" });
-  await until("the resume", () => seen.includes("resumed"));
+  await until(
+    "the resume and the item",
+    () => seen.includes("resumed") && client.cache.user()!.item(item.id) !== undefined,
+  );
   expect(seen).toEqual(["disconnected", "resumed"]);
   expect(client.cache.user()!.item(item.id)!.title).toBe("while away");
   expect(tap.opened()).toBe(2);
@@ -145,7 +148,11 @@ test("after a hub restart the client identifies again and ends up with the full 
   const state = client.cache.user()!;
   await restartHub();
   const during = await rest.createItem({ title: "during the restart" });
-  await until("the new session", () => readies === 1, 30_000);
+  await until(
+    "the new session and the item",
+    () => readies === 1 && state.item(during.id) !== undefined,
+    30_000,
+  );
   expect(client.cache.user()).toBe(state);
   expect(ids(state.items()).sort()).toEqual([before.id, during.id].sort());
   expect(client.status).toBe("connected");

@@ -94,7 +94,7 @@ export default async function setup(project: TestProject): Promise<() => Promise
   const stopHub = async (signal: NodeJS.Signals = "SIGKILL") => {
     const running = hub;
     hub = undefined;
-    if (!running || running.exitCode !== null) return;
+    if (!running || running.exitCode !== null || running.signalCode !== null) return;
     const exited = new Promise((resolve) => running.once("exit", resolve));
     running.kill(signal);
     const impatient = setTimeout(() => running.kill("SIGKILL"), 15_000);

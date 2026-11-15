@@ -504,3 +504,70 @@ test("an update function that throws is skipped and does not break the view", as
   expect(mine().item("b")!.title).toBe("other");
   quiet.mockRestore();
 });
+
+test("two drafts in one call find their own object when the events arrive the other way round", async () => {
+  const { view, mine, send } = await setup();
+  const [first, second] = [view.tempId(), view.tempId()];
+  let nonce = "";
+  void view.apply(
+    [
+      { kind: "item", create: fromWire<Item>(wireItem({ id: first, title: "one" })) },
+      { kind: "item", create: fromWire<Item>(wireItem({ id: second, title: "two" })) },
+      { kind: "item", id: second, update: rename("two, edited") },
+    ],
+    (given) => {
+      nonce = given;
+      return new Promise(() => {});
+    },
+  );
+  send("item.created", change("u1", wireItem({ id: "r2", title: "two" }), nonce));
+  expect(view.resolveId(second)).toBe("r2");
+  expect(view.resolveId(first)).toBeUndefined();
+  expect(mine().item("r2")!.title).toBe("two, edited");
+  send("item.created", change("u1", wireItem({ id: "r1", title: "one" }), nonce));
+  expect(view.resolveId(first)).toBe("r1");
+  expect(mine().item("r1")!.title).toBe("one");
+});
+
+test("a done item completed again ahead moves to its new place in the history", async () => {
+  const { view, mine } = await setup({
+    history: [
+      wireItem({ id: "h1", status: "done", completed_at: "2026-11-14T13:00:00Z" }),
+      wireItem({ id: "h2", status: "done", completed_at: "2026-11-14T11:00:00Z" }),
+    ],
+  });
+  void view.apply(
+    [
+      {
+        kind: "item",
+        id: "h2",
+        update: (item) => ({ ...item, completedAt: new Date("2026-11-14T14:00:00Z") }),
+      },
+    ],
+    () => new Promise(() => {}),
+  );
+  expect(ids(mine().history())).toEqual(["h2", "h1"]);
+});
+
+test("an update function that throws does not fail a call that went through", async () => {
+  const { view, mine, heard } = await setup();
+  const quiet = vi.spyOn(console, "error").mockImplementation(() => {});
+  const applied = view.apply(
+    [
+      {
+        kind: "item",
+        id: "a",
+        update: () => {
+          throw new Error("bad update");
+        },
+      },
+    ],
+    async () => "ok",
+  );
+  expect(await applied).toBe("ok");
+  const before = heard.length;
+  await vi.advanceTimersByTimeAsync(5000);
+  expect(heard).toHaveLength(before);
+  expect(mine().item("a")!.title).toBe("Hand in the report");
+  quiet.mockRestore();
+});
