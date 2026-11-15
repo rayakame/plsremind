@@ -63,6 +63,9 @@ export function rebind(
   prefix = "",
 ): Rebound {
   if (key === "" || key === " " || key === prefix) return { ok: false, conflict: null };
+  // The arrows always move through the list, next to whatever keys are set for that.
+  if (key === "ArrowDown" && action !== "down") return { ok: false, conflict: "down" };
+  if (key === "ArrowUp" && action !== "up") return { ok: false, conflict: "up" };
   const other = bindings(overrides).get(key);
   if (other !== undefined && other !== action) return { ok: false, conflict: other };
   const next = { ...overrides };

@@ -75,3 +75,30 @@ test("a dialog is modal, closes on Escape and gives the focus back", () => {
   rerender(<Page open={false} />);
   expect(document.activeElement).toBe(opener);
 });
+
+test("a dialog without anything to tab to keeps the focus and still closes on Escape", () => {
+  const closed = vi.fn();
+  render(
+    <>
+      <button>outside</button>
+      <Dialog title="Keys" onClose={closed}>
+        <p>only text</p>
+      </Dialog>
+    </>,
+  );
+  const dialog = screen.getByRole("dialog", { name: "Keys" });
+  expect(document.activeElement).toBe(dialog);
+  for (const shiftKey of [false, true]) {
+    const tab = new KeyboardEvent("keydown", {
+      key: "Tab",
+      shiftKey,
+      bubbles: true,
+      cancelable: true,
+    });
+    dialog.dispatchEvent(tab);
+    expect(tab.defaultPrevented).toBe(true);
+    expect(document.activeElement).toBe(dialog);
+  }
+  fireEvent.keyDown(dialog, { key: "Escape" });
+  expect(closed).toHaveBeenCalledOnce();
+});

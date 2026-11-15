@@ -1,4 +1,5 @@
 import type { Registration, Settings } from "plsremind";
+import { useRef } from "react";
 import { useLoaded } from "../../../hub/loaded.js";
 import { useHub, useSessionStore } from "../../../hub/session.js";
 import { useT } from "../../../i18n/index.js";
@@ -12,11 +13,15 @@ function Form(props: { settings: Settings; onChange: (next: Settings) => void })
   const { client } = useHub();
   const session = useSessionStore();
   const { guard } = useNotices();
-  const save = async (changes: { name?: string; registration?: Registration }) => {
-    const next = await guard(client.rest.updateSettings(changes));
-    if (!next) return;
-    props.onChange(next);
-    session.rename(next.name);
+  const saving = useRef<Promise<unknown>>(Promise.resolve());
+  // One after the other: each answer carries all settings and would undo a newer change.
+  const save = (changes: { name?: string; registration?: Registration }) => {
+    saving.current = saving.current.then(async () => {
+      const next = await guard(client.rest.updateSettings(changes));
+      if (!next) return;
+      props.onChange(next);
+      session.rename(next.name);
+    });
   };
   const name = useDraft(props.settings.name, (next) => void save({ name: next }), {
     required: true,

@@ -56,11 +56,6 @@ function settled(hub: Writer, id: string): Promise<string> {
         finish();
         return resolve(real);
       }
-      const state = hub.view.user(hub.userId);
-      if (!state?.item(id) && !state?.list(id)) {
-        finish();
-        reject(new Error("The object was never created."));
-      }
     });
     const timer = setTimeout(() => {
       finish();
@@ -84,6 +79,8 @@ interface Memory {
   /** How many calls about each object have come back, and who wants to know. */
   answered: Map<string, number>;
   listeners: Set<() => void>;
+  /** Preference changes the hub answered that its events may not have brought yet. */
+  prefs: Partial<Prefs>[];
 }
 
 const memories = new WeakMap<OptimisticView, Memory>();
@@ -98,6 +95,7 @@ function memoryOf(hub: Writer): Memory {
       partDrafts: new Map(),
       answered: new Map(),
       listeners: new Set(),
+      prefs: [],
     };
     memories.set(hub.view, memory);
   }
@@ -105,13 +103,16 @@ function memoryOf(hub: Writer): Memory {
 }
 
 // A call without an answer would hold back every later change to the same object for good.
-function limited<T>(work: Promise<T>): Promise<T> {
+function limited<T>(work: (signal: AbortSignal) => Promise<T>): Promise<T> {
+  const abort = new AbortController();
   return new Promise((resolve, reject) => {
-    const timer = setTimeout(
-      () => reject(new NetworkError("The hub did not answer in time.")),
-      waitForAnswer,
-    );
-    work.then(resolve, reject).finally(() => clearTimeout(timer));
+    const timer = setTimeout(() => {
+      reject(new NetworkError("The hub did not answer in time."));
+      abort.abort();
+    }, waitForAnswer);
+    work(abort.signal)
+      .then(resolve, reject)
+      .finally(() => clearTimeout(timer));
   });
 }
 
@@ -124,10 +125,14 @@ function chainKey(hub: Writer, id: string): string {
 }
 
 // Requests are not ordered on the wire, so the calls about one object go out one by one.
-function inOrder<T>(hub: Writer, id: string, work: () => Promise<T>): Promise<T> {
+function inOrder<T>(
+  hub: Writer,
+  id: string,
+  work: (signal: AbortSignal) => Promise<T>,
+): Promise<T> {
   const memory = memoryOf(hub);
   const key = chainKey(hub, id);
-  const run = () => limited(work());
+  const run = () => limited(work);
   const next = (memory.chains.get(key) ?? Promise.resolve()).then(run, run);
   const after = () => {
     memory.answered.set(key, (memory.answered.get(key) ?? 0) + 1);
@@ -224,10 +229,10 @@ export async function createItem(hub: Writer, draft: ItemDraft): Promise<string>
   const created = await hub.view.apply(
     [{ kind: "item", create: item }],
     async (_nonce, nonceFor) =>
-      limited(
+      limited(async (signal) =>
         hub.client.rest.createItem(
           { ...input, listId: await settled(hub, listId) },
-          { nonce: nonceFor(id) },
+          { nonce: nonceFor(id), signal },
         ),
       ),
     { user: hub.userId },
@@ -239,12 +244,13 @@ function updateItem(
   hub: Writer,
   item: Item,
   shown: (before: Item) => Item,
-  call: (id: string, nonce: string) => Promise<unknown>,
+  call: (id: string, nonce: string, signal: AbortSignal) => Promise<unknown>,
 ): Promise<void> {
   return hub.view
     .apply(
       [{ kind: "item", id: item.id, update: shown }],
-      (nonce) => inOrder(hub, item.id, async () => call(await settled(hub, item.id), nonce)),
+      (nonce) =>
+        inOrder(hub, item.id, async (signal) => call(await settled(hub, item.id), nonce, signal)),
       { user: hub.userId },
     )
     .then(() => undefined);
@@ -257,7 +263,7 @@ export function setDone(hub: Writer, item: Item, done: boolean): Promise<void> {
     hub,
     item,
     (before) => ({ ...before, status, completedAt }),
-    (id, nonce) => hub.client.rest.updateItem(id, { status }, { nonce }),
+    (id, nonce, signal) => hub.client.rest.updateItem(id, { status }, { nonce, signal }),
   );
 }
 
@@ -273,7 +279,7 @@ export function patchItem(hub: Writer, item: Item, patch: ItemPatch): Promise<vo
       ...(plain.listId ? { listId: hub.view.resolveId(plain.listId) ?? plain.listId } : {}),
       ...fields?.shown,
     }),
-    async (id, nonce) =>
+    async (id, nonce, signal) =>
       hub.client.rest.updateItem(
         id,
         {
@@ -281,7 +287,7 @@ export function patchItem(hub: Writer, item: Item, patch: ItemPatch): Promise<vo
           ...plain,
           ...(plain.listId ? { listId: await settled(hub, plain.listId) } : {}),
         },
-        { nonce },
+        { nonce, signal },
       ),
   );
 }
@@ -290,8 +296,8 @@ export function removeItem(hub: Writer, item: Item): Promise<void> {
   return hub.view.apply(
     [{ kind: "item", id: item.id, remove: true }],
     (nonce) =>
-      inOrder(hub, item.id, async () =>
-        hub.client.rest.deleteItem(await settled(hub, item.id), { nonce }),
+      inOrder(hub, item.id, async (signal) =>
+        hub.client.rest.deleteItem(await settled(hub, item.id), { nonce, signal }),
       ),
     { user: hub.userId },
   );
@@ -315,8 +321,8 @@ export function addSubitem(hub: Writer, item: Item, title: string): Promise<void
       before.subitems.some((one) => one.id === partId(hub, draft.id))
         ? before
         : { ...before, subitems: [...before.subitems, draft] },
-    async (id, nonce) => {
-      const created = await hub.client.rest.createSubitem(id, { title }, { nonce });
+    async (id, nonce, signal) => {
+      const created = await hub.client.rest.createSubitem(id, { title }, { nonce, signal });
       learnPart(hub, draft.id, created.id);
     },
   );
@@ -337,7 +343,8 @@ export function patchSubitem(
         one.id === subitem.id || one.id === partId(hub, subitem.id) ? { ...one, ...patch } : one,
       ),
     }),
-    (id, nonce) => hub.client.rest.updateSubitem(id, partId(hub, subitem.id), patch, { nonce }),
+    (id, nonce, signal) =>
+      hub.client.rest.updateSubitem(id, partId(hub, subitem.id), patch, { nonce, signal }),
   );
 }
 
@@ -351,7 +358,8 @@ export function removeSubitem(hub: Writer, item: Item, subitem: Subitem): Promis
         (one) => one.id !== subitem.id && one.id !== partId(hub, subitem.id),
       ),
     }),
-    (id, nonce) => hub.client.rest.deleteSubitem(id, partId(hub, subitem.id), { nonce }),
+    (id, nonce, signal) =>
+      hub.client.rest.deleteSubitem(id, partId(hub, subitem.id), { nonce, signal }),
   );
 }
 
@@ -378,8 +386,12 @@ export function moveSubitem(hub: Writer, item: Item, subitem: Subitem, by: -1 | 
         ),
       ],
     }),
-    (id, nonce) =>
-      hub.client.rest.reorderSubitems(id, { ids: order.map((one) => partId(hub, one)) }, { nonce }),
+    (id, nonce, signal) =>
+      hub.client.rest.reorderSubitems(
+        id,
+        { ids: order.map((one) => partId(hub, one)) },
+        { nonce, signal },
+      ),
   );
 }
 
@@ -402,8 +414,8 @@ export function addReminder(hub: Writer, item: Item, at: Date): Promise<void> {
               (a, b) => a.remindAt.getTime() - b.remindAt.getTime(),
             ),
           },
-    async (id, nonce) => {
-      const created = await hub.client.rest.createReminder(id, { at }, { nonce });
+    async (id, nonce, signal) => {
+      const created = await hub.client.rest.createReminder(id, { at }, { nonce, signal });
       learnPart(hub, draft.id, created.id);
     },
   );
@@ -419,7 +431,8 @@ export function removeReminder(hub: Writer, item: Item, reminder: ManualReminder
         (one) => one.id !== reminder.id && one.id !== partId(hub, reminder.id),
       ),
     }),
-    (id, nonce) => hub.client.rest.deleteReminder(id, partId(hub, reminder.id), { nonce }),
+    (id, nonce, signal) =>
+      hub.client.rest.deleteReminder(id, partId(hub, reminder.id), { nonce, signal }),
   );
 }
 
@@ -428,7 +441,8 @@ export function updateProfile(hub: Writer, changes: UserChanges): Promise<void> 
   return hub.view
     .apply(
       [{ kind: "profile", update: (before) => ({ ...before, ...changes }) }],
-      (nonce) => inOrder(hub, "profile", () => hub.client.rest.updateUser(changes, { nonce })),
+      (nonce) =>
+        inOrder(hub, "profile", (signal) => hub.client.rest.updateUser(changes, { nonce, signal })),
       { user: hub.userId },
     )
     .then(() => undefined);
@@ -449,8 +463,8 @@ export function setPlan(
         },
       ],
       (nonce) =>
-        inOrder(hub, `plan:${priority}`, () =>
-          hub.client.rest.setReminderPlan(priority, plan, { nonce }),
+        inOrder(hub, `plan:${priority}`, (signal) =>
+          hub.client.rest.setReminderPlan(priority, plan, { nonce, signal }),
         ),
       { user: hub.userId },
     )
@@ -458,21 +472,47 @@ export function setPlan(
 }
 
 export function resetPlan(hub: Writer, priority: Priority): Promise<void> {
-  return inOrder(hub, `plan:${priority}`, () => hub.client.rest.resetReminderPlan(priority));
+  return inOrder(hub, `plan:${priority}`, (signal) =>
+    hub.client.rest.resetReminderPlan(priority, { signal }),
+  );
 }
 
 /** Changes the dashboard's own preferences and keeps what other clients stored. */
 export function setPrefs(hub: Writer, patch: Partial<Prefs>): Promise<void> {
-  const profile = hub.view.user(hub.userId)?.profile as User | undefined;
-  const preferences = mergePrefs(profile?.preferences, patch);
+  const memory = memoryOf(hub);
   return hub.view
     .apply(
-      [{ kind: "profile", update: (before) => ({ ...before, preferences }) }],
+      [
+        {
+          kind: "profile",
+          update: (before) => ({
+            ...before,
+            preferences: mergePrefs((before as User).preferences, patch),
+          }),
+        },
+      ],
       (nonce) =>
-        inOrder(hub, "profile", () => hub.client.rest.updateUser({ preferences }, { nonce })),
+        inOrder(hub, "profile", async (signal) => {
+          // The hub replaces the whole object, so it is built from what the hub holds plus
+          // our own changes it has answered, never from one that may yet be refused.
+          const confirmed = (hub.client.cache.user(hub.userId)?.profile as User | undefined)
+            ?.preferences;
+          memory.prefs = memory.prefs.filter((sent) => !holds(confirmed, sent));
+          const base = memory.prefs.reduce(mergePrefs, { ...confirmed });
+          const preferences = mergePrefs(base, patch);
+          await hub.client.rest.updateUser({ preferences }, { nonce, signal });
+          memory.prefs.push(patch);
+        }),
       { user: hub.userId },
     )
     .then(() => undefined);
+}
+
+function holds(preferences: unknown, patch: Partial<Prefs>): boolean {
+  const stored = (preferences ?? {}) as Record<string, unknown>;
+  return Object.entries(patch).every(
+    ([key, value]) => JSON.stringify(stored[key]) === JSON.stringify(value),
+  );
 }
 
 /** Creates a list, shown at once as a draft. Resolves with its real id. */
@@ -491,7 +531,8 @@ export async function createList(hub: Writer, name: string): Promise<string> {
   memoryOf(hub).drafts.add(id);
   const created = await hub.view.apply(
     [{ kind: "list", create: list }],
-    (_nonce, nonceFor) => limited(hub.client.rest.createList({ name }, { nonce: nonceFor(id) })),
+    (_nonce, nonceFor) =>
+      limited((signal) => hub.client.rest.createList({ name }, { nonce: nonceFor(id), signal })),
     { user: hub.userId },
   );
   return created.id;
@@ -502,8 +543,8 @@ export function renameList(hub: Writer, list: List, name: string): Promise<void>
     .apply(
       [{ kind: "list", id: list.id, update: (before) => ({ ...before, name }) }],
       (nonce) =>
-        inOrder(hub, list.id, async () =>
-          hub.client.rest.renameList(await settled(hub, list.id), { name }, { nonce }),
+        inOrder(hub, list.id, async (signal) =>
+          hub.client.rest.renameList(await settled(hub, list.id), { name }, { nonce, signal }),
         ),
       { user: hub.userId },
     )
@@ -529,8 +570,8 @@ export function removeList(hub: Writer, list: List): Promise<void> {
       })),
     ],
     (nonce) =>
-      inOrder(hub, list.id, async () =>
-        hub.client.rest.deleteList(await settled(hub, list.id), { nonce }),
+      inOrder(hub, list.id, async (signal) =>
+        hub.client.rest.deleteList(await settled(hub, list.id), { nonce, signal }),
       ),
     { user: hub.userId },
   );
@@ -550,10 +591,10 @@ export function moveList(hub: Writer, list: List, by: -1 | 1): Promise<void> {
         update: (before: List) => ({ ...before, position }),
       })),
       (nonce) =>
-        inOrder(hub, "lists", async () =>
+        inOrder(hub, "lists", async (signal) =>
           hub.client.rest.reorderLists(
             { ids: await Promise.all(order.map((id) => settled(hub, id))) },
-            { nonce },
+            { nonce, signal },
           ),
         ),
       { user: hub.userId },

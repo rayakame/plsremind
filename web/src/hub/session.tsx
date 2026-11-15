@@ -17,6 +17,8 @@ export type SessionState =
   | { phase: "ready"; info: Info; client: Client; view: OptimisticView; userId: string };
 
 const longestWait = 30_000;
+// Without it a hub that accepts the request and never answers would leave the page loading.
+const waitForAnswer = 15_000;
 
 /** Owns the client: finds out who is signed in, connects, and starts over when the session ends. */
 export class Session {
@@ -27,6 +29,7 @@ export class Session {
   #generation = 0;
   #timer: ReturnType<typeof setTimeout> | undefined;
   #asked = false;
+  #asking: AbortController | undefined;
 
   constructor(make: () => Client) {
     this.#make = make;
@@ -44,6 +47,7 @@ export class Session {
 
   stop(): void {
     this.#generation++;
+    this.#asking?.abort();
     clearTimeout(this.#timer);
     this.#client?.close();
     this.#client = undefined;
@@ -70,19 +74,22 @@ export class Session {
     const generation = ++this.#generation;
     const stale = () => generation !== this.#generation;
     clearTimeout(this.#timer);
+    this.#asking?.abort();
+    const asking = (this.#asking = new AbortController());
+    const signal = () => AbortSignal.any([asking.signal, AbortSignal.timeout(waitForAnswer)]);
     const shown = this.state.phase === "ready" ? this.state.client : undefined;
     if (this.#client !== shown) this.#client?.close();
     const client = (this.#client = this.#make());
     let connected = false;
     try {
-      const info = await client.rest.getInfo();
+      const info = await client.rest.getInfo({ signal: signal() });
       if (stale()) return;
       if (info.setupRequired) {
         shown?.close();
         return this.#set({ phase: "setup", info, rest: client.rest });
       }
       try {
-        await client.rest.getUser();
+        await client.rest.getUser({ signal: signal() });
       } catch (error) {
         if (!(error instanceof ApiError) || error.status !== 401) throw error;
         if (stale()) return;

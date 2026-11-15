@@ -17,30 +17,36 @@ export function ReminderLog(props: { itemId: string }) {
   const [entries, setEntries] = useState<readonly ReminderLogEntry[]>();
   const [cursor, setCursor] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const shown = useRef(props.itemId);
+  const [failed, setFailed] = useState(false);
+  const [round, setRound] = useState(0);
+  const load = useRef(0);
   const { itemId } = props;
 
   useEffect(() => {
     const abort = new AbortController();
-    shown.current = itemId;
+    load.current++;
     setEntries(undefined);
     setCursor(null);
     setLoading(false);
+    setFailed(false);
     client.rest.listReminderLog({ itemId, limit: 20 }, { signal: abort.signal }).then(
       (page) => {
         setEntries(page.data);
         setCursor(page.nextCursor);
       },
-      () => {},
+      () => {
+        if (!abort.signal.aborted) setFailed(true);
+      },
     );
     return () => abort.abort();
-  }, [client, itemId]);
+  }, [client, itemId, round]);
 
   const more = async () => {
     if (cursor === null || loading) return;
+    const mine = load.current;
     setLoading(true);
     const page = await guard(client.rest.listReminderLog({ itemId, limit: 20, cursor }));
-    if (shown.current !== itemId) return;
+    if (load.current !== mine) return;
     setLoading(false);
     if (!page) return;
     setEntries((before) => [...(before ?? []), ...page.data]);
@@ -56,6 +62,12 @@ export function ReminderLog(props: { itemId: string }) {
 
   return (
     <Card title={t("item.sent")}>
+      {failed && (
+        <div className="between">
+          <span className="dim">{t("errors.network")}</span>
+          <Button onClick={() => setRound((before) => before + 1)}>{t("common.retry")}</Button>
+        </div>
+      )}
       {entries?.length === 0 && <p className="text dim">{t("item.sentNone")}</p>}
       {entries && entries.length > 0 && (
         <div role="list" className="stack">

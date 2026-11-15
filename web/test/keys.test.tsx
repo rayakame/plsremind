@@ -180,3 +180,8 @@ test("x completes the item whose page is open", async () => {
   await userEvent.keyboard("x");
   await waitFor(() => expect(app.sent("PATCH", "/users/@me/items/b")).toHaveLength(1));
 });
+
+test("the arrow keys stay with moving through the list", () => {
+  expect(rebind({}, "complete", "ArrowDown")).toEqual({ ok: false, conflict: "down" });
+  expect(rebind({}, "open", "ArrowUp")).toEqual({ ok: false, conflict: "up" });
+});

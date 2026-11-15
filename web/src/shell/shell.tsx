@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useLocation } from "wouter";
 import { useItem } from "../hub/hooks.js";
 import { useT } from "../i18n/index.js";
@@ -14,12 +14,15 @@ export function Shell(props: { panel: ReactNode; children: ReactNode }) {
   const shown = useItem(selected) !== undefined;
   const t = useT();
   const [drawer, setDrawer] = useState(false);
+  const menu = useRef<HTMLButtonElement>(null);
   const [path] = useLocation();
   useEffect(() => setDrawer(false), [path]);
   useEffect(() => {
     if (!drawer) return;
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setDrawer(false);
+      if (event.key !== "Escape") return;
+      setDrawer(false);
+      menu.current?.focus();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -32,6 +35,7 @@ export function Shell(props: { panel: ReactNode; children: ReactNode }) {
       <main className="main fixed">
         <div className="barrow">
           <Button
+            ref={menu}
             variant="icon"
             className="only-narrow"
             aria-label={t("nav.menu")}

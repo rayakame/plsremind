@@ -6,6 +6,7 @@ import {
   type ButtonHTMLAttributes,
   type InputHTMLAttributes,
   type ReactNode,
+  type Ref,
   type SelectHTMLAttributes,
   type TextareaHTMLAttributes,
 } from "react";
@@ -16,6 +17,7 @@ function classes(...names: (string | false | undefined)[]): string {
 
 export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: "primary" | "ghost" | "icon" | "danger" | undefined;
+  ref?: Ref<HTMLButtonElement> | undefined;
 }
 
 export function Button({ variant, className, type = "button", ...rest }: ButtonProps) {

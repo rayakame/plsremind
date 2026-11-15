@@ -55,9 +55,11 @@ test("an admin invites someone, sees them register, and blocks them", async ({ b
     await page.goto("/settings/admin/users");
     await expect(page.getByRole("group").first()).toBeVisible();
     const more = page.getByRole("button", { name: "Load more" });
+    const users = page.locator("fieldset.card");
     while (!(await page.getByRole("group", { name: username }).isVisible())) {
+      const before = await users.count();
       await more.click();
-      await expect(more).toBeEnabled();
+      await expect.poll(() => users.count()).toBeGreaterThan(before);
     }
     await page
       .getByRole("group", { name: username })

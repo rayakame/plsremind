@@ -32,7 +32,8 @@ function durations(text: string): number[] | undefined {
     .map((part) => part.trim())
     .filter(Boolean);
   try {
-    return parts.map(parseDuration);
+    const all = parts.map(parseDuration);
+    return all.every((one) => one > 0) ? all : undefined;
   } catch {
     return undefined;
   }

@@ -47,8 +47,13 @@ export async function audit(page: Page): Promise<string[]> {
       if (!element || seen.has(element) || !walker.currentNode.textContent?.trim()) continue;
       seen.add(element);
       if (!visible(element) || element.closest("[disabled], .sr")) continue;
-      const text = parse(getComputedStyle(element).color);
       const back = behind(element);
+      const ink = parse(getComputedStyle(element).color);
+      const text = {
+        r: ink.r * ink.a + back.r * (1 - ink.a),
+        g: ink.g * ink.a + back.g * (1 - ink.a),
+        b: ink.b * ink.a + back.b * (1 - ink.a),
+      };
       const [light, dark] = [luminance(text), luminance(back)].sort((a, b) => b - a);
       const ratio = (light! + 0.05) / (dark! + 0.05);
       if (ratio < 4.5) {

@@ -91,6 +91,7 @@ export async function launchHub(options: { publicUrl?: string } = {}): Promise<L
     const running = hub;
     hub = undefined;
     if (!running || running.exitCode !== null || running.signalCode !== null) return;
+    if (running.pid === undefined) return;
     const exited = new Promise((resolve) => running.once("exit", resolve));
     running.kill(signal);
     const impatient = setTimeout(() => running.kill("SIGKILL"), 15_000);
@@ -129,7 +130,17 @@ export async function launchHub(options: { publicUrl?: string } = {}): Promise<L
         },
         stdio: process.env.PLSREMIND_TEST_LOG ? "inherit" : "ignore",
       });
-      await until("the hub", async () => (await fetch(`${url}/api/v1/info`)).ok);
+      const child = hub;
+      const failed = new Promise<never>((_, reject) => {
+        child.once("error", (cause) =>
+          reject(new Error("The hub could not be started.", { cause })),
+        );
+      });
+      failed.catch(() => {});
+      await Promise.race([
+        until("the hub", async () => (await fetch(`${url}/api/v1/info`)).ok),
+        failed,
+      ]);
     };
     await startHub();
     return {

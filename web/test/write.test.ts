@@ -10,7 +10,7 @@ import {
   renameList,
   setDone,
 } from "../src/hub/write.js";
-import { change, connectedHub, deferred, settle, wireItem, wireList } from "./support.js";
+import { change, connectedHub, deferred, settle, wireItem, wireList, wireUser } from "./support.js";
 
 const ids = (all: readonly { id: string }[]) => all.map((one) => one.id);
 
@@ -300,4 +300,41 @@ test("changes made to a draft and to the item it became go out in one order", as
     { title: "One" },
     { title: "Two" },
   ]);
+});
+
+test("a preference the hub refused is not carried along by the next change", async () => {
+  const hub = await connectedHub();
+  let asked = 0;
+  hub.route("PATCH", "/users/@me", (call) =>
+    ++asked === 1
+      ? { status: 500, body: { error: { code: "internal", message: "no" } } }
+      : { status: 200, body: wireUser({ locale: "en", ...(call.body as object) }) },
+  );
+  const { setPrefs } = await import("../src/hub/write.js");
+  const refused = setPrefs(hub.own, { theme: "dark" }).catch(() => "refused");
+  const kept = setPrefs(hub.own, { weekStart: "sunday" });
+  expect(await refused).toBe("refused");
+  await kept;
+  expect(hub.sent("PATCH", "/users/@me").map((call) => call.body)).toEqual([
+    { preferences: { theme: "dark" } },
+    { preferences: { weekStart: "sunday" } },
+  ]);
+});
+
+test("deleting a draft waits for it to become real instead of giving up at the next change", async () => {
+  const hub = await connectedHub();
+  const created = deferred<{ status: number; body: unknown }>();
+  hub.route("POST", "/users/@me/items", () => created.promise);
+  hub.route("DELETE", "/users/@me/items/real", { status: 204 });
+  const making = createItem(hub.own, { title: "Fresh" });
+  const draft = hub.mine().items().at(-1)!;
+  const removing = removeItem(hub.own, draft);
+  await hub.send("item.updated", change("u1", wireItem({ id: "b", title: "Unrelated" })));
+  await settle();
+  const nonce = hub.sent("POST", "/users/@me/items")[0]!.headers["x-request-nonce"]!;
+  await hub.send("item.created", change("u1", wireItem({ id: "real", title: "Fresh" }), nonce));
+  created.resolve({ status: 201, body: wireItem({ id: "real", title: "Fresh" }) });
+  await making;
+  await removing;
+  expect(hub.sent("DELETE", "/users/@me/items/real")).toHaveLength(1);
 });

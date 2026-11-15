@@ -120,9 +120,12 @@ export function AdminConnections() {
   const [description, setDescription] = useState("");
   const [allowed, setAllowed] = useState<Intent[]>([]);
   const [token, setToken] = useState<string>();
+  const [busy, setBusy] = useState(false);
 
   const install = async (event: FormEvent) => {
     event.preventDefault();
+    if (busy) return;
+    setBusy(true);
     const created = await guard(
       client.rest.createConnection({
         name: name.trim(),
@@ -131,6 +134,7 @@ export function AdminConnections() {
         allowedIntents: allowed,
       }),
     );
+    setBusy(false);
     if (!created) return;
     const { token: secret, ...kept } = created;
     setToken(secret);
@@ -175,7 +179,7 @@ export function AdminConnections() {
           </Field>
           <Intents value={allowed} onChange={setAllowed} />
           <div className="line">
-            <Button variant="primary" type="submit">
+            <Button variant="primary" type="submit" disabled={busy}>
               {t("aconn.installDo")}
             </Button>
           </div>

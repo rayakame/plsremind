@@ -350,3 +350,12 @@ test("an error under a field goes when the field shows another value", async () 
   expect((times as HTMLInputElement).value).toBe("1d");
   expect(panel.queryByText("Write durations like 1d, 2h.")).toBeNull();
 });
+
+test("a duration of nothing is not a time to remind at", async () => {
+  const { app, panel } = await opened();
+  await userEvent.selectOptions(panel.getByLabelText("Planned reminders"), "Own times");
+  await userEvent.type(panel.getByLabelText("Remind before the deadline"), "0m");
+  await userEvent.tab();
+  expect(panel.getByText("Write durations like 1d, 2h.")).toBeTruthy();
+  expect(app.sent("PATCH", item)).toHaveLength(0);
+});

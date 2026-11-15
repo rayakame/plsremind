@@ -254,3 +254,47 @@ test("an error from linking elsewhere is shown and leaves the address", async ()
   expect((await screen.findByRole("alert")).textContent).toBe("Linking this way is turned off.");
   expect(app.path()).toBe("/settings/connections");
 });
+
+test("a token made before the list has loaded is not wiped out by the list", async () => {
+  const app = await renderApp({ path: "/settings/tokens", info, hold: true });
+  const { deferred } = await import("./support.js");
+  const listing = deferred<{ status: number; body: unknown }>();
+  let listed = 0;
+  app.route("GET", "/users/@me/tokens", () =>
+    ++listed === 1
+      ? listing.promise
+      : {
+          status: 200,
+          body: [
+            {
+              id: "t2",
+              name: "Phone",
+              remind: false,
+              created_at: "2026-11-11T10:00:00Z",
+              last_used_at: null,
+            },
+          ],
+        },
+  );
+  app.route("POST", "/users/@me/tokens", {
+    status: 201,
+    body: {
+      id: "t2",
+      name: "Phone",
+      remind: false,
+      token: "plsr_pat_secret",
+      created_at: "2026-11-11T10:00:00Z",
+      last_used_at: null,
+    },
+  });
+  const { act } = await import("@testing-library/react");
+  await act(() => app.connect());
+  await userEvent.type(await screen.findByLabelText("Name of the new token"), "Phone");
+  await userEvent.click(screen.getByRole("button", { name: "Create token" }));
+  await userEvent.click(
+    within(await screen.findByRole("dialog")).getByRole("button", { name: "Done" }),
+  );
+  listing.resolve({ status: 200, body: [] });
+  await waitFor(() => expect(listed).toBe(2));
+  expect(await screen.findByRole("group", { name: "Phone" })).toBeTruthy();
+});

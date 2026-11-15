@@ -33,7 +33,11 @@ export function Dialog(props: {
     const all = [...box.current.querySelectorAll<HTMLElement>(focusable)];
     const first = all[0];
     const last = all.at(-1);
-    if (!first || !last) return;
+    if (!first || !last) {
+      event.preventDefault();
+      box.current.focus();
+      return;
+    }
     if (event.shiftKey && document.activeElement === first) {
       event.preventDefault();
       last.focus();

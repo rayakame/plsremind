@@ -78,7 +78,9 @@ function TokenCard(props: {
       <div className="between">
         <h3 className="h2">{token.name}</h3>
         <div className="line">
-          <Button onClick={() => setDialog("rename")}>{t("common.rename")}</Button>
+          <Button disabled={busy} onClick={() => setDialog("rename")}>
+            {t("common.rename")}
+          </Button>
           <Button variant="danger" onClick={() => setDialog("delete")}>
             {t("common.delete")}
           </Button>
