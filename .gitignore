@@ -6,3 +6,5 @@
 /hub/bin/
 /docs/api/index.html
 .env
+node_modules/
+/sdk/ts/dist/

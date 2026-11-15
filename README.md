@@ -6,11 +6,14 @@ tools to it the same way you would write a bot.
 
 The project is in early development. What exists today is the hub: accounts, login,
 lists, items, reminders with confirmed delivery, the REST API and the WebSocket gateway.
-The dashboard, the Python SDK and the Discord bot are next.
+There is a TypeScript SDK to build on it. The dashboard, the Python SDK and the Discord
+bot are next.
 
 ## How it fits together
 
 - **Hub** (`hub/`): the server that holds all logic and data. Everything else talks to its API.
+- **TypeScript SDK** (`sdk/ts/`): a client for browsers and Node that speaks the gateway,
+  keeps the state in memory and wraps the REST API. See [sdk/ts](sdk/ts/README.md).
 - **Connections**: integrations an admin installs for all users of an instance, such as a
   Discord bot.
 - **Adapters**: your own tools, using a personal token that only reaches your data.
@@ -38,6 +41,16 @@ cd hub
 make test      # needs Docker, the tests start their own PostgreSQL
 make lint
 make generate  # after changing SQL in internal/store
+```
+
+The TypeScript SDK lives in an npm workspace.
+
+```sh
+npm install
+cd sdk/ts
+npm run check
+npm test
+npm run test:hub  # needs Docker and Go, starts a real hub
 ```
 
 ## License
