@@ -13,11 +13,13 @@ export function useDraft(
   const focused = useRef(false);
   const base = useRef(value);
   const saves = useRef(0);
+  const pending = useRef(0);
   const stored = useRef(value);
   stored.current = value;
 
   useEffect(() => {
-    if (focused.current) return;
+    // What is being typed, or is on its way to be saved, is newer than what comes in.
+    if (focused.current || pending.current > 0) return;
     setText(value);
     base.current = value;
   }, [value]);
@@ -29,11 +31,14 @@ export function useDraft(
     base.current = next;
     // A save that reports failure leaves the stored value, which the field then shows again.
     const mine = ++saves.current;
-    void Promise.resolve(save(next)).then((saved) => {
+    pending.current++;
+    const settle = (saved: boolean | void) => {
+      pending.current--;
       if (saved !== false || focused.current || mine !== saves.current) return;
       setText(stored.current);
       base.current = stored.current;
-    });
+    };
+    void Promise.resolve(save(next)).then(settle, () => settle(false));
     return true;
   };
 
