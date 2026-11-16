@@ -30,6 +30,14 @@ class Applied(typing.NamedTuple):
     """The user whose state just became complete."""
 
 
+def _sharing(state: UserState, item: Item) -> Item:
+    # Every item arrives with its own copy of its list's ID; pointing at the list's saves that string.
+    known = state.lists.get(item.list_id)
+    if known is not None:
+        msgspec.structs.force_setattr(item, "list_id", known.id)
+    return item
+
+
 class CacheStore(Cache):
     def begin(self, principal: Principal, users: collections.abc.Iterable[ID], intents: Intents) -> None:
         """Start a new session: users it no longer names go, the others stay readable."""
@@ -74,9 +82,9 @@ class CacheStore(Cache):
                 return None
             state = pending
         for item in event.items or ():
-            state.items[item.id] = item
+            state.items[item.id] = _sharing(state, item)
         for item in event.history or ():
-            state.add_done(item)
+            state.add_done(_sharing(state, item))
         if event.history_cursor is not msgspec.UNSET:
             state.history_cursor = event.history_cursor
         if event.chunk.index < event.chunk.count - 1:
@@ -143,6 +151,7 @@ class CacheStore(Cache):
                 return None
 
     def _put_item(self, state: UserState, item: Item) -> Item | None:
+        _sharing(state, item)
         was_open = state.items.get(item.id)
         if item.status is not ItemStatus.DONE:
             was_done = state.remove_done(item.id)

@@ -54,6 +54,7 @@ ignore = [
     "DOC",
     "INP001", # examples are scripts, not a package
     "T201",   # an example prints
+    "RUF029", # a listener need not await anything
 ]
 
 [lint.pylint]

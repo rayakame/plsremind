@@ -427,3 +427,10 @@ def test_cached_objects_cannot_be_changed() -> None:
     assert isinstance(profile, models.User)
     with pytest.raises(TypeError):
         typing.cast("dict[str, object]", profile.preferences)["theme"] = "light"
+
+
+def test_items_share_the_id_of_their_list() -> None:
+    cache = personal(STATE | Intents.HISTORY, items=[item(1)], history=[done(2, "2026-11-13T10:00:00Z")])
+    cache.apply(change("item.created", item(3)))
+    shared = cache.get_lists()[0].id
+    assert all(entry.list_id is shared for entry in (*cache.get_items(), *cache.get_history()))
