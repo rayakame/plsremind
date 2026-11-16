@@ -807,7 +807,7 @@ source = { editable = "." }
 dependencies = [
     { name = "aiohttp" },
     { name = "msgspec" },
-    { name = "tzdata", marker = "sys_platform == 'win32'" },
+    { name = "tzdata" },
 ]
 
 [package.dev-dependencies]
@@ -834,7 +834,7 @@ ruff = [
 requires-dist = [
     { name = "aiohttp", specifier = "~=3.14" },
     { name = "msgspec", specifier = "~=0.22" },
-    { name = "tzdata", marker = "sys_platform == 'win32'", specifier = ">=2025.2" },
+    { name = "tzdata", specifier = ">=2025.2" },
 ]
 
 [package.metadata.requires-dev]

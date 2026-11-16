@@ -7,8 +7,8 @@ each call of the REST API as a method.
 If you have used [hikari](https://github.com/hikari-py/hikari), most of it will feel
 familiar: event classes, `@client.listen()`, `client.rest` and `client.cache`.
 
-It needs Python 3.12 or newer and depends on `msgspec` and `aiohttp`. The package is not
-on PyPI yet; install it from a checkout of this repository:
+It needs Python 3.12 or newer and depends on `msgspec`, `aiohttp` and `tzdata`. The package
+is not on PyPI yet; install it from a checkout of this repository:
 
 ```sh
 uv add ./sdk/python        # or: pip install ./sdk/python
@@ -85,8 +85,8 @@ types Python has for them:
 - A field with fixed values is always the enum. A value this version of the SDK does not
   know yet arrives as the member `UNKNOWN` instead of failing the event.
 - A time zone the system does not know becomes UTC, with one warning per name in the log
-  (logger `plsremind`). On Windows, install `tzdata`. In the same way a duration or a time
-  of day in a form this version cannot read becomes zero or midnight, with a warning.
+  (logger `plsremind`). In the same way a duration or a time of day in a form this version
+  cannot read becomes zero or midnight, with a warning.
 - `preferences` is read-only at its top level only: lists and objects inside it can still
   be changed, which changes nothing at the hub. Before Python 3.15 it is a
   `types.MappingProxyType`, so a `User` cannot be pickled or deep-copied there.
