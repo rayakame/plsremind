@@ -55,6 +55,7 @@ class FakeConnection:
     def __init__(self, socket: aiohttp.web.WebSocketResponse, request: aiohttp.web.Request) -> None:
         self._socket = socket
         self._request = request
+        self.headers = request.headers
         self._frames: asyncio.Queue[dict[str, typing.Any]] = asyncio.Queue()
         self._closed: asyncio.Future[int | None] = asyncio.get_running_loop().create_future()
         self.sequence = 0

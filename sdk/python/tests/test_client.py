@@ -8,6 +8,7 @@ import signal
 import sys
 import typing
 
+import aiohttp
 import pytest
 
 import plsremind
@@ -717,3 +718,26 @@ async def test_run_closes_on_sigterm() -> None:
     assert process.returncode == 0, rest.decode()
     assert "stopped idle" in rest.decode()
     assert "1000" in lines
+
+
+async def test_a_given_session_serves_rest_and_gateway_and_stays_open(hub: fakes.FakeHub) -> None:
+    hub.answer("GET", "/users/@me/lists", fakes.Reply(json=[]))
+    async with aiohttp.ClientSession(headers={"X-Forwarded-For": "10.1.2.3"}) as session:
+        client = plsremind.Client(hub.url, token=TOKEN, intents=Intents.DELIVERIES, session=session)
+        starting = asyncio.create_task(client.start())
+        connection = await handshake(hub, users=[])
+        await asyncio.wait_for(starting, 2)
+        await client.rest.list_lists()
+        assert connection.headers["X-Forwarded-For"] == "10.1.2.3"
+        assert [request.headers["X-Forwarded-For"] for request in hub.requests] == ["10.1.2.3"] * 2
+        await client.close()
+        assert not session.closed
+
+
+async def test_the_reason_the_hub_could_not_be_reached_is_kept(hub: fakes.FakeHub, make: Make) -> None:
+    hub.answer("GET", "/info", fakes.error(401, "unauthorized", "The token is not valid."))
+    client = make()
+    with pytest.raises(plsremind.GatewayError) as caught:
+        await asyncio.wait_for(client.start(), 2)
+    assert isinstance(caught.value.__cause__, plsremind.UnauthorizedError)
+    assert client.status is ClientStatus.CLOSED

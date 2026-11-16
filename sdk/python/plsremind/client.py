@@ -109,6 +109,7 @@ class Client:
         intents: Intents = Intents.NONE,
         rest_timeout: float = 30.0,
         rest_retry: bool = True,
+        session: aiohttp.ClientSession | None = None,
     ) -> None:
         """Make a client for the hub at `url`. Nothing connects until `start` or `run`.
 
@@ -124,10 +125,14 @@ class Client:
             How many seconds a REST call may take.
         rest_retry
             Whether a REST call the hub turned away for its rate limit is tried again.
+        session
+            A session for REST and the gateway instead of the client's own, for example
+            to go through a proxy. It is left open on `close`.
         """
-        self.rest: typing.Final = RESTClient(url, token=token, timeout=rest_timeout, retry=rest_retry)
+        self.rest: typing.Final = RESTClient(url, token=token, timeout=rest_timeout, retry=rest_retry, session=session)
         """Every call of the REST API."""
         self._token: typing.Final = token
+        self._given_session: typing.Final = session
         self._asked: typing.Final = intents
         self._granted: Intents | None = None
         self._store: typing.Final = _cache.CacheStore()
@@ -254,7 +259,9 @@ class Client:
         self._failure = None
         self._ended = asyncio.Event()
         self._starting = starting = loop.create_future()
-        self._socket_session = session = aiohttp.ClientSession()
+        session = self._given_session
+        if session is None:
+            self._socket_session = session = aiohttp.ClientSession()
         self._gateway = _gateway.Gateway(
             url=self._gateway_url,
             token=self._token,

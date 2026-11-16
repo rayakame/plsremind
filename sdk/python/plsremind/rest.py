@@ -216,7 +216,7 @@ class RESTClient:
             raise errors.NetworkError(msg) from cause
 
     async def get_info(self) -> Info:
-        """Ask the hub about itself. This needs no valid token."""
+        """Ask the hub about itself: its name, its version and where its gateway is."""
         return await self._fetch(Info, "GET", "/info")
 
     async def get_user(self, *, user: ID | None = None) -> Profile:
@@ -488,7 +488,10 @@ class RESTClient:
         return await self._fetch(UserConnection, "PUT", path, user=user, body=body, nonce=nonce)
 
     async def list_deliveries(self) -> tuple[Delivery, ...]:
-        """List the open deliveries of this token, for adapters that do not use the gateway."""
+        """List the open deliveries of this token, for adapters that do not use the gateway.
+
+        A personal token needs `remind` switched on for this.
+        """
         return await self._fetch(tuple[Delivery, ...], "GET", "/deliveries")
 
     async def acknowledge_delivery(

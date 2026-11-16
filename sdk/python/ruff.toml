@@ -42,6 +42,10 @@ ignore = [
     "S105",    # test tokens are not secrets
     "S106",
     "RUF029",  # a listener in a test need not await anything
+    "PLR6301", # helpers stay methods of what they belong to
+    "PLR0914", # a test that walks the whole API holds a lot
+    "PLW0108", # a lambda in until() reads what it waits for when it is called
+    "S404",    # the hub under test is a subprocess
     "INP001",
 ]
 "tests/run_until_signal.py" = ["T201"]

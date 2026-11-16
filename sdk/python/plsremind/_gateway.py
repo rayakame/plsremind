@@ -60,6 +60,7 @@ class _Lost(typing.NamedTuple):
     code: int | None
     reason: str
     reconnect_now: bool = False
+    cause: BaseException | None = None
 
 
 def _sent_code(code: int | None) -> int | None:
@@ -145,7 +146,9 @@ class Gateway:
                 return
             if not self._established:
                 reason = lost.reason or "The gateway connection could not be established."
-                self._end(errors.GatewayError(reason, lost.code))
+                error = errors.GatewayError(reason, lost.code)
+                error.__cause__ = lost.cause
+                self._end(error)
                 return
             if lost.code == _BAD_SEQUENCE:
                 self._session = None
@@ -174,7 +177,7 @@ class Gateway:
                 timeout=aiohttp.ClientWSTimeout(ws_close=CLOSE_GRACE),  # pyright: ignore[reportCallIssue]
             )
         except (aiohttp.ClientError, OSError, TimeoutError, errors.PlsremindError) as cause:
-            return _Lost(None, f"The gateway could not be reached: {cause}")
+            return _Lost(None, f"The gateway could not be reached: {cause}", cause=cause)
         self._silenced = None
         self._heart = None
         try:
