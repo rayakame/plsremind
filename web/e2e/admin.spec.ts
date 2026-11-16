@@ -1,0 +1,111 @@
+import { audit } from "./audit.js";
+import {
+  address,
+  admin,
+  expect,
+  hubUrl,
+  restSession,
+  signIn,
+  test,
+  unique,
+  watch,
+} from "./helpers.js";
+import { proxyHeader } from "../../sdk/ts/test/hub/launch.js";
+
+test("an admin invites someone, sees them register, and blocks them", async ({ browser }) => {
+  const session = restSession();
+  const user = await session.rest.login(admin);
+  const adminContext = await browser.newContext({ baseURL: hubUrl });
+  await adminContext.setExtraHTTPHeaders({ [proxyHeader]: address() });
+  await signIn(adminContext, {
+    rest: session.rest,
+    user,
+    username: admin.username,
+    password: admin.password,
+    cookie: session.cookie(),
+  });
+  const page = await adminContext.newPage();
+  const problems: string[] = [];
+  watch(page, problems);
+
+  for (const section of ["instance", "users", "providers", "connections", "invites"]) {
+    await page.goto(`/settings/admin/${section}`);
+    await expect(page.getByRole("navigation", { name: "Administration" })).toBeVisible();
+    await page.waitForLoadState("networkidle");
+    expect(await audit(page), section).toEqual([]);
+  }
+
+  await page.getByRole("button", { name: "Create invite" }).click();
+  const code = await page.getByRole("dialog").getByLabel("Invite code").inputValue();
+  await page.getByRole("dialog").getByRole("button", { name: "Done" }).click();
+  await session.rest.updateSettings({ registration: "invite" });
+
+  try {
+    const guestContext = await browser.newContext({ baseURL: hubUrl });
+    await guestContext.setExtraHTTPHeaders({ [proxyHeader]: address() });
+    const guest = await guestContext.newPage();
+    const username = unique("guest");
+    await guest.goto("/register");
+    await guest.getByLabel("Invite code").fill(code);
+    await guest.getByLabel("Username").fill(username);
+    await guest.getByLabel("Password").fill("a password for the guest");
+    await guest.getByRole("button", { name: "Create account" }).click();
+    await expect(guest.getByRole("heading", { level: 1, name: "All items" })).toBeVisible();
+
+    await page.goto("/settings/admin/users");
+    await expect(page.getByRole("group").first()).toBeVisible();
+    const more = page.getByRole("button", { name: "Load more" });
+    const users = page.locator("fieldset.card");
+    while (!(await page.getByRole("group", { name: username }).isVisible())) {
+      const before = await users.count();
+      await more.click();
+      await expect.poll(() => users.count()).toBeGreaterThan(before);
+    }
+    await page
+      .getByRole("group", { name: username })
+      .getByRole("checkbox", { name: "Blocked" })
+      .click();
+    await expect(guest.getByLabel("Username")).toBeVisible({ timeout: 15_000 });
+    await guestContext.close();
+  } finally {
+    await session.rest.updateSettings({ registration: "open" });
+  }
+  expect(problems).toEqual([]);
+  await adminContext.close();
+});
+
+test("the focus stays in the dialog while a new password is on its way", async ({ browser }) => {
+  const session = restSession();
+  const user = await session.rest.login(admin);
+  const context = await browser.newContext({ baseURL: hubUrl });
+  await context.setExtraHTTPHeaders({ [proxyHeader]: address() });
+  await signIn(context, {
+    rest: session.rest,
+    user,
+    username: admin.username,
+    password: admin.password,
+    cookie: session.cookie(),
+  });
+  const page = await context.newPage();
+  let held: (() => Promise<void>) | undefined;
+  await page.route("**/admin/users/*/password", (route) => {
+    held = () => route.abort();
+  });
+  await page.goto("/settings/admin/users");
+  await page.getByRole("button", { name: "New password" }).first().click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByLabel("New password").fill("never sent to the hub");
+  await dialog.getByRole("button", { name: "Save" }).click();
+  await expect(dialog.getByRole("button", { name: "Save" })).toBeDisabled();
+  const inside = () =>
+    page.evaluate(() => {
+      const active = document.activeElement;
+      return !!active?.closest('[role="dialog"]') && !active.matches(":disabled");
+    });
+  expect(await inside()).toBe(true);
+  await page.keyboard.press("Tab");
+  await page.keyboard.press("Tab");
+  expect(await inside()).toBe(true);
+  await held?.();
+  await context.close();
+});

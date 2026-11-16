@@ -1,7 +1,8 @@
 services:
   hub:
     build:
-      context: ../hub
+      context: ..
+      dockerfile: hub/Dockerfile
     restart: unless-stopped
     depends_on:
       db:

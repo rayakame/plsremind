@@ -44,11 +44,14 @@ Compose also reads `POSTGRES_PASSWORD` and `PLSREMIND_PORT` from `.env`. Set
 `POSTGRES_PASSWORD` before the first start: the database keeps the password it was
 created with.
 
-Everything else is configured through the API by an admin and stored in the database.
+Everything else is configured by an admin in the dashboard under Settings, Administration,
+or through the API, and stored in the database.
 
 ## First steps
 
-1. **Create the admin.** A new instance accepts exactly one call to `POST /api/v1/setup`:
+1. **Create the admin.** Open the hub's address in a browser. A new instance asks for its
+   first account, which becomes the admin. The same can be done without a browser: a new
+   instance accepts exactly one call to `POST /api/v1/setup`:
 
    ```sh
    curl -c cookies.txt -H 'Content-Type: application/json' \

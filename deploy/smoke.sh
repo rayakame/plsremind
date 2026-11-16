@@ -58,8 +58,13 @@ expect "the item is listed" \
 expect "setup is closed afterwards" \
   "$(curl -fsS "$base/info" | grep -o '"setup_required":[a-z]*')" '"setup_required":false'
 
-expect "the placeholder page is served" \
-  "$(curl -sS -o /dev/null -w '%{http_code}' "${PLSREMIND_PUBLIC_URL}/")" 200
+asset="$(curl -fsS "${PLSREMIND_PUBLIC_URL}/lists/any" | grep -o '/assets/[^"]*\.js' | head -n 1)"
+[ -n "$asset" ] || fail "the page does not load the dashboard"
+echo "ok  the dashboard page is served on every path"
+
+expect "its script is served to be cached for good" \
+  "$(curl -fsS -o /dev/null -D - "${PLSREMIND_PUBLIC_URL}${asset}" | tr -d '\r' | grep -i '^cache-control:' | cut -d' ' -f2-)" \
+  "public, max-age=31536000, immutable"
 
 # A reminder, end to end: the example adapter waits on the gateway, an item comes due,
 # the adapter confirms the delivery, and the log shows it as delivered.

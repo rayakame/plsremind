@@ -105,6 +105,6 @@ func New(d *core.Deps) *Server {
 	hub.Register(root)
 
 	app.Use("/api", func(fiber.Ctx) error { return fiber.ErrNotFound })
-	app.Get("/*", webHandler())
+	app.Get("/*", WebHandler(embeddedWeb(), d.Cfg.PublicURL))
 	return &Server{App: app, Gateway: hub}
 }

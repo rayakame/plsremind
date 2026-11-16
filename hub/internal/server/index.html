@@ -10,21 +10,11 @@
   h1 { font-size: 1.6rem; margin: 0 0 .5rem; }
   p { margin: .5rem 0; }
   code { font-size: .9em; }
-  .muted { opacity: .7; }
 </style>
 </head>
 <body>
-<h1 id="name">plsremind</h1>
-<p>This hub is running. The dashboard is not part of this version yet, so everything happens through the API.</p>
-<p id="setup" hidden>The instance has no admin yet. Create one with <code>POST /api/v1/setup</code>.</p>
-<p class="muted">API base: <code>/api/v1</code> · <span id="version"></span></p>
-<script>
-  fetch("/api/v1/info").then(r => r.json()).then(info => {
-    document.getElementById("name").textContent = info.name;
-    document.title = info.name;
-    document.getElementById("version").textContent = "version " + info.version;
-    document.getElementById("setup").hidden = !info.setup_required;
-  }).catch(() => {});
-</script>
+<h1>plsremind</h1>
+<p>This hub is running, but it was built without the dashboard. Everything works through the API at <code>/api/v1</code>.</p>
+<p>To include the dashboard, run <code>make web</code> in <code>hub/</code> before building, or use the Docker image.</p>
 </body>
 </html>
