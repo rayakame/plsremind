@@ -69,6 +69,13 @@ export function ItemPage(props: { id: string }) {
   const gone = !live && (seen === shown || draft);
   const fetched = useFetched(shown, live !== undefined || gone);
 
+  const loaded = fetched.state && "item" in fetched.state ? fetched.state.item : undefined;
+  const item = live ?? (gone ? null : loaded);
+  const fetchedItem = live ? undefined : (item ?? undefined);
+  useEffect(() => {
+    setPageItem(fetchedItem);
+    return () => setPageItem(undefined);
+  }, [fetchedItem, setPageItem]);
   if (!live && !gone && fetched.state && "failed" in fetched.state) {
     return (
       <>
@@ -79,13 +86,6 @@ export function ItemPage(props: { id: string }) {
       </>
     );
   }
-  const loaded = fetched.state && "item" in fetched.state ? fetched.state.item : undefined;
-  const item = live ?? (gone ? null : loaded);
-  const fetchedItem = live ? undefined : (item ?? undefined);
-  useEffect(() => {
-    setPageItem(fetchedItem);
-    return () => setPageItem(undefined);
-  }, [fetchedItem, setPageItem]);
   if (item === undefined) return null;
   if (item === null) return <NotFound />;
 

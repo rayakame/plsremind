@@ -85,57 +85,75 @@ interface Memory {
   issued: Set<string>;
   seen: Set<string>;
   /** What the hub answered to those calls, by what they were about. */
-  unseen: Map<string, { nonce: string; value: unknown }[]>;
+  unseen: Map<string, { nonce: string; value: unknown; at: number }[]>;
+  /** How many times the gateway has sent the whole state anew. */
+  syncs: number;
 }
 
 const memories = new WeakMap<OptimisticView, Memory>();
 
 function memoryOf(hub: Writer): Memory {
-  let memory = memories.get(hub.view);
-  if (!memory) {
-    memory = {
-      chains: new Map(),
-      drafts: new Set(),
-      parts: new Map(),
-      partDrafts: new Map(),
-      answered: new Map(),
-      listeners: new Set(),
-      issued: new Set(),
-      seen: new Set(),
-      unseen: new Map(),
-    };
-    const { issued, seen, unseen } = memory;
-    hub.client.cache.subscribe((change) => {
-      if (change.userId !== hub.userId) return;
-      // A new sync holds everything the hub answered before it.
-      if (!change.cause) return unseen.clear();
-      const nonce = change.cause.nonce;
-      if (!nonce || !issued.delete(nonce)) return;
-      seen.add(nonce);
-      for (const [key, answers] of unseen) {
-        unseen.set(
-          key,
-          answers.filter((answer) => answer.nonce !== nonce),
-        );
-      }
-    });
-    memories.set(hub.view, memory);
-  }
+  const known = memories.get(hub.view);
+  if (known) return known;
+  const memory: Memory = {
+    chains: new Map(),
+    drafts: new Set(),
+    parts: new Map(),
+    partDrafts: new Map(),
+    answered: new Map(),
+    listeners: new Set(),
+    issued: new Set(),
+    seen: new Set(),
+    unseen: new Map(),
+    syncs: 0,
+  };
+  const { issued, seen, unseen } = memory;
+  hub.client.cache.subscribe((change) => {
+    if (change.userId !== hub.userId) return;
+    // A new sync holds everything the hub answered before it.
+    if (!change.cause) {
+      memory.syncs++;
+      return unseen.clear();
+    }
+    const nonce = change.cause.nonce;
+    if (!nonce || !issued.delete(nonce)) return;
+    seen.add(nonce);
+    for (const [key, answers] of unseen) {
+      unseen.set(
+        key,
+        answers.filter((answer) => answer.nonce !== nonce),
+      );
+    }
+  });
+  memories.set(hub.view, memory);
   return memory;
 }
 
+// An event follows its answer within moments. One that never comes was part of a sync.
+const trustAnswer = 5000;
+
 /**
- * Keeps what the hub answered until the gateway has brought the event for it. Until then the
- * cache is behind, and a write that sends a whole object would be built on the older state.
+ * Marks a call whose answer is to be kept until the gateway has brought the event for it.
+ * Until then the cache is behind, and a write that sends a whole object would be built on
+ * the older state. Returns the function to hand the answer to.
  */
-function remember(hub: Writer, key: string, nonce: string, value: unknown): void {
+function issue(hub: Writer, nonce: string): (key: string, value: unknown) => void {
   const memory = memoryOf(hub);
-  if (memory.seen.delete(nonce)) return;
-  memory.unseen.set(key, [...(memory.unseen.get(key) ?? []), { nonce, value }]);
+  const syncs = memory.syncs;
+  memory.issued.add(nonce);
+  return (key, value) => {
+    if (memory.seen.delete(nonce)) return;
+    // After a sync in between nobody can tell whether it already held this change.
+    if (memory.syncs !== syncs) return void memory.issued.delete(nonce);
+    memory.unseen.set(key, [...(memory.unseen.get(key) ?? []), { nonce, value, at: Date.now() }]);
+  };
 }
 
 function recalled<T>(hub: Writer, key: string): T[] {
-  return (memoryOf(hub).unseen.get(key) ?? []).map((answer) => answer.value as T);
+  const fresh = Date.now() - trustAnswer;
+  return (memoryOf(hub).unseen.get(key) ?? [])
+    .filter((answer) => answer.at > fresh)
+    .map((answer) => answer.value as T);
 }
 
 // A call without an answer would hold back every later change to the same object for good.
@@ -499,7 +517,7 @@ export function setPlan(
           const held =
             recalled<ReminderPlan>(hub, key).at(-1) ??
             hub.client.cache.user(hub.userId)?.plan(priority);
-          memoryOf(hub).issued.add(nonce);
+          const answered = issue(hub, nonce);
           const answer = await hub.client.rest.setReminderPlan(
             priority,
             {
@@ -508,7 +526,7 @@ export function setPlan(
             },
             { nonce, signal },
           );
-          remember(hub, key, nonce, answer);
+          answered(key, answer);
         }),
       { user: hub.userId },
     )
@@ -545,9 +563,9 @@ export function setQuiet(hub: Writer, part: Partial<QuietHours> | null): Promise
           const confirmed = hub.client.cache.user(hub.userId)?.profile as User | undefined;
           const held = last ? last.quiet : (confirmed?.quietHours ?? null);
           const quietHours = part === null ? null : { ...(held ?? quietDefault), ...part };
-          memoryOf(hub).issued.add(nonce);
+          const answered = issue(hub, nonce);
           const answer = await hub.client.rest.updateUser({ quietHours }, { nonce, signal });
-          remember(hub, "quiet", nonce, { quiet: answer.quietHours });
+          answered("quiet", { quiet: answer.quietHours });
         }),
       { user: hub.userId },
     )
@@ -575,9 +593,9 @@ export function setPrefs(hub: Writer, patch: Partial<Prefs>): Promise<void> {
             ?.preferences;
           const base = recalled<Partial<Prefs>>(hub, "prefs").reduce(mergePrefs, { ...confirmed });
           const preferences = mergePrefs(base, patch);
-          memoryOf(hub).issued.add(nonce);
+          const answered = issue(hub, nonce);
           await hub.client.rest.updateUser({ preferences }, { nonce, signal });
-          remember(hub, "prefs", nonce, patch);
+          answered("prefs", patch);
         }),
       { user: hub.userId },
     )

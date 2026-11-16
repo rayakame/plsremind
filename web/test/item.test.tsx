@@ -133,3 +133,25 @@ test("an item is completed and deleted from its page", async () => {
   expect(app.path()).toBe("/");
   await waitFor(() => expect(app.sent("DELETE", "/users/@me/items/a")).toHaveLength(1));
 });
+
+test("an item that could not be loaded says so and loads on a second try", async () => {
+  const app = await renderApp({ path: "/items/old", hold: true });
+  const old = wireItem({
+    id: "old",
+    title: "Long ago",
+    status: "done",
+    completed_at: "2026-01-01T10:00:00Z",
+  });
+  let asked = 0;
+  app.route("GET", "/users/@me/items/old", () =>
+    ++asked === 1
+      ? { status: 500, body: { error: { code: "internal", message: "no" } } }
+      : { status: 200, body: old },
+  );
+  await act(() => app.connect());
+  expect(
+    await screen.findByRole("heading", { name: "This item could not be loaded." }),
+  ).toBeTruthy();
+  await userEvent.click(screen.getByRole("button", { name: "Try again" }));
+  expect(((await screen.findByLabelText("Title")) as HTMLInputElement).value).toBe("Long ago");
+});

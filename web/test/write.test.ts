@@ -426,3 +426,89 @@ test("a refused part of a plan or of the quiet hours is not sent along with the 
     quiet_hours: { start: "22:00", end: "08:00" },
   });
 });
+
+const wholeState = (preferences: object) => ({
+  user_id: "u1",
+  chunk: { index: 0, count: 1 },
+  user: wireUser({ locale: "en", preferences }),
+  lists: [wireList()],
+  plans: [wirePlan({ priority: "low" }), wirePlan(), wirePlan({ priority: "high" })],
+  items: [],
+  history: [],
+  history_cursor: null,
+});
+
+test("a new sync while a preference is on its way decides what the hub holds", async () => {
+  const hub = await connectedHub();
+  const answer = deferred<{ status: number; body: unknown }>();
+  let asked = 0;
+  hub.route("PATCH", "/users/@me", (call) =>
+    ++asked === 1
+      ? answer.promise
+      : { status: 200, body: wireUser({ locale: "en", ...(call.body as object) }) },
+  );
+  const { setPrefs } = await import("../src/hub/write.js");
+  const dark = setPrefs(hub.own, { theme: "dark" });
+  await settle();
+  await hub.send("user.sync", wholeState({ theme: "dark" }));
+  await hub.send(
+    "user.updated",
+    change("u1", wireUser({ locale: "en", preferences: { theme: "light" } })),
+  );
+  answer.resolve({ status: 200, body: wireUser({ locale: "en", preferences: { theme: "dark" } }) });
+  await dark;
+  await setPrefs(hub.own, { weekStart: "sunday" });
+  expect(hub.sent("PATCH", "/users/@me").at(-1)!.body).toEqual({
+    preferences: { theme: "light", weekStart: "sunday" },
+  });
+});
+
+test("a sync from before a preference was stored does not lose it", async () => {
+  const hub = await connectedHub();
+  const answer = deferred<{ status: number; body: unknown }>();
+  let asked = 0;
+  hub.route("PATCH", "/users/@me", (call) =>
+    ++asked === 1
+      ? answer.promise
+      : { status: 200, body: wireUser({ locale: "en", ...(call.body as object) }) },
+  );
+  const { setPrefs } = await import("../src/hub/write.js");
+  const dark = setPrefs(hub.own, { theme: "dark" });
+  await settle();
+  await hub.send("user.sync", wholeState({}));
+  answer.resolve({ status: 200, body: wireUser({ locale: "en", preferences: { theme: "dark" } }) });
+  await dark;
+  const nonce = hub.sent("PATCH", "/users/@me")[0]!.headers["x-request-nonce"]!;
+  await hub.send(
+    "user.updated",
+    change("u1", wireUser({ locale: "en", preferences: { theme: "dark" } }), nonce),
+  );
+  await setPrefs(hub.own, { weekStart: "sunday" });
+  expect(hub.sent("PATCH", "/users/@me").at(-1)!.body).toEqual({
+    preferences: { theme: "dark", weekStart: "sunday" },
+  });
+});
+
+test("an answer whose event never came is trusted only for a moment", async () => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  try {
+    const hub = await connectedHub();
+    hub.route("PATCH", "/users/@me", (call) => ({
+      status: 200,
+      body: wireUser({ locale: "en", ...(call.body as object) }),
+    }));
+    const { setPrefs } = await import("../src/hub/write.js");
+    await setPrefs(hub.own, { theme: "dark" });
+    vi.setSystemTime(Date.now() + 6000);
+    await hub.send(
+      "user.updated",
+      change("u1", wireUser({ locale: "en", preferences: { theme: "light" } })),
+    );
+    await setPrefs(hub.own, { weekStart: "sunday" });
+    expect(hub.sent("PATCH", "/users/@me").at(-1)!.body).toEqual({
+      preferences: { theme: "light", weekStart: "sunday" },
+    });
+  } finally {
+    vi.useRealTimers();
+  }
+});
