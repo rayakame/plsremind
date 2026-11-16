@@ -1,7 +1,7 @@
 import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
-import { change, renderApp, wireItem } from "./support.js";
+import { change, deferred, renderApp, wireItem, wireList, wirePlan, wireUser } from "./support.js";
 
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ["Date"] });
@@ -208,4 +208,89 @@ test("after the hub answered, an item only its page holds is read again and neve
   watch.disconnect();
   expect(seen).toEqual([]);
   expect(screen.getByRole("button", { name: "Complete" })).toBeTruthy();
+});
+
+const emptyState = {
+  user_id: "u1",
+  chunk: { index: 0, count: 1 },
+  user: wireUser({ locale: "en" }),
+  lists: [wireList()],
+  plans: [wirePlan({ priority: "low" }), wirePlan(), wirePlan({ priority: "high" })],
+  items: [],
+  history: [],
+  history_cursor: null,
+};
+
+test("an item that a new sync no longer carries is read again, not taken for deleted", async () => {
+  const app = await renderApp({ path: "/items/old", hold: true });
+  const old = wireItem({
+    id: "old",
+    title: "Long ago",
+    status: "done",
+    completed_at: "2026-01-01T10:00:00Z",
+  });
+  const high = { ...old, priority: "high" };
+  let reads = 0;
+  app.route("GET", "/users/@me/items/old", () => ({
+    status: 200,
+    body: ++reads === 1 ? old : high,
+  }));
+  const answer = deferred<{ status: number; body: unknown }>();
+  app.route("PATCH", "/users/@me/items/old", () => answer.promise);
+  await act(() => app.connect());
+  await screen.findByLabelText("Title");
+  await userEvent.type(
+    screen.getByRole("combobox", { name: /Search, create/ }),
+    "/prio high{Enter}",
+  );
+  await waitFor(() => expect(app.sent("PATCH", "/users/@me/items/old")).toHaveLength(1));
+  const nonce = app.sent("PATCH", "/users/@me/items/old")[0]!.headers["x-request-nonce"]!;
+  await app.send("item.updated", change("u1", high, nonce));
+  await app.send("user.sync", emptyState);
+  expect(screen.queryByRole("heading", { name: "Not found" })).toBeNull();
+  await act(async () => {
+    answer.resolve({ status: 200, body: high });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+  await waitFor(() =>
+    expect((screen.getByLabelText("Priority") as HTMLSelectElement).value).toBe("high"),
+  );
+  expect(screen.queryByRole("heading", { name: "Not found" })).toBeNull();
+});
+
+test("a change answered after a sync and before its event keeps showing", async () => {
+  const app = await renderApp({ path: "/items/old", hold: true });
+  const old = wireItem({
+    id: "old",
+    title: "Long ago",
+    status: "done",
+    completed_at: "2026-01-01T10:00:00Z",
+  });
+  const high = { ...old, priority: "high" };
+  let reads = 0;
+  app.route("GET", "/users/@me/items/old", () => ({
+    status: 200,
+    body: ++reads === 1 ? old : high,
+  }));
+  const answer = deferred<{ status: number; body: unknown }>();
+  app.route("PATCH", "/users/@me/items/old", () => answer.promise);
+  await act(() => app.connect());
+  await screen.findByLabelText("Title");
+  await userEvent.type(
+    screen.getByRole("combobox", { name: /Search, create/ }),
+    "/prio high{Enter}",
+  );
+  await waitFor(() => expect(app.sent("PATCH", "/users/@me/items/old")).toHaveLength(1));
+  const priority = () => (screen.getByLabelText("Priority") as HTMLSelectElement).value;
+  expect(priority()).toBe("high");
+  await app.send("user.sync", emptyState);
+  expect(priority()).toBe("high");
+  await act(async () => {
+    answer.resolve({ status: 200, body: high });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+  expect(priority()).toBe("high");
+  const nonce = app.sent("PATCH", "/users/@me/items/old")[0]!.headers["x-request-nonce"]!;
+  await app.send("item.updated", change("u1", high, nonce));
+  expect(priority()).toBe("high");
 });

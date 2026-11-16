@@ -74,16 +74,21 @@ export function ItemPage(props: { id: string }) {
   const { id, key } = useResolved(props.id);
   const shown = id ?? props.id;
   const live = useItem(shown);
-  const [seen, setSeen] = useState<string>();
+  const [deleted, setDeleted] = useState<string>();
   const [deleting, setDeleting] = useState(false);
-  useEffect(() => {
-    if (live) setSeen(live.id);
-  }, [live]);
+  // Only this says the item is gone. A new sync may simply no longer carry an old one.
+  useEffect(
+    () =>
+      hub.client.on("item.deleted", (event) => {
+        if (event.data.id === shown) setDeleted(shown);
+      }),
+    [hub, shown],
+  );
   useEffect(() => {
     if (shown !== props.id) navigate(routes.item(shown), { replace: true });
   }, [shown, props.id, navigate]);
   const draft = shown.startsWith("tmp_");
-  const gone = !live && (seen === shown || draft);
+  const gone = !live && (deleted === shown || draft);
   const fetched = useFetched(shown, live !== undefined || gone);
 
   const subscribe = useCallback((notify: () => void) => onAnsweredCall(hub, notify), [hub]);
