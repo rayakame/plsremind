@@ -92,6 +92,8 @@ interface Memory {
   doubt: Set<string>;
   /** Changes to items the view does not hold, for the page that shows such an item. */
   ahead: Map<string, ((item: Item) => Item)[]>;
+  /** Those of them the hub has answered; they go once the gateway has brought the item. */
+  aheadAnswered: Set<(item: Item) => Item>;
   aheadVersion: number;
 }
 
@@ -113,11 +115,13 @@ function memoryOf(hub: Writer): Memory {
     syncs: 0,
     doubt: new Set(),
     ahead: new Map(),
+    aheadAnswered: new Set(),
     aheadVersion: 0,
   };
   const { issued, seen, unseen } = memory;
   hub.client.cache.subscribe((change) => {
     if (change.userId !== hub.userId) return;
+    retireAhead(hub, memory, !change.cause);
     if (!change.cause) {
       memory.syncs++;
       // The sync may have been read before an answered change was stored.
@@ -168,17 +172,23 @@ function recalled<T>(hub: Writer, key: string): T[] {
 
 /**
  * What the hub holds, asked for when neither the cache nor a kept answer can be trusted.
- * Undefined if they can. A failed question stays open for the next write.
+ * Undefined if they can. The question stays open until a write built on the answer went through.
  */
 async function asked<T>(hub: Writer, key: string, ask: () => Promise<T>): Promise<T | undefined> {
   const memory = memoryOf(hub);
   const stale = Date.now() - trustAnswer;
   const overdue = (memory.unseen.get(key) ?? []).some((answer) => answer.at <= stale);
   if (!overdue && !memory.doubt.has(key)) return undefined;
-  const state = await ask();
+  memory.doubt.add(key);
+  return ask();
+}
+
+/** The write built on the hub's own answer went through, so what was kept before is moot. */
+function settledOn(hub: Writer, key: string, fromHub: unknown): void {
+  if (fromHub === undefined) return;
+  const memory = memoryOf(hub);
   memory.unseen.delete(key);
   memory.doubt.delete(key);
-  return state;
 }
 
 // A call without an answer would hold back every later change to the same object for good.
@@ -336,12 +346,28 @@ function updateItem(
       { user: hub.userId },
     )
     .then(
-      () => undefined,
+      () => {
+        if (outside) memoryOf(hub).aheadAnswered.add(shown);
+      },
       (error: unknown) => {
         if (outside) setAhead(hub, item.id, (before) => before.filter((one) => one !== shown));
         throw error;
       },
     );
+}
+
+/** Drops answered changes to items the cache now holds, or all of them after a new sync. */
+function retireAhead(hub: Writer, memory: Memory, all: boolean): void {
+  if (memory.aheadAnswered.size === 0) return;
+  const state = hub.client.cache.user(hub.userId);
+  for (const [id, changes] of memory.ahead) {
+    if (!all && !state?.item(id)) continue;
+    const pending = changes.filter((one) => !memory.aheadAnswered.has(one));
+    for (const one of changes) memory.aheadAnswered.delete(one);
+    memory.ahead.set(id, pending);
+  }
+  memory.aheadVersion++;
+  for (const listener of [...memory.listeners]) listener();
 }
 
 type Ahead = ((item: Item) => Item)[];
@@ -584,6 +610,7 @@ export function setPlan(
             },
             { nonce, signal },
           );
+          settledOn(hub, key, fromHub);
           answered(key, answer);
         }),
       { user: hub.userId },
@@ -626,6 +653,7 @@ export function setQuiet(hub: Writer, part: Partial<QuietHours> | null): Promise
           const quietHours = part === null ? null : { ...(held ?? quietDefault), ...part };
           const answered = issue(hub, nonce);
           const answer = await hub.client.rest.updateUser({ quietHours }, { nonce, signal });
+          settledOn(hub, "quiet", fromHub);
           answered("quiet", { quiet: answer.quietHours });
         }),
       { user: hub.userId },
@@ -662,6 +690,7 @@ export function setPrefs(hub: Writer, patch: Partial<Prefs>): Promise<void> {
           const preferences = mergePrefs(base, patch);
           const answered = issue(hub, nonce);
           await hub.client.rest.updateUser({ preferences }, { nonce, signal });
+          settledOn(hub, "prefs", fromHub);
           answered("prefs", preferences);
         }),
       { user: hub.userId },

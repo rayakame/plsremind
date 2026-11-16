@@ -562,3 +562,40 @@ test("a sync that arrives after an answer may be older than it, so the hub is as
     preferences: { theme: "dark", weekStart: "sunday" },
   });
 });
+
+test("after asking the hub, a change that then fails leaves the question open", async () => {
+  const hub = await connectedHub();
+  let asked = 0;
+  hub.route("PATCH", "/users/@me", (call) =>
+    ++asked === 2
+      ? { status: 500, body: { error: { code: "internal", message: "no" } } }
+      : { status: 200, body: wireUser({ locale: "en", ...(call.body as object) }) },
+  );
+  const { setPrefs } = await import("../src/hub/write.js");
+  await setPrefs(hub.own, { theme: "dark" });
+  await hub.send("user.sync", wholeState({}));
+  hub.setUser(wireUser({ locale: "en", preferences: { theme: "dark" } }));
+  expect(await setPrefs(hub.own, { weekStart: "sunday" }).catch(() => "failed")).toBe("failed");
+  await setPrefs(hub.own, { prefix: "!" });
+  expect(hub.sent("GET", "/users/@me")).toHaveLength(2);
+  expect(hub.sent("PATCH", "/users/@me").at(-1)!.body).toEqual({
+    preferences: { theme: "dark", prefix: "!" },
+  });
+});
+
+test("a change to an item outside the view is laid over it only until the hub's event has brought it", async () => {
+  const hub = await connectedHub();
+  const old = wireItem({ id: "old", status: "done", completed_at: "2026-01-01T10:00:00Z" });
+  hub.route("PATCH", "/users/@me/items/old", { status: 200, body: { ...old, priority: "high" } });
+  const { aheadOf } = await import("../src/hub/write.js");
+  const { fromWire } = await import("../../sdk/ts/src/convert.js");
+  const fetched = fromWire<Parameters<typeof aheadOf>[1]>(old);
+  const patched = patchItem(hub.own, fetched, { priority: "high" });
+  expect(aheadOf(hub.own, fetched).priority).toBe("high");
+  await patched;
+  expect(aheadOf(hub.own, fetched).priority).toBe("high");
+  const nonce = hub.sent("PATCH", "/users/@me/items/old")[0]!.headers["x-request-nonce"]!;
+  await hub.send("item.updated", change("u1", { ...old, priority: "high" }, nonce));
+  const later = fromWire<Parameters<typeof aheadOf>[1]>({ ...old, priority: "low" });
+  expect(aheadOf(hub.own, later).priority).toBe("low");
+});
