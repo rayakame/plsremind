@@ -241,8 +241,10 @@ class Client:
         TimeoutError
             If none arrives within `timeout` seconds. `None` waits without limit.
         GatewayError
-            If the client is closed, or turned away by the hub, while waiting.
+            If the client is closed, or turned away by the hub, while waiting or before.
         """
+        if self._status is ClientStatus.CLOSED and self._failure is not None:
+            raise self._failure
         waiter = _Waiter(predicate, asyncio.get_running_loop().create_future())
         self._waiters.setdefault(event_type, []).append(waiter)
         try:

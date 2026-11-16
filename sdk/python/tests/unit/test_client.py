@@ -22,7 +22,7 @@ from tests.support import fixtures
 
 TOKEN = "plsr_pat_secret"
 ME = fixtures.USER_ID
-ACK, RESUME, IDENTIFY, INVALID_SESSION = 11, 6, 2, 9
+ACK, RESUME, IDENTIFY, INVALID_SESSION, HEARTBEAT = 11, 6, 2, 9, 1
 STATE = Intents.USERS | Intents.LISTS | Intents.ITEMS | Intents.PLANS
 Document = dict[str, typing.Any]
 type Make = collections.abc.Callable[..., plsremind.Client]
@@ -923,6 +923,17 @@ async def test_waiters_fail_when_the_hub_turns_the_client_away(hub: fakes.FakeHu
         await asyncio.wait_for(waiting, 1)
 
 
+async def test_waiting_after_the_hub_turned_the_client_away_fails_at_once(hub: fakes.FakeHub, make: Make) -> None:
+    client = make()
+    connection = await started(hub, client)
+    closed = asyncio.create_task(client.wait_for(plsremind.ClosedEvent, timeout=2))
+    await asyncio.sleep(0)
+    await connection.close(4004, "The token was deleted.")
+    await closed
+    with pytest.raises(plsremind.GatewayError, match="The token was deleted"):
+        await asyncio.wait_for(client.wait_for(plsremind.ItemCreateEvent, timeout=None), 1)
+
+
 async def test_run_stops_on_a_signal_while_still_connecting() -> None:
     script = pathlib.Path(__file__).parents[1] / "support" / "run_against_silence.py"
     process = await asyncio.create_subprocess_exec(
@@ -1014,6 +1025,31 @@ async def test_start_gives_up_when_the_state_never_arrives(
     with pytest.raises(plsremind.GatewayError, match="did not finish the handshake"):
         await asyncio.wait_for(starting, 2)
     assert client.status is ClientStatus.CLOSED
+
+
+async def test_answered_heartbeats_do_not_keep_a_stalled_start_waiting(
+    hub: fakes.FakeHub, make: Make, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(gateway, "HANDSHAKE_SILENCE", 0.3)
+    client = make()
+    starting = asyncio.create_task(client.start())
+    connection = await hub.gateway.connection()
+    await connection.hello(interval_ms=50)
+
+    async def answer_heartbeats() -> None:
+        while True:
+            if (await connection.receive(timeout=5))["op"] == HEARTBEAT:
+                await connection.send(ACK)
+
+    await connection.receive_op(IDENTIFY)
+    await connection.ready(users=[ME], principal=fixtures.PRINCIPAL, intents=["users", "lists", "items", "plans"])
+    answering = asyncio.create_task(answer_heartbeats())
+    try:
+        with pytest.raises(plsremind.GatewayError, match="did not finish the handshake"):
+            await asyncio.wait_for(starting, 2)
+    finally:
+        answering.cancel()
+        await asyncio.gather(answering, return_exceptions=True)
 
 
 async def test_a_resync_that_stalls_is_started_again_from_scratch(

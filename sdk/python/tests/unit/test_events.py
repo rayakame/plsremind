@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import pathlib
 import re
 import typing
@@ -7,6 +8,7 @@ import typing
 import msgspec
 import pytest
 
+import plsremind
 from plsremind import events
 from plsremind import models
 from plsremind.enums import DeliveryStatus
@@ -214,6 +216,18 @@ def test_sync_for_a_connection() -> None:
 def test_user_gone() -> None:
     event = decode("user.gone", msgspec.Raw(fixtures.raw({"user_id": fixtures.USER_ID})))
     assert event == events.UserGoneEvent(user_id=models.ID(fixtures.USER_ID))
+
+
+def test_a_sync_event_without_a_history_cursor_can_be_written() -> None:
+    payload = msgspec.Raw(
+        fixtures.raw({"user_id": fixtures.USER_ID, "chunk": {"index": 0, "count": 2}, "lists": [fixtures.LIST]})
+    )
+    event = decode("user.sync", payload)
+    assert isinstance(event, events.UserSyncEvent)
+    assert event.history_cursor is msgspec.UNSET
+    written = json.loads(plsremind.to_json(event))
+    assert "history_cursor" not in written
+    assert written["lists"][0]["id"] == fixtures.LIST["id"]
 
 
 def test_unknown_event_is_none() -> None:

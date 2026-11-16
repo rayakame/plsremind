@@ -24,9 +24,14 @@ from plsremind.types import parse_clock
 from plsremind.types import parse_duration
 
 _LOGGER: typing.Final = logging.getLogger("plsremind")
-_UTC: typing.Final = zoneinfo.ZoneInfo("UTC")
 _unknown_zones: set[str] = set()
 _unknown_texts: set[str] = set()
+
+
+@functools.cache
+def _utc() -> zoneinfo.ZoneInfo:
+    # Looked up on first use: a system without a time zone database must still be able to import the SDK.
+    return zoneinfo.ZoneInfo("UTC")
 
 
 def _zone(name: str) -> zoneinfo.ZoneInfo:
@@ -36,7 +41,7 @@ def _zone(name: str) -> zoneinfo.ZoneInfo:
         if name not in _unknown_zones:
             _unknown_zones.add(name)
             _LOGGER.warning("The time zone %r is unknown on this system, UTC stands in for it.", name)
-        return _UTC
+        return _utc()
 
 
 def _warn_once(text: str, message: str) -> None:
@@ -127,8 +132,9 @@ def _plain(value: object, *, sending: bool = True) -> object:  # ruff: ignore[co
         return {"mode": value.mode.value}
     if isinstance(value, msgspec.Struct):
         return {
-            field.encode_name: _plain(getattr(value, field.name), sending=sending)
+            field.encode_name: _plain(item, sending=sending)
             for field in msgspec.structs.fields(value)
+            if (item := getattr(value, field.name)) is not msgspec.UNSET
         }
     if isinstance(value, collections.abc.Mapping):
         mapping = typing.cast("collections.abc.Mapping[object, object]", value)

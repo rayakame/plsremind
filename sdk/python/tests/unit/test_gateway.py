@@ -246,6 +246,17 @@ async def test_wait_is_capped(hub: fakes.FakeHub, make: Make) -> None:
     assert seen.sleeps == [1.0, 2.0, 4.0, 8.0, 16.0, 32.0, 60.0, 60.0]
 
 
+async def test_wait_stays_capped_through_a_very_long_outage(hub: fakes.FakeHub, make: Make) -> None:
+    gateway, seen = make(random=1.0)
+    connection = await logged_in(hub, gateway)
+    await until(lambda: seen.statuses[-1] is ClientStatus.CONNECTED)
+    gateway._attempts = 2000  # pyright: ignore[reportPrivateUsage]
+    await connection.close(1012)
+    await hub.gateway.connection()
+    assert seen.sleeps == [60.0]
+    assert not seen.closed
+
+
 async def test_too_many_waits_at_least_five_seconds(hub: fakes.FakeHub, make: Make) -> None:
     gateway, seen = make(random=0.0)
     connection = await logged_in(hub, gateway)

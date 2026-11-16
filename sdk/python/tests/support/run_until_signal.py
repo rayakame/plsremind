@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import sys
 import threading
 
 import plsremind
@@ -22,8 +23,10 @@ async def serve() -> None:
     print("hub saw close", await connection.closed(timeout=30), flush=True)
 
 
-threading.Thread(target=lambda: asyncio.run(serve()), daemon=True).start()
-started.wait(10)
+server = threading.Thread(target=lambda: asyncio.run(serve()), daemon=True)
+server.start()
+if not started.wait(10):
+    sys.exit("The hub did not start.")
 client = plsremind.Client(address[0], token="plsr_pat_x", intents=plsremind.Intents.DELIVERIES)
 
 
@@ -33,4 +36,6 @@ async def on_ready(event: plsremind.ReadyEvent) -> None:
 
 
 client.run()
+# A daemon thread still printing while the interpreter shuts down aborts the process.
+server.join(10)
 print("stopped", client.status.value, flush=True)

@@ -38,6 +38,7 @@ _BAD_SEQUENCE: typing.Final = 4007
 _TOO_MANY: typing.Final = 4008
 _FATAL: typing.Final = frozenset({4004, 4013, 4014})
 _RECONNECT_REQUESTS: typing.Final = 4
+_DOUBLINGS: typing.Final = 6
 
 
 class _Frame(msgspec.Struct, frozen=True, kw_only=True, gc=False):
@@ -199,7 +200,7 @@ class Gateway:
                     return
             if lost.reconnect_now and self._established:
                 continue
-            wait = min(LONGEST_WAIT, FIRST_WAIT * 2**self._attempts) * (0.5 + 0.5 * self._random())
+            wait = min(LONGEST_WAIT, FIRST_WAIT * 2 ** min(self._attempts, _DOUBLINGS)) * (0.5 + 0.5 * self._random())
             self._attempts += 1
             if lost.code == _TOO_MANY:
                 wait = max(wait, WAIT_AFTER_TOO_MANY)
@@ -276,7 +277,9 @@ class Gateway:
                 self._session = None
                 self._seq = None
                 return _Lost(None, "The session is started over.", reconnect_now=True)
-        silence.reschedule(None if self._logged_in else asyncio.get_running_loop().time() + HANDSHAKE_SILENCE)
+        # An answered heartbeat says nothing about a login or a state that is still due.
+        if frame.op != _HEARTBEAT_ACK:
+            silence.reschedule(None if self._logged_in else asyncio.get_running_loop().time() + HANDSHAKE_SILENCE)
         return None
 
     def _dispatch(self, name: str, frame: _Frame) -> None:

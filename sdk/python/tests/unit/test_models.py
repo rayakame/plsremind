@@ -4,6 +4,8 @@ import datetime
 import gc
 import json
 import logging
+import subprocess
+import sys
 import typing
 import zoneinfo
 
@@ -23,6 +25,27 @@ from plsremind.types import Duration
 from tests.support import fixtures
 
 UTC = datetime.UTC
+
+
+def warn_again() -> None:
+    codec._unknown_zones.clear()  # pyright: ignore[reportPrivateUsage]
+    codec._unknown_texts.clear()  # pyright: ignore[reportPrivateUsage]
+
+
+def test_the_sdk_imports_where_no_time_zone_is_known() -> None:
+    script = (
+        "import zoneinfo\n"
+        "def missing(key):\n"
+        "    raise zoneinfo.ZoneInfoNotFoundError(key)\n"
+        "zoneinfo.ZoneInfo = missing\n"
+        "import plsremind\n"
+        "print(plsremind.__version__)\n"
+    )
+    done = subprocess.run(  # ruff: ignore[subprocess-without-shell-equals-true]
+        [sys.executable, "-c", script], capture_output=True, text=True, check=False
+    )
+    assert done.returncode == 0, done.stderr
+    assert done.stdout.strip() == plsremind.__version__
 
 
 def decode[T](kind: type[T], document: object) -> T:
@@ -63,6 +86,7 @@ def test_unknown_enum_value_decodes() -> None:
 
 
 def test_unknown_time_zone_falls_back_to_utc(caplog: pytest.LogCaptureFixture) -> None:
+    warn_again()
     with caplog.at_level(logging.WARNING, logger="plsremind"):
         first = decode(models.Profile, {**fixtures.PROFILE, "timezone": "Venus/Maxwell"})
         decode(models.Profile, {**fixtures.PROFILE, "timezone": "Venus/Maxwell"})
@@ -243,6 +267,7 @@ def test_encode_query() -> None:
 def test_a_duration_or_clock_time_the_sdk_cannot_read_does_not_fail_the_object(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
+    warn_again()
     document = json.loads(fixtures.raw(fixtures.DELIVERY))
     document["reminder"]["offset"] = "2w"
     with caplog.at_level(logging.WARNING, logger="plsremind"):
