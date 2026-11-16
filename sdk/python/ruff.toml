@@ -14,6 +14,9 @@ ignore = [
     "COM812", # missing trailing comma; conflicts with the formatter, which owns trailing commas
     "CPY001", # the repository carries its licence in one file
     "D105",   # magic methods document themselves
+    "ICN001", # the standard library keeps its own names, as in hikari
+    "DOC201", # what a function returns is in its signature and its summary
+    "DOC402", # the same for what a generator yields
     "DOC502", # a callee's exceptions reach the caller too, so they are documented where it can see them
 ]
 
@@ -32,6 +35,7 @@ ignore = [
     "PLR0913", # fixtures and helpers take what they need
     "PLR0917",
     "SLF001",  # tests reach into the client's private parts
+    "TC",      # tests import what they name
     "INP001",
 ]
 "examples/**" = [
