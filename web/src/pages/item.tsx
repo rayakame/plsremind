@@ -3,7 +3,16 @@ import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 
 import { useLocation } from "wouter";
 import { useItem, useResolved } from "../hub/hooks.js";
 import { useHub } from "../hub/session.js";
-import { aheadOf, aheadVersion, onAnsweredCall, removeItem, setDone } from "../hub/write.js";
+import {
+  aheadAnswers,
+  aheadOf,
+  aheadVersion,
+  answeredAhead,
+  dropAhead,
+  onAnsweredCall,
+  removeItem,
+  setDone,
+} from "../hub/write.js";
 import { useT } from "../i18n/index.js";
 import { useNotices } from "../shell/notices.js";
 import { routes } from "../shell/router.js";
@@ -18,15 +27,23 @@ import { NotFound } from "./not-found.js";
 type Fetched = { item: Item | null } | { failed: true };
 
 function useFetched(id: string, skip: boolean): { state: Fetched | undefined; retry: () => void } {
-  const { client } = useHub();
+  const hub = useHub();
+  const { client } = hub;
+  // A change the hub answered makes what was read before out of date.
+  const subscribe = useCallback((notify: () => void) => onAnsweredCall(hub, notify), [hub]);
+  const answers = useSyncExternalStore(subscribe, () => aheadAnswers(hub, id));
   const { guard } = useNotices();
   const [fetched, setFetched] = useState<{ id: string; state: Fetched }>();
   const [round, setRound] = useState(0);
   useEffect(() => {
     if (skip) return;
     const abort = new AbortController();
+    const held = answeredAhead(hub, id);
     client.rest.getItem(id, { signal: abort.signal }).then(
-      (item) => setFetched({ id, state: { item } }),
+      (item) => {
+        setFetched({ id, state: { item } });
+        dropAhead(hub, id, held);
+      },
       (error: unknown) => {
         if (abort.signal.aborted) return;
         if (error instanceof ApiError && error.status === 404) {
@@ -37,7 +54,7 @@ function useFetched(id: string, skip: boolean): { state: Fetched | undefined; re
       },
     );
     return () => abort.abort();
-  }, [client, id, skip, guard, round]);
+  }, [hub, client, id, skip, guard, round, answers]);
   return {
     state: fetched?.id === id ? fetched.state : undefined,
     retry: () => {

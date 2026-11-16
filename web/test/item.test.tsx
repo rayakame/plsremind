@@ -178,3 +178,34 @@ test("a change to an item only its page has loaded shows at once and is taken ba
   await userEvent.click(screen.getByRole("button", { name: "Reopen" }));
   expect(screen.getByRole("button", { name: "Complete" })).toBeTruthy();
 });
+
+test("after the hub answered, an item only its page holds is read again and never shows the old state", async () => {
+  const app = await renderApp({ path: "/items/old", hold: true });
+  const old = wireItem({
+    id: "old",
+    title: "Long ago",
+    status: "done",
+    completed_at: "2026-01-01T10:00:00Z",
+  });
+  const open = { ...old, status: "open", completed_at: null, priority: "high" };
+  let reads = 0;
+  app.route("GET", "/users/@me/items/old", () => ({
+    status: 200,
+    body: ++reads === 1 ? old : open,
+  }));
+  app.route("PATCH", "/users/@me/items/old", { status: 200, body: open });
+  await act(() => app.connect());
+  const seen: string[] = [];
+  const watch = new MutationObserver(() => {
+    if (screen.queryByRole("button", { name: "Reopen" })) seen.push("old");
+  });
+  await userEvent.click(await screen.findByRole("button", { name: "Reopen" }));
+  watch.observe(document.body, { childList: true, subtree: true, characterData: true });
+  await waitFor(() => expect(reads).toBe(2));
+  await waitFor(() =>
+    expect((screen.getByLabelText("Priority") as HTMLSelectElement).value).toBe("high"),
+  );
+  watch.disconnect();
+  expect(seen).toEqual([]);
+  expect(screen.getByRole("button", { name: "Complete" })).toBeTruthy();
+});

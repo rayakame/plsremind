@@ -92,8 +92,9 @@ interface Memory {
   doubt: Set<string>;
   /** Changes to items the view does not hold, for the page that shows such an item. */
   ahead: Map<string, ((item: Item) => Item)[]>;
-  /** Those of them the hub has answered; they go once the gateway has brought the item. */
+  /** Those of them the hub has answered; they go once the item was read again. */
   aheadAnswered: Set<(item: Item) => Item>;
+  aheadAnswers: Map<string, number>;
   aheadVersion: number;
 }
 
@@ -116,12 +117,12 @@ function memoryOf(hub: Writer): Memory {
     doubt: new Set(),
     ahead: new Map(),
     aheadAnswered: new Set(),
+    aheadAnswers: new Map(),
     aheadVersion: 0,
   };
   const { issued, seen, unseen } = memory;
   hub.client.cache.subscribe((change) => {
     if (change.userId !== hub.userId) return;
-    retireAhead(hub, memory, !change.cause);
     if (!change.cause) {
       memory.syncs++;
       // The sync may have been read before an answered change was stored.
@@ -342,7 +343,6 @@ function updateItem(
 ): Promise<void> {
   // The view only shows changes to what it holds. An item fetched by its page is not among it.
   const outside = hub.view.user(hub.userId)?.item(item.id) === undefined;
-  const syncs = memoryOf(hub).syncs;
   if (outside) setAhead(hub, item.id, (before) => [...before, shown]);
   return hub.view
     .apply(
@@ -355,31 +355,15 @@ function updateItem(
       () => {
         if (!outside) return;
         const memory = memoryOf(hub);
-        // The event may have come before the answer, and a sync after it.
-        const brought =
-          memory.syncs !== syncs || hub.client.cache.user(hub.userId)?.item(item.id) !== undefined;
-        if (brought) setAhead(hub, item.id, (before) => before.filter((one) => one !== shown));
-        else memory.aheadAnswered.add(shown);
+        memory.aheadAnswered.add(shown);
+        memory.aheadAnswers.set(item.id, (memory.aheadAnswers.get(item.id) ?? 0) + 1);
+        setAhead(hub, item.id, (before) => before);
       },
       (error: unknown) => {
         if (outside) setAhead(hub, item.id, (before) => before.filter((one) => one !== shown));
         throw error;
       },
     );
-}
-
-/** Drops answered changes to items the cache now holds, or all of them after a new sync. */
-function retireAhead(hub: Writer, memory: Memory, all: boolean): void {
-  if (memory.aheadAnswered.size === 0) return;
-  const state = hub.client.cache.user(hub.userId);
-  for (const [id, changes] of memory.ahead) {
-    if (!all && !state?.item(id)) continue;
-    const pending = changes.filter((one) => !memory.aheadAnswered.has(one));
-    for (const one of changes) memory.aheadAnswered.delete(one);
-    memory.ahead.set(id, pending);
-  }
-  memory.aheadVersion++;
-  for (const listener of [...memory.listeners]) listener();
 }
 
 type Ahead = ((item: Item) => Item)[];
@@ -394,6 +378,24 @@ function setAhead(hub: Writer, id: string, change: (before: Ahead) => Ahead): vo
 /** An item the view does not hold, with the changes made to it here laid over it. */
 export function aheadOf(hub: Writer, item: Item): Item {
   return (memoryOf(hub).ahead.get(item.id) ?? []).reduce((shown, change) => change(shown), item);
+}
+
+/** The changes to such an item that the hub has answered, so that a new read holds them. */
+export function answeredAhead(hub: Writer, id: string): Ahead {
+  const memory = memoryOf(hub);
+  return (memory.ahead.get(id) ?? []).filter((one) => memory.aheadAnswered.has(one));
+}
+
+/** How many changes to such an item the hub has answered so far. */
+export function aheadAnswers(hub: Writer, id: string): number {
+  return memoryOf(hub).aheadAnswers.get(id) ?? 0;
+}
+
+/** Takes changes off an item once it was read again after they were answered. */
+export function dropAhead(hub: Writer, id: string, changes: Ahead): void {
+  if (changes.length === 0) return;
+  for (const one of changes) memoryOf(hub).aheadAnswered.delete(one);
+  setAhead(hub, id, (before) => before.filter((one) => !changes.includes(one)));
 }
 
 export function aheadVersion(hub: Writer): number {
