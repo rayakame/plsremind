@@ -36,6 +36,8 @@ ignore = [
     "PLR0917",
     "SLF001",  # tests reach into the client's private parts
     "TC",      # tests import what they name
+    "PLC2701", # and the private modules they test
+    "S105",    # test tokens are not secrets
     "INP001",
 ]
 "examples/**" = [
@@ -58,3 +60,7 @@ convention = "numpy"
 
 [lint.pydoclint]
 ignore-one-line-docstrings = true
+
+[lint.flake8-type-checking]
+# msgspec reads a Struct's annotations when the class is made.
+runtime-evaluated-base-classes = ["msgspec.Struct", "plsremind.models.Profile", "plsremind.events.Event"]
