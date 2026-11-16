@@ -26,6 +26,7 @@ ignore = [
     "F403", # unable to detect undefined names
 ]
 "plsremind/_*.py" = ["D101", "D102", "D103", "D107"]
+"plsremind/rest.py" = ["PLR0904"] # one method for each call of the API
 "noxfile.py" = ["D", "DOC"]
 "tests/**" = [
     "D",       # tests are not public API
