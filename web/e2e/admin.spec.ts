@@ -73,3 +73,39 @@ test("an admin invites someone, sees them register, and blocks them", async ({ b
   expect(problems).toEqual([]);
   await adminContext.close();
 });
+
+test("the focus stays in the dialog while a new password is on its way", async ({ browser }) => {
+  const session = restSession();
+  const user = await session.rest.login(admin);
+  const context = await browser.newContext({ baseURL: hubUrl });
+  await context.setExtraHTTPHeaders({ [proxyHeader]: address() });
+  await signIn(context, {
+    rest: session.rest,
+    user,
+    username: admin.username,
+    password: admin.password,
+    cookie: session.cookie(),
+  });
+  const page = await context.newPage();
+  let held: (() => Promise<void>) | undefined;
+  await page.route("**/admin/users/*/password", (route) => {
+    held = () => route.abort();
+  });
+  await page.goto("/settings/admin/users");
+  await page.getByRole("button", { name: "New password" }).first().click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByLabel("New password").fill("never sent to the hub");
+  await dialog.getByRole("button", { name: "Save" }).click();
+  await expect(dialog.getByRole("button", { name: "Save" })).toBeDisabled();
+  const inside = () =>
+    page.evaluate(() => {
+      const active = document.activeElement;
+      return !!active?.closest('[role="dialog"]') && !active.matches(":disabled");
+    });
+  expect(await inside()).toBe(true);
+  await page.keyboard.press("Tab");
+  await page.keyboard.press("Tab");
+  expect(await inside()).toBe(true);
+  await held?.();
+  await context.close();
+});

@@ -28,7 +28,13 @@ export function Dialog(props: {
     };
   }, []);
 
-  // A control that is disabled while it has the focus drops the focus onto the page.
+  // A control that is disabled while it has the focus loses it without telling anyone.
+  useEffect(() => {
+    const active = document.activeElement;
+    if (!box.current || (box.current.contains(active) && !active?.matches(":disabled"))) return;
+    box.current.focus();
+  });
+
   useEffect(() => {
     const onKey = (event: globalThis.KeyboardEvent) => {
       if (event.key !== "Tab" || !box.current || box.current.contains(document.activeElement)) {

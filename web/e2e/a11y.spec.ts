@@ -97,3 +97,21 @@ test("an item is created, selected, opened and completed with the keyboard alone
     .poll(async () => (await account.rest.listItems({ status: "done" })).data.map((i) => i.title))
     .toEqual(["Typed without a mouse"]);
 });
+
+test("the audit notices a control whose only text is hidden from assistive technology", async ({
+  page,
+}) => {
+  await page.goto("/login");
+  await expect(page.getByLabel("Username")).toBeVisible();
+  expect(await audit(page)).toEqual([]);
+  await page.evaluate(() => {
+    const button = document.createElement("button");
+    button.innerHTML = '<span aria-hidden="true">Delete</span>';
+    document.querySelector("main")!.append(button);
+    const select = document.createElement("select");
+    select.innerHTML = "<option>All lists</option>";
+    document.querySelector("main")!.append(select);
+  });
+  const problems = await audit(page);
+  expect(problems.filter((problem) => problem.startsWith("no name"))).toHaveLength(2);
+});
