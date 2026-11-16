@@ -178,13 +178,13 @@ func setGrant(d *core.Deps) fiber.Handler {
 			if in.Enabled != nil {
 				err = q.SetGrantEnabled(c.Context(), sqlc.SetGrantEnabledParams{UserID: userID, ConnectionID: id, Enabled: in.Enabled})
 				if err != nil {
-					return err
+					return goneOr(err)
 				}
 			}
 			if in.Remind != nil {
 				err = q.SetGrantRemind(c.Context(), sqlc.SetGrantRemindParams{UserID: userID, ConnectionID: id, Remind: in.Remind})
 				if err != nil {
-					return err
+					return goneOr(err)
 				}
 			}
 			rows, err := q.ListUserConnections(c.Context(), userID)
@@ -198,7 +198,7 @@ func setGrant(d *core.Deps) fiber.Handler {
 					found = true
 				}
 			}
-			// An admin can disable or delete the connection between the check above and this listing.
+			// An admin can disable the connection between the check above and this listing.
 			if !found {
 				return api.NotFound()
 			}
@@ -216,6 +216,14 @@ func setGrant(d *core.Deps) fiber.Handler {
 		}
 		return c.JSON(out)
 	}
+}
+
+// goneOr turns the failure of a grant whose connection was deleted meanwhile into "not found".
+func goneOr(err error) error {
+	if store.IsForeignKeyViolation(err) {
+		return api.NotFound()
+	}
+	return err
 }
 
 func listConnections(d *core.Deps) fiber.Handler {
