@@ -58,6 +58,8 @@ export function useOrder(order: readonly string[]): void {
   }, [setListed, select]);
 }
 
+const cameFromHere = { entered: true };
+
 /** Opens an item's own page, without the detail column next to it. */
 export function useOpenItem(): (id: string) => void {
   const { select, setEntered } = useSelection();
@@ -66,7 +68,7 @@ export function useOpenItem(): (id: string) => void {
     (id) => {
       select(undefined);
       setEntered(true);
-      navigate(routes.item(id));
+      navigate(routes.item(id), { state: cameFromHere });
     },
     [navigate, select, setEntered],
   );
@@ -77,8 +79,10 @@ export function useLeaveItem(): () => void {
   const { entered, setEntered } = useSelection();
   const [, navigate] = useLocation();
   return useCallback(() => {
+    // The browser keeps the mark with the entry, so it is still there after Back and Forward.
+    const marked = (history.state as { entered?: boolean } | null)?.entered === true;
     setEntered(false);
-    if (entered) history.back();
+    if (entered || marked) history.back();
     else navigate(routes.items);
   }, [entered, navigate, setEntered]);
 }

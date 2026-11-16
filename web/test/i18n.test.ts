@@ -36,3 +36,12 @@ test("texts follow the chosen language and fill their placeholders", () => {
   setLocale(null);
   expect(t("nav.all")).toBe("All items");
 });
+
+test("a tag the browser cannot format with is cut down to its language", () => {
+  for (const tag of ["de-1", "de-a", "de_DE"]) {
+    setLocale(tag);
+    expect(t("nav.all"), tag).toBe("Alle Einträge");
+    expect(() => new Intl.DateTimeFormat(locale()), tag).not.toThrow();
+    setLocale("en");
+  }
+});

@@ -87,7 +87,7 @@ export function ItemPage(props: { id: string }) {
   const at = order.indexOf(item.id);
   const go = (by: number) => {
     const next = order[at + by];
-    if (next !== undefined) navigate(routes.item(next), { replace: true });
+    if (next !== undefined) navigate(routes.item(next), { replace: true, state: history.state });
   };
   const done = item.status === "done";
 

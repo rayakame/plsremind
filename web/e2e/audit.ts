@@ -39,6 +39,12 @@ export async function audit(page: Page): Promise<string[]> {
       return box.width > 0 && box.height > 0 && style.visibility !== "hidden";
     };
 
+    const spoken = (control: Element) => {
+      const copy = control.cloneNode(true) as Element;
+      for (const hidden of copy.querySelectorAll('[aria-hidden="true"], [hidden]')) hidden.remove();
+      return copy.textContent;
+    };
+
     const problems: string[] = [];
     const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
     const seen = new Set<Element>();
@@ -73,7 +79,7 @@ export async function audit(page: Page): Promise<string[]> {
         (labelled ? document.getElementById(labelled)?.textContent : null) ??
         (control.id ? document.querySelector(`label[for="${control.id}"]`)?.textContent : null) ??
         control.closest("label")?.textContent ??
-        (control.matches("button, a") ? control.textContent : null);
+        (control.matches("button, a") ? spoken(control) : null);
       if (!name?.trim()) problems.push(`no name: ${control.outerHTML.slice(0, 80)}`);
       const option = control.getAttribute("role") === "option";
       if (control.tabIndex < 0 && !option) {

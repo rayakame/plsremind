@@ -57,7 +57,10 @@ function ConnectionCard(props: {
     if (next) props.onChange(next);
   };
   const rotate = async () => {
+    if (busy) return;
+    setBusy(true);
     const next = await guard(client.rest.rotateConnectionToken(connection.id));
+    setBusy(false);
     if (next?.token) props.onToken(next.token);
   };
   const remove = async () => {
@@ -83,7 +86,9 @@ function ConnectionCard(props: {
         onChange={(allowedIntents) => void change({ allowedIntents })}
       />
       <div className="line">
-        <Button onClick={() => setDialog("rotate")}>{t("aconn.newToken")}</Button>
+        <Button disabled={busy} onClick={() => setDialog("rotate")}>
+          {t("aconn.newToken")}
+        </Button>
         <Button variant="danger" onClick={() => setDialog("delete")}>
           {t("common.delete")}
         </Button>

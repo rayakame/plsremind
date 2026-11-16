@@ -28,6 +28,19 @@ export function Dialog(props: {
     };
   }, []);
 
+  // A control that is disabled while it has the focus drops the focus onto the page.
+  useEffect(() => {
+    const onKey = (event: globalThis.KeyboardEvent) => {
+      if (event.key !== "Tab" || !box.current || box.current.contains(document.activeElement)) {
+        return;
+      }
+      event.preventDefault();
+      (box.current.querySelector<HTMLElement>(focusable) ?? box.current).focus();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, []);
+
   function onKeyDown(event: KeyboardEvent) {
     if (event.key === "Escape") {
       event.stopPropagation();

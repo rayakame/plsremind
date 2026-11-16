@@ -62,9 +62,9 @@ function ProviderCard(props: {
             <Input value={name} onChange={(event) => setName(event.target.value)} required />
           </Field>
           <Toggle label={t("provider.login")} checked={login} onChange={setLogin} />
+          <Toggle label={t("provider.link")} checked={link} onChange={setLink} />
           {external && (
             <>
-              <Toggle label={t("provider.link")} checked={link} onChange={setLink} />
               <Field label={t("provider.clientId")}>
                 <Input
                   value={clientId}
@@ -123,12 +123,15 @@ export function AdminProviders() {
   const { guard } = useNotices();
   const providers = useLoaded((signal) => client.rest.listProviders({ signal }), client);
   const [key, setKey] = useState("");
+  const [busy, setBusy] = useState(false);
 
   const add = async (event: FormEvent) => {
     event.preventDefault();
     const wanted = key.trim();
-    if (wanted === "") return;
+    if (wanted === "" || busy) return;
+    setBusy(true);
     const created = await guard(client.rest.setProvider(wanted, { type: "oidc", name: wanted }));
+    setBusy(false);
     if (!created) return;
     setKey("");
     providers.setData((before) => [
@@ -160,10 +163,11 @@ export function AdminProviders() {
               autoCapitalize="none"
               onChange={(event) => setKey(event.target.value)}
               required
+              disabled={busy}
             />
           </Field>
           <div className="line">
-            <Button variant="primary" type="submit">
+            <Button variant="primary" type="submit" disabled={busy}>
               {t("provider.add")}
             </Button>
           </div>

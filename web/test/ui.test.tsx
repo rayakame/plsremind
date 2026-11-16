@@ -124,3 +124,20 @@ test("a dialog whose opener was disabled meanwhile gives the focus to something 
   rerender(<Page open={false} busy />);
   expect(document.activeElement).toBe(screen.getByRole("button", { name: "neighbour" }));
 });
+
+test("Tab comes back into a dialog when the focus fell out of it", () => {
+  render(
+    <>
+      <button>outside</button>
+      <Dialog title="Reset" onClose={() => {}}>
+        <button>inside</button>
+      </Dialog>
+    </>,
+  );
+  (document.activeElement as HTMLElement).blur();
+  expect(document.activeElement).toBe(document.body);
+  const tab = new KeyboardEvent("keydown", { key: "Tab", bubbles: true, cancelable: true });
+  document.body.dispatchEvent(tab);
+  expect(tab.defaultPrevented).toBe(true);
+  expect(document.activeElement).toBe(screen.getByRole("button", { name: "inside" }));
+});

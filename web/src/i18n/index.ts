@@ -6,14 +6,25 @@ export type { Key, Texts };
 
 export const languages: Readonly<Record<string, Texts>> = { en, de };
 
+// The hub stores tags that Intl refuses to format with.
+function formattable(wanted: string, base: string): string {
+  try {
+    new Intl.DateTimeFormat(wanted);
+    return wanted;
+  } catch {
+    return base;
+  }
+}
+
 let tag = "en";
 let active: Texts = en;
 const listeners = new Set<() => void>();
 
 /** Chooses the language for a tag such as "de-AT". An unknown one falls back to English. */
 export function setLocale(wanted: string | null): void {
-  const found = wanted ? languages[wanted.toLowerCase().split("-")[0]!] : undefined;
-  const next = found && wanted ? wanted : "en";
+  const base = wanted?.toLowerCase().split(/[-_]/)[0] ?? "";
+  const found = languages[base];
+  const next = found && wanted ? formattable(wanted, base) : "en";
   if (next === tag) return;
   tag = next;
   active = found ?? en;

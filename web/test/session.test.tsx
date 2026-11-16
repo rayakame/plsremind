@@ -106,3 +106,17 @@ test("an address nobody knows says so", async () => {
   await renderApp({ path: "/nowhere" });
   expect(screen.getByRole("heading", { name: "Not found" })).toBeTruthy();
 });
+
+test("after signing out nothing of the account stays on the page, even if the hub then fails", async () => {
+  const app = await renderApp();
+  app.route("POST", "/auth/logout", () => {
+    app.route("GET", "/info", {
+      status: 500,
+      body: { error: { code: "internal", message: "down" } },
+    });
+    return { status: 204 };
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Sign out" }));
+  await waitFor(() => expect(screen.queryByRole("link", { name: /Inbox/ })).toBeNull());
+  expect(screen.queryByText("Call Mia")).toBeNull();
+});

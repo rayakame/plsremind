@@ -112,10 +112,16 @@ export async function launchHub(options: { publicUrl?: string } = {}): Promise<L
     const databasePort = mapped.slice(mapped.lastIndexOf(":") + 1);
     const databaseUrl = `postgres://postgres:plsremind@127.0.0.1:${databasePort}/plsremind?sslmode=disable`;
     await until("PostgreSQL", async () => {
-      const client = new pg.Client({ connectionString: databaseUrl });
-      await client.connect();
-      await client.end();
-      return true;
+      const client = new pg.Client({
+        connectionString: databaseUrl,
+        connectionTimeoutMillis: 3000,
+      });
+      try {
+        await client.connect();
+        return true;
+      } finally {
+        await client.end().catch(() => {});
+      }
     });
 
     const port = await freePort();

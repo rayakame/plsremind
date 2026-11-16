@@ -49,6 +49,7 @@ export class Session {
     this.#generation++;
     this.#asking?.abort();
     clearTimeout(this.#timer);
+    if (this.state.phase === "ready") this.state.client.close();
     this.#client?.close();
     this.#client = undefined;
   }
@@ -56,6 +57,9 @@ export class Session {
   async signOut(): Promise<void> {
     await this.#client?.rest.logout();
     this.#asked = true;
+    // The account's data leaves the page now, whatever the hub says next.
+    if (this.state.phase === "ready") this.state.client.close();
+    this.#set({ phase: "loading" });
     this.reload();
   }
 

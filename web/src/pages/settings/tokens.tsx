@@ -161,9 +161,19 @@ export function TokenSettings() {
       <Card title={t("tokens.create")}>
         <form className="stack" onSubmit={(event) => void create(event)}>
           <Field label={t("tokens.newName")}>
-            <Input value={name} onChange={(event) => setName(event.target.value)} required />
+            <Input
+              value={name}
+              disabled={busy}
+              onChange={(event) => setName(event.target.value)}
+              required
+            />
           </Field>
-          <Toggle label={t("tokens.newRemind")} checked={remind} onChange={setRemind} />
+          <Toggle
+            label={t("tokens.newRemind")}
+            checked={remind}
+            disabled={busy}
+            onChange={setRemind}
+          />
           <div className="line">
             <Button variant="primary" type="submit" disabled={busy}>
               {t("tokens.create")}

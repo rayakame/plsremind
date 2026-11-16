@@ -81,3 +81,20 @@ test("two tabs of one user stay in step", async ({ page, account, browser }) => 
   await expect(page.getByRole("complementary", { name: "Details" })).toBeHidden();
   await other.close();
 });
+
+test("leaving an item goes back to its list, also after Back and Forward", async ({
+  page,
+  account,
+}) => {
+  const list = await account.rest.createList({ name: "Errands" });
+  await account.rest.createItem({ title: "Buy stamps", listId: list.id });
+  await page.goto(`/lists/${list.id}`);
+  await page.getByRole("link", { name: "Buy stamps" }).dblclick();
+  await expect(page).toHaveURL(/\/items\//);
+  await page.getByRole("button", { name: "Back" }).click();
+  await expect(page).toHaveURL(new RegExp(`/lists/${list.id}$`));
+  await page.goForward();
+  await expect(page).toHaveURL(/\/items\//);
+  await page.keyboard.press("Escape");
+  await expect(page).toHaveURL(new RegExp(`/lists/${list.id}$`));
+});

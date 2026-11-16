@@ -327,3 +327,20 @@ test("a name the hub refuses falls back to the stored one", async () => {
   expect(await screen.findByRole("alert")).toBeTruthy();
   await waitFor(() => expect(name.value).toBe("plsremind"));
 });
+
+test("the password provider can be allowed for linking, without credentials of its own", async () => {
+  const app = await page("providers");
+  app.route("PUT", "/admin/providers/password", (call) => ({
+    status: 200,
+    body: provider("password", { name: "Password", ...(call.body as object) }),
+  }));
+  const password = within(await screen.findByRole("group", { name: "Password" }));
+  await userEvent.click(password.getByRole("checkbox", { name: "Link accounts" }));
+  await userEvent.click(password.getByRole("button", { name: "Save" }));
+  await waitFor(() => expect(app.sent("PUT", "/admin/providers/password")).toHaveLength(1));
+  expect(app.sent("PUT", "/admin/providers/password")[0]!.body).toEqual({
+    name: "Password",
+    login_enabled: true,
+    link_enabled: true,
+  });
+});

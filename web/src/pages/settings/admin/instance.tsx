@@ -53,7 +53,11 @@ function Form(props: { settings: Settings; onChange: (next: Settings) => void })
 
 export function AdminInstance() {
   const { client } = useHub();
-  const settings = useLoaded((signal) => client.rest.getSettings({ signal }), client);
+  const settings = useLoaded(async (signal) => {
+    // A save from before this form was shown has to land first, or the form shows the old state.
+    await saving.get(client)?.catch(() => {});
+    return client.rest.getSettings({ signal });
+  }, client);
   if (!settings.data) return null;
   return <Form settings={settings.data} onChange={settings.setData} />;
 }
