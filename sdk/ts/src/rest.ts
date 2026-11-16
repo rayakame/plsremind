@@ -144,6 +144,15 @@ export class RestClient {
       }
       target = `/users/${user === undefined ? "@me" : seg(user)}${path}`;
     }
+    // An empty or dot segment would be folded away on the way out and reach another call.
+    if (
+      target
+        .split("/")
+        .slice(1)
+        .some((part) => part === "" || part === "." || part === "..")
+    ) {
+      throw new TypeError("An id in the path is empty or a dot segment.");
+    }
     const url = new URL(this.#base + target);
     if (request.query !== null && typeof request.query === "object") {
       for (const [key, value] of Object.entries(toWire(request.query) as object)) {
