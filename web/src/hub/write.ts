@@ -88,6 +88,8 @@ interface Memory {
   unseen: Map<string, { nonce: string; value: unknown; at: number }[]>;
   /** How many times the gateway has sent the whole state anew. */
   syncs: number;
+  /** What neither the cache nor an answer can be trusted on until the hub was asked. */
+  doubt: Set<string>;
 }
 
 const memories = new WeakMap<OptimisticView, Memory>();
@@ -106,6 +108,7 @@ function memoryOf(hub: Writer): Memory {
     seen: new Set(),
     unseen: new Map(),
     syncs: 0,
+    doubt: new Set(),
   };
   const { issued, seen, unseen } = memory;
   hub.client.cache.subscribe((change) => {
@@ -129,7 +132,7 @@ function memoryOf(hub: Writer): Memory {
   return memory;
 }
 
-// An event follows its answer within moments. One that never comes was part of a sync.
+// An event follows its answer within moments. After this long the hub is asked instead.
 const trustAnswer = 5000;
 
 /**
@@ -144,16 +147,28 @@ function issue(hub: Writer, nonce: string): (key: string, value: unknown) => voi
   return (key, value) => {
     if (memory.seen.delete(nonce)) return;
     // After a sync in between nobody can tell whether it already held this change.
-    if (memory.syncs !== syncs) return void memory.issued.delete(nonce);
+    if (memory.syncs !== syncs) {
+      memory.issued.delete(nonce);
+      memory.doubt.add(key);
+      return;
+    }
     memory.unseen.set(key, [...(memory.unseen.get(key) ?? []), { nonce, value, at: Date.now() }]);
   };
 }
 
 function recalled<T>(hub: Writer, key: string): T[] {
-  const fresh = Date.now() - trustAnswer;
-  return (memoryOf(hub).unseen.get(key) ?? [])
-    .filter((answer) => answer.at > fresh)
-    .map((answer) => answer.value as T);
+  return (memoryOf(hub).unseen.get(key) ?? []).map((answer) => answer.value as T);
+}
+
+/** True if the hub has to be asked for its state, which then stands for everything kept. */
+function doubtful(hub: Writer, key: string): boolean {
+  const memory = memoryOf(hub);
+  const stale = Date.now() - trustAnswer;
+  const overdue = (memory.unseen.get(key) ?? []).some((answer) => answer.at <= stale);
+  if (!overdue && !memory.doubt.has(key)) return false;
+  memory.unseen.delete(key);
+  memory.doubt.delete(key);
+  return true;
 }
 
 // A call without an answer would hold back every later change to the same object for good.
@@ -514,7 +529,13 @@ export function setPlan(
       [{ kind: "plan", priority, update: (before) => ({ ...before, ...patch, isDefault: false }) }],
       (nonce) =>
         inOrder(hub, key, async (signal) => {
+          const asked = doubtful(hub, key)
+            ? (await hub.client.rest.listReminderPlans({ signal })).find(
+                (plan) => plan.priority === priority,
+              )
+            : undefined;
           const held =
+            asked ??
             recalled<ReminderPlan>(hub, key).at(-1) ??
             hub.client.cache.user(hub.userId)?.plan(priority);
           const answered = issue(hub, nonce);
@@ -559,7 +580,9 @@ export function setQuiet(hub: Writer, part: Partial<QuietHours> | null): Promise
       ],
       (nonce) =>
         inOrder(hub, "profile", async (signal) => {
-          const last = recalled<{ quiet: QuietHours | null }>(hub, "quiet").at(-1);
+          const last = doubtful(hub, "quiet")
+            ? { quiet: ((await hub.client.rest.getUser({ signal })) as User).quietHours }
+            : recalled<{ quiet: QuietHours | null }>(hub, "quiet").at(-1);
           const confirmed = hub.client.cache.user(hub.userId)?.profile as User | undefined;
           const held = last ? last.quiet : (confirmed?.quietHours ?? null);
           const quietHours = part === null ? null : { ...(held ?? quietDefault), ...part };
@@ -591,7 +614,9 @@ export function setPrefs(hub: Writer, patch: Partial<Prefs>): Promise<void> {
           // our own changes it has answered, never from one that may yet be refused.
           const confirmed = (hub.client.cache.user(hub.userId)?.profile as User | undefined)
             ?.preferences;
-          const base = recalled<Partial<Prefs>>(hub, "prefs").reduce(mergePrefs, { ...confirmed });
+          const base = doubtful(hub, "prefs")
+            ? ((await hub.client.rest.getUser({ signal })) as User).preferences
+            : recalled<Partial<Prefs>>(hub, "prefs").reduce(mergePrefs, { ...confirmed });
           const preferences = mergePrefs(base, patch);
           const answered = issue(hub, nonce);
           await hub.client.rest.updateUser({ preferences }, { nonce, signal });

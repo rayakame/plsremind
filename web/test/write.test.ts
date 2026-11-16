@@ -457,7 +457,9 @@ test("a new sync while a preference is on its way decides what the hub holds", a
   );
   answer.resolve({ status: 200, body: wireUser({ locale: "en", preferences: { theme: "dark" } }) });
   await dark;
+  hub.setUser(wireUser({ locale: "en", preferences: { theme: "light" } }));
   await setPrefs(hub.own, { weekStart: "sunday" });
+  expect(hub.sent("GET", "/users/@me")).toHaveLength(1);
   expect(hub.sent("PATCH", "/users/@me").at(-1)!.body).toEqual({
     preferences: { theme: "light", weekStart: "sunday" },
   });
@@ -478,18 +480,17 @@ test("a sync from before a preference was stored does not lose it", async () => 
   await hub.send("user.sync", wholeState({}));
   answer.resolve({ status: 200, body: wireUser({ locale: "en", preferences: { theme: "dark" } }) });
   await dark;
-  const nonce = hub.sent("PATCH", "/users/@me")[0]!.headers["x-request-nonce"]!;
-  await hub.send(
-    "user.updated",
-    change("u1", wireUser({ locale: "en", preferences: { theme: "dark" } }), nonce),
-  );
+  hub.setUser(wireUser({ locale: "en", preferences: { theme: "dark" } }));
   await setPrefs(hub.own, { weekStart: "sunday" });
+  expect(hub.sent("GET", "/users/@me")).toHaveLength(1);
   expect(hub.sent("PATCH", "/users/@me").at(-1)!.body).toEqual({
     preferences: { theme: "dark", weekStart: "sunday" },
   });
+  await setPrefs(hub.own, { prefix: "!" });
+  expect(hub.sent("GET", "/users/@me")).toHaveLength(1);
 });
 
-test("an answer whose event never came is trusted only for a moment", async () => {
+test("when the event for an answer does not come, the hub is asked before the next change", async () => {
   vi.useFakeTimers({ toFake: ["Date"] });
   try {
     const hub = await connectedHub();
@@ -500,11 +501,9 @@ test("an answer whose event never came is trusted only for a moment", async () =
     const { setPrefs } = await import("../src/hub/write.js");
     await setPrefs(hub.own, { theme: "dark" });
     vi.setSystemTime(Date.now() + 6000);
-    await hub.send(
-      "user.updated",
-      change("u1", wireUser({ locale: "en", preferences: { theme: "light" } })),
-    );
+    hub.setUser(wireUser({ locale: "en", preferences: { theme: "light" } }));
     await setPrefs(hub.own, { weekStart: "sunday" });
+    expect(hub.sent("GET", "/users/@me")).toHaveLength(1);
     expect(hub.sent("PATCH", "/users/@me").at(-1)!.body).toEqual({
       preferences: { theme: "light", weekStart: "sunday" },
     });
