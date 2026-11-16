@@ -82,11 +82,11 @@ def _annotated(listener: _AnyListener) -> type[events.Event]:
 class _ClientREST(RESTClient):
     own_user: ID | None = None
 
-    def _target(self, path: str, user: ID | object | None) -> str:
+    def _user(self, user: ID | None) -> str:
         # The hub knows the user of a personal token as "@me" only.
         if user is not None and user == self.own_user:
             user = None
-        return super()._target(path, user)
+        return super()._user(user)
 
 
 class _Waiter(typing.NamedTuple):
