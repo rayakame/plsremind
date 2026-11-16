@@ -40,8 +40,11 @@ ignore = [
     "TC",      # tests import what they name
     "PLC2701", # and the private modules they test
     "S105",    # test tokens are not secrets
+    "S106",
+    "RUF029",  # a listener in a test need not await anything
     "INP001",
 ]
+"tests/run_until_signal.py" = ["T201"]
 "examples/**" = [
     "D",
     "DOC",

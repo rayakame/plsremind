@@ -6,7 +6,10 @@ hands events to listeners. Every call of the REST API is a method of `client.res
 
 from __future__ import annotations
 
+from plsremind import client as client
 from plsremind._about import __version__ as __version__
+from plsremind.cache import *
+from plsremind.client import *
 from plsremind.enums import *
 from plsremind.errors import *
 from plsremind.events import *
