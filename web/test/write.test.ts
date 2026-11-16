@@ -599,3 +599,22 @@ test("a change to an item outside the view is laid over it only until the hub's 
   const later = fromWire<Parameters<typeof aheadOf>[1]>({ ...old, priority: "low" });
   expect(aheadOf(hub.own, later).priority).toBe("low");
 });
+
+test("a change outside the view whose event and a sync came before its answer is not kept", async () => {
+  const hub = await connectedHub();
+  const old = wireItem({ id: "old", status: "done", completed_at: "2026-01-01T10:00:00Z" });
+  const answer = deferred<{ status: number; body: unknown }>();
+  hub.route("PATCH", "/users/@me/items/old", () => answer.promise);
+  const { aheadOf } = await import("../src/hub/write.js");
+  const { fromWire } = await import("../../sdk/ts/src/convert.js");
+  const fetched = fromWire<Parameters<typeof aheadOf>[1]>(old);
+  const patched = patchItem(hub.own, fetched, { priority: "high" });
+  await settle();
+  const nonce = hub.sent("PATCH", "/users/@me/items/old")[0]!.headers["x-request-nonce"]!;
+  await hub.send("item.updated", change("u1", { ...old, priority: "high" }, nonce));
+  await hub.send("user.sync", wholeState({}));
+  answer.resolve({ status: 200, body: { ...old, priority: "high" } });
+  await patched;
+  const later = fromWire<Parameters<typeof aheadOf>[1]>({ ...old, priority: "low" });
+  expect(aheadOf(hub.own, later).priority).toBe("low");
+});

@@ -342,6 +342,7 @@ function updateItem(
 ): Promise<void> {
   // The view only shows changes to what it holds. An item fetched by its page is not among it.
   const outside = hub.view.user(hub.userId)?.item(item.id) === undefined;
+  const syncs = memoryOf(hub).syncs;
   if (outside) setAhead(hub, item.id, (before) => [...before, shown]);
   return hub.view
     .apply(
@@ -352,7 +353,13 @@ function updateItem(
     )
     .then(
       () => {
-        if (outside) memoryOf(hub).aheadAnswered.add(shown);
+        if (!outside) return;
+        const memory = memoryOf(hub);
+        // The event may have come before the answer, and a sync after it.
+        const brought =
+          memory.syncs !== syncs || hub.client.cache.user(hub.userId)?.item(item.id) !== undefined;
+        if (brought) setAhead(hub, item.id, (before) => before.filter((one) => one !== shown));
+        else memory.aheadAnswered.add(shown);
       },
       (error: unknown) => {
         if (outside) setAhead(hub, item.id, (before) => before.filter((one) => one !== shown));
