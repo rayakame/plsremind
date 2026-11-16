@@ -5,7 +5,7 @@ import { useHistory, useLists } from "../hub/hooks.js";
 import { useNow } from "../hub/now.js";
 import { useOlderDone } from "../hub/older.js";
 import { useHub } from "../hub/session.js";
-import { setDone } from "../hub/write.js";
+import { setDone, stableKey } from "../hub/write.js";
 import { useT } from "../i18n/index.js";
 import { doneGroups, flatOrder } from "../model/groups.js";
 import { filterItems } from "../model/search.js";
@@ -16,11 +16,10 @@ import { useNarrow } from "../ui/layout-mode.js";
 import { VirtualRows } from "../ui/virtual-rows.js";
 import { ItemRow } from "./item-row.js";
 
-const rowKey = (item: Item) => item.id;
-
 export function DonePage() {
   const t = useT();
   const hub = useHub();
+  const rowKey = useCallback((item: Item) => stableKey(hub, item.id), [hub]);
   const { guard } = useNotices();
   const lists = useLists();
   const history = useHistory();
@@ -111,7 +110,7 @@ export function DonePage() {
           groups={labelled}
           rowKey={rowKey}
           render={render}
-          selected={selected}
+          selected={selected === undefined ? undefined : stableKey(hub, selected)}
         />
       )}
       {older.more && (

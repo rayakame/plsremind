@@ -213,6 +213,11 @@ function chainKey(hub: Writer, id: string): string {
   return id;
 }
 
+/** A key for an item or list that stays the same when a draft made here becomes real. */
+export function stableKey(hub: Writer, id: string): string {
+  return chainKey(hub, id);
+}
+
 // Requests are not ordered on the wire, so the calls about one object go out one by one.
 function inOrder<T>(
   hub: Writer,

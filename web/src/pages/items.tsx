@@ -5,7 +5,7 @@ import { useBar } from "../bar/context.js";
 import { useHistory, useItems, useLists, useResolved } from "../hub/hooks.js";
 import { useNow } from "../hub/now.js";
 import { useHub } from "../hub/session.js";
-import { moveList, removeList, renameList, setDone } from "../hub/write.js";
+import { moveList, removeList, renameList, setDone, stableKey } from "../hub/write.js";
 import { useT, type Key } from "../i18n/index.js";
 import { flatOrder, groupOpen, type GroupKey } from "../model/groups.js";
 import { filterItems } from "../model/search.js";
@@ -51,8 +51,6 @@ function storedSort(listId: string): Sort {
   }
 }
 
-const rowKey = (item: Item) => item.id;
-
 /** Open items in groups, with the handlers every such view shares. */
 export function OpenItems(props: {
   items: readonly Item[];
@@ -64,6 +62,7 @@ export function OpenItems(props: {
 }) {
   const t = useT();
   const hub = useHub();
+  const rowKey = useCallback((item: Item) => stableKey(hub, item.id), [hub]);
   const { guard } = useNotices();
   const lists = useLists();
   const now = useNow();
@@ -124,7 +123,7 @@ export function OpenItems(props: {
       groups={labelled}
       rowKey={rowKey}
       render={render}
-      selected={selected}
+      selected={selected === undefined ? undefined : stableKey(hub, selected)}
     />
   );
 }

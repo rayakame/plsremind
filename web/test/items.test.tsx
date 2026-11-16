@@ -193,3 +193,22 @@ test("the inbox cannot be renamed", async () => {
   await renderApp({ path: "/lists/l1" });
   expect(screen.queryByRole("button", { name: "Rename" })).toBeNull();
 });
+
+test("a row keeps the focus when its draft becomes the real item", async () => {
+  const app = await renderApp();
+  let nonce = "";
+  app.route("POST", "/users/@me/items", (call) => {
+    nonce = call.headers["x-request-nonce"]!;
+    return new Promise(() => {});
+  });
+  await userEvent.type(
+    screen.getByRole("combobox", { name: /Search, create/ }),
+    "Fresh{Control>}{Enter}{/Control}",
+  );
+  const box = screen.getByRole("checkbox", { name: "Complete Fresh" });
+  box.focus();
+  await waitFor(() => expect(nonce).not.toBe(""));
+  await app.send("item.created", change("u1", wireItem({ id: "real", title: "Fresh" }), nonce));
+  expect(screen.getByRole("checkbox", { name: "Complete Fresh" })).toBe(box);
+  expect(document.activeElement).toBe(box);
+});
