@@ -435,3 +435,29 @@ def test_items_share_the_id_of_their_list() -> None:
     cache.apply(change("item.created", item(3)))
     shared = cache.get_lists()[0].id
     assert all(entry.list_id is shared for entry in (*cache.get_items(), *cache.get_history()))
+
+
+def test_items_completed_at_the_same_moment_are_ordered_by_id() -> None:
+    moment = "2026-11-13T10:00:00Z"
+    cache = personal(STATE | Intents.HISTORY, items=[item(3)], history=[done(1, moment), done(5, moment)])
+    cache.apply(change("item.updated", done(3, moment)))
+    assert titles(cache.get_history()) == ["item 5", "item 3", "item 1"]
+    cache.apply(change("item.deleted", {"id": uuid(3)}))
+    assert titles(cache.get_history()) == ["item 5", "item 1"]
+
+
+def test_a_completion_time_without_an_offset_does_not_break_the_history() -> None:
+    cache = personal(
+        STATE | Intents.HISTORY,
+        items=[],
+        history=[done(1, "2026-11-13T10:00:00"), done(2, "2026-11-13T09:00:00Z")],
+    )
+    assert titles(cache.get_history()) == ["item 1", "item 2"]
+
+
+def test_a_sync_that_names_an_item_twice_does_not_break_the_next_one() -> None:
+    cache = personal(STATE | Intents.HISTORY, items=[item(1)], history=[done(1, "2026-11-13T10:00:00Z")])
+    cache.begin(msgspec.convert(fixtures.PRINCIPAL, models.Principal), [ME], STATE | Intents.HISTORY)
+    cache.apply(sync(items=[item(2)], history=[]))
+    assert titles(cache.get_items()) == ["item 2"]
+    assert cache.get_item(ID(uuid(1))) is None

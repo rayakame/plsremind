@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import asyncio
-import math
+import datetime
+import re
 import typing
 import urllib.parse
 
@@ -32,7 +33,6 @@ from plsremind.models import UserConnection
 
 if typing.TYPE_CHECKING:
     import collections.abc
-    import datetime
     import types
     import zoneinfo
 
@@ -56,12 +56,11 @@ _LONGEST_WAIT: typing.Final = 30.0
 _TOO_MANY: typing.Final = 429
 _FIRST_ERROR: typing.Final = 400
 
+_SECONDS: typing.Final = re.compile(r"\d{1,9}(\.\d{1,9})?", re.ASCII)
 _sleep = asyncio.sleep
 
-# Marks a call whose path names no user.
-_NO_USER: typing.Final = object()
-# Marks a call about the account itself, which the hub opens to the user alone.
-_OWN: typing.Final = object()
+_NOT_ABOUT_A_USER: typing.Final = object()
+_OWN_ACCOUNT: typing.Final = object()
 
 
 class _ErrorDetail(msgspec.Struct, frozen=True, kw_only=True):
@@ -99,15 +98,16 @@ def _api_error(
 
 
 def _segment(value: str) -> str:
+    # An empty or dot segment would be folded away on the way out and reach another call.
+    if value in {"", ".", ".."}:
+        msg = f"{value!r} is not an ID."
+        raise ValueError(msg)
     return urllib.parse.quote(value, safe="")
 
 
 def _retry_after(response: aiohttp.ClientResponse) -> float | None:
-    try:
-        seconds = float(response.headers.get("Retry-After", ""))
-    except ValueError:
-        return None
-    return seconds if math.isfinite(seconds) and seconds >= 0 else None
+    seconds = response.headers.get("Retry-After", "")
+    return float(seconds) if _SECONDS.fullmatch(seconds) else None
 
 
 class RESTClient:
@@ -173,9 +173,9 @@ class RESTClient:
         return self._session
 
     def _target(self, path: str, user: ID | object | None) -> str:
-        if user is _NO_USER:
+        if user is _NOT_ABOUT_A_USER:
             return path
-        if user is _OWN:
+        if user is _OWN_ACCOUNT:
             if self.is_connection:
                 msg = "This is about the account itself, so it takes a personal token and not a connection's."
                 raise TypeError(msg)
@@ -192,7 +192,7 @@ class RESTClient:
         method: str,
         path: str,
         *,
-        user: ID | object | None = _NO_USER,
+        user: ID | object | None = _NOT_ABOUT_A_USER,
         query: collections.abc.Mapping[str, object] | None = None,
         body: collections.abc.Mapping[str, object] | None = None,
         nonce: str | None = None,
@@ -236,7 +236,7 @@ class RESTClient:
         method: str,
         path: str,
         *,
-        user: ID | object | None = _NO_USER,
+        user: ID | object | None = _NOT_ABOUT_A_USER,
         query: collections.abc.Mapping[str, object] | None = None,
         body: collections.abc.Mapping[str, object] | None = None,
         nonce: str | None = None,
@@ -275,11 +275,11 @@ class RESTClient:
             "preferences": preferences,
             "quiet_hours": quiet_hours,
         }
-        return await self._fetch(User, "PATCH", "", user=_OWN, body=body, nonce=nonce)
+        return await self._fetch(User, "PATCH", "", user=_OWN_ACCOUNT, body=body, nonce=nonce)
 
     async def list_identities(self) -> tuple[Identity, ...]:
         """List the accounts the user signs in with or has linked."""
-        return await self._fetch(tuple[Identity, ...], "GET", "/identities", user=_OWN)
+        return await self._fetch(tuple[Identity, ...], "GET", "/identities", user=_OWN_ACCOUNT)
 
     async def list_lists(self, *, user: ID | None = None) -> tuple[List, ...]:
         """List a user's lists in their order."""
@@ -319,11 +319,11 @@ class RESTClient:
         """Replace the reminder plan of one priority."""
         path = f"/reminder-plans/{_segment(priority.value)}"
         body = {"before": before, "follow_up": follow_up}
-        return await self._fetch(ReminderPlan, "PUT", path, user=_OWN, body=body, nonce=nonce)
+        return await self._fetch(ReminderPlan, "PUT", path, user=_OWN_ACCOUNT, body=body, nonce=nonce)
 
     async def reset_reminder_plan(self, priority: Priority, *, nonce: str | None = None) -> None:
         """Put the reminder plan of one priority back to the hub's default."""
-        await self._send("DELETE", f"/reminder-plans/{_segment(priority.value)}", user=_OWN, nonce=nonce)
+        await self._send("DELETE", f"/reminder-plans/{_segment(priority.value)}", user=_OWN_ACCOUNT, nonce=nonce)
 
     async def list_items(
         self,
@@ -370,7 +370,15 @@ class RESTClient:
         """Create an item, in the inbox unless `list_id` says otherwise.
 
         Give `due_at` for a deadline at a moment or `due_date` for an all-day one.
+
+        Raises
+        ------
+        TypeError
+            If `due_date` is a `datetime`.
         """
+        if isinstance(due_date, datetime.datetime):
+            msg = "due_date takes a day; for a moment use due_at."
+            raise TypeError(msg)
         body = {
             "title": title,
             "note": note,
@@ -402,7 +410,16 @@ class RESTClient:
         user: ID | None = None,
         nonce: str | None = None,
     ) -> Item:
-        """Change an item. What is left out stays, and `None` clears a deadline or an override."""
+        """Change an item. What is left out stays, and `None` clears a deadline or an override.
+
+        Raises
+        ------
+        TypeError
+            If `due_date` is a `datetime`.
+        """
+        if isinstance(due_date, datetime.datetime):
+            msg = "due_date takes a day; for a moment use due_at."
+            raise TypeError(msg)
         body = {
             "title": title,
             "note": note,
@@ -500,7 +517,7 @@ class RESTClient:
 
     async def list_user_connections(self) -> tuple[UserConnection, ...]:
         """List the hub's connections as the user sees them."""
-        return await self._fetch(tuple[UserConnection, ...], "GET", "/connections", user=_OWN)
+        return await self._fetch(tuple[UserConnection, ...], "GET", "/connections", user=_OWN_ACCOUNT)
 
     async def set_connection_grant(
         self,
@@ -513,7 +530,7 @@ class RESTClient:
         """Say whether a connection may act for the user and whether it reminds them."""
         path = f"/connections/{_segment(connection_id)}"
         body = {"enabled": enabled, "remind": remind}
-        return await self._fetch(UserConnection, "PUT", path, user=_OWN, body=body, nonce=nonce)
+        return await self._fetch(UserConnection, "PUT", path, user=_OWN_ACCOUNT, body=body, nonce=nonce)
 
     async def list_deliveries(self) -> tuple[Delivery, ...]:
         """List the open deliveries of this token, for adapters that do not use the gateway.
@@ -555,7 +572,7 @@ class RESTClient:
     ) -> Page[ReminderLogEntry]:
         """List one page of the reminders that came due for the user, newest first."""
         query = {"item_id": item_id, "limit": limit, "cursor": cursor}
-        return await self._fetch(Page[ReminderLogEntry], "GET", "/reminder-log", user=_OWN, query=query)
+        return await self._fetch(Page[ReminderLogEntry], "GET", "/reminder-log", user=_OWN_ACCOUNT, query=query)
 
 
 async def paginate[T, **P](
@@ -570,4 +587,7 @@ async def paginate[T, **P](
             yield entry
         if page.next_cursor is None:
             return
+        if page.next_cursor == arguments.get("cursor"):
+            msg = "The hub answered with the same cursor it was asked with, so the listing would never end."
+            raise errors.PlsremindError(msg)
         arguments["cursor"] = page.next_cursor

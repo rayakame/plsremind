@@ -1,5 +1,3 @@
-# The writing side of the cache. Only gateway events go in.
-
 from __future__ import annotations
 
 import typing
@@ -100,9 +98,9 @@ class CacheStore(Cache):
             return
         self._users_view = None
         for item_id in (*state.items, *state.done):
-            del self._items[item_id]
+            self._items.pop(item_id, None)
         for list_id in state.lists:
-            del self._lists[list_id]
+            self._lists.pop(list_id, None)
 
     def _change(self, state: UserState, event: events.ChangeEvent) -> object | None:  # ruff: ignore[complex-structure, too-many-return-statements, too-many-branches]
         match event:

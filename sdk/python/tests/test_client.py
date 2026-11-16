@@ -13,6 +13,7 @@ import msgspec
 import pytest
 
 import plsremind
+from plsremind import _gateway
 from plsremind import events
 from plsremind.enums import ClientStatus
 from plsremind.enums import Intents
@@ -944,3 +945,140 @@ async def test_run_stops_on_a_signal_while_still_connecting() -> None:
             await process.wait()
     assert process.returncode == 0, rest.decode()
     assert "stopped idle" in rest.decode()
+
+
+async def test_two_starts_at_once_after_the_hub_turned_the_client_away(hub: fakes.FakeHub, make: Make) -> None:
+    before = asyncio.all_tasks()
+    client = make()
+    connection = await started(hub, client)
+    await connection.close(4004, "no")
+    await until(lambda: client.status is ClientStatus.CLOSED)
+    first = asyncio.create_task(client.start())
+    second = asyncio.create_task(client.start())
+    connection = await handshake(hub)
+    await connection.dispatch("user.sync", sync())
+    done, _ = await asyncio.wait({first, second}, timeout=2)
+    assert len(done) == 2
+    outcomes = sorted(type(task.exception()).__name__ for task in done)
+    assert outcomes == ["NoneType", "RuntimeError"]
+    assert hub.gateway.none_waiting()
+    await client.close()
+    await asyncio.sleep(0.05)
+    assert asyncio.all_tasks() - before == set()
+
+
+async def test_start_while_closing_waits_for_the_close(hub: fakes.FakeHub, make: Make) -> None:
+    client = make()
+    closed = collect(client, plsremind.ClosedEvent)
+    await started(hub, client)
+    closing = asyncio.create_task(client.close())
+    await asyncio.sleep(0)
+    starting = asyncio.create_task(client.start())
+    connection = await handshake(hub)
+    await connection.dispatch("user.sync", sync())
+    await asyncio.wait_for(starting, 2)
+    await closing
+    assert client.status is ClientStatus.CONNECTED
+    assert closed == []
+
+
+async def test_a_failure_while_applying_a_change_starts_the_session_over(
+    hub: fakes.FakeHub, make: Make, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    client = make()
+    connection = await started(hub, client, items=[item(1)])
+    original = type(client.cache).apply  # pyright: ignore[reportAttributeAccessIssue, reportUnknownMemberType, reportUnknownVariableType]
+
+    def failing(store: object, event: plsremind.Event) -> object:
+        if isinstance(event, plsremind.ItemUpdateEvent):
+            msg = "the cache tripped"
+            raise KeyError(msg)
+        return original(store, event)  # pyright: ignore[reportUnknownVariableType]
+
+    monkeypatch.setattr(type(client.cache), "apply", failing)
+    with caplog.at_level(logging.ERROR, logger="plsremind"):
+        await connection.dispatch("item.updated", change(item(1, title="renamed")))
+        again = await hub.gateway.connection()
+    assert "item.updated" in caplog.records[0].getMessage()
+    await again.hello()
+    assert (await again.receive())["op"] == IDENTIFY
+
+
+async def test_start_gives_up_when_the_state_never_arrives(
+    hub: fakes.FakeHub, make: Make, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(_gateway, "HANDSHAKE_SILENCE", 0.15)
+    client = make()
+    starting = asyncio.create_task(client.start())
+    await handshake(hub)
+    with pytest.raises(plsremind.GatewayError, match="did not finish the handshake"):
+        await asyncio.wait_for(starting, 2)
+    assert client.status is ClientStatus.CLOSED
+
+
+async def test_a_resync_that_stalls_is_started_again_from_scratch(
+    hub: fakes.FakeHub, make: Make, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client = make()
+    connection = await started(hub, client, items=[item(1)])
+    monkeypatch.setattr(_gateway, "HANDSHAKE_SILENCE", 0.15)
+    connection.drop()
+    again = await hub.gateway.connection()
+    await again.hello()
+    await again.receive_op(RESUME)
+    await again.send(INVALID_SESSION, d=False)
+    await again.receive_op(IDENTIFY)
+    await again.ready(users=[ME], principal=fixtures.PRINCIPAL, intents=["users", "lists", "items", "plans"])
+    assert client.status is ClientStatus.RECONNECTING
+    third = await hub.gateway.connection(timeout=5)
+    await third.hello()
+    assert (await third.receive())["op"] == IDENTIFY
+    assert [entry.title for entry in client.cache.get_items()] == ["item 1"]
+
+
+async def test_a_personal_token_may_name_its_own_user(hub: fakes.FakeHub, make: Make) -> None:
+    client = make()
+    await started(hub, client)
+    hub.answer("GET", "/users/@me/lists", fakes.Reply(json=[fixtures.LIST]))
+    assert (await client.rest.list_lists(user=plsremind.ID(ME)))[0].name == "Inbox"
+    assert hub.requests[-1].path == "/users/@me/lists"
+    hub.answer("GET", f"/users/{fixtures.OTHER_USER_ID}/lists", fakes.error(404, "not_found", "No."))
+    with pytest.raises(plsremind.NotFoundError):
+        await client.rest.list_lists(user=plsremind.ID(fixtures.OTHER_USER_ID))
+
+
+async def test_sessions_are_released_when_the_hub_turns_the_client_away(
+    hub: fakes.FakeHub, make: Make, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    opened: list[aiohttp.ClientSession] = []
+    original = aiohttp.ClientSession
+
+    def recording() -> aiohttp.ClientSession:
+        opened.append(original())
+        return opened[-1]
+
+    monkeypatch.setattr(plsremind.client.aiohttp, "ClientSession", recording)
+    client = make()
+    connection = await started(hub, client)
+    joining = asyncio.create_task(client.join())
+    await connection.close(4004, "no")
+    await asyncio.wait_for(joining, 2)
+    assert opened
+    assert all(session.closed for session in opened)
+
+
+def test_star_import_brings_the_public_names_only() -> None:
+    names = set(typing.cast("list[str]", plsremind.__all__))  # pyright: ignore[reportUnknownMemberType]
+    assert {
+        "Client",
+        "RESTClient",
+        "Item",
+        "ItemCreateEvent",
+        "Intents",
+        "ID",
+        "paginate",
+        "to_json",
+        "from_json",
+    } <= names
+    assert {"annotations", "client", "events", "models", "typing"} & names == set()
+    assert all(hasattr(plsremind, name) for name in names)

@@ -13,6 +13,8 @@ ID = typing.NewType("ID", str)
 """The ID of anything the hub keeps: a user, a list, an item, a delivery."""
 
 _UNITS: typing.Final = (("d", 86_400), ("h", 3_600), ("m", 60))
+# The hub reads each count as a 32-bit number.
+_LARGEST_COUNT: typing.Final = 2**31 - 1
 _CLOCK: typing.Final = re.compile(r"([01]\d|2[0-3]):([0-5]\d)", re.ASCII)
 
 
@@ -46,12 +48,18 @@ def parse_duration(text: str) -> Duration:
         position = next((i for i, (suffix, _) in enumerate(units) if suffix == rest[digits]), None)
         if position is None:
             raise ValueError(_bad_duration(text))
-        total += int(rest[:digits]) * units[position][1]
+        count = int(rest[:digits])
+        if count > _LARGEST_COUNT:
+            raise ValueError(_bad_duration(text))
+        total += count * units[position][1]
         units = units[position + 1 :]
         rest = rest[digits + 1 :]
     if total <= 0:
         raise ValueError(_bad_duration(text))
-    return Duration(seconds=total)
+    try:
+        return Duration(seconds=total)
+    except OverflowError:
+        raise ValueError(_bad_duration(text)) from None
 
 
 def _bad_duration(text: str) -> str:

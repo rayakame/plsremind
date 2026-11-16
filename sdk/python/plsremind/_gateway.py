@@ -1,5 +1,3 @@
-# One gateway session kept alive across drops. It knows nothing about what the events mean.
-
 from __future__ import annotations
 
 import asyncio
@@ -39,6 +37,7 @@ _NO_CLOSE_FRAME: typing.Final = 1006
 _BAD_SEQUENCE: typing.Final = 4007
 _TOO_MANY: typing.Final = 4008
 _FATAL: typing.Final = frozenset({4004, 4013, 4014})
+_RECONNECT_REQUESTS: typing.Final = 4
 
 
 class _Frame(msgspec.Struct, frozen=True, kw_only=True, gc=False):
@@ -84,6 +83,7 @@ class Gateway:
         on_status: collections.abc.Callable[[ClientStatus], None],
         on_disconnected: collections.abc.Callable[[int | None, str], None],
         on_closed: collections.abc.Callable[[errors.GatewayError], None],
+        sync_after_ready: bool = False,
         random: collections.abc.Callable[[], float] = random_module.random,  # ruff: ignore[suspicious-non-cryptographic-random-usage]
         sleep: collections.abc.Callable[[float], collections.abc.Awaitable[None]] = asyncio.sleep,
     ) -> None:
@@ -95,6 +95,9 @@ class Gateway:
         self._on_status: typing.Final = on_status
         self._on_disconnected: typing.Final = on_disconnected
         self._on_closed: typing.Final = on_closed
+        self._sync_after_ready: typing.Final = sync_after_ready
+        self._syncing = False
+        self._logged_in = False
         self._random: typing.Final = random
         self._sleep: typing.Final = sleep
         self._task: asyncio.Task[None] | None = None
@@ -126,6 +129,7 @@ class Gateway:
         self._reset()
 
     def _reset(self) -> None:
+        self._syncing = False
         self._session = None
         self._seq = None
         self._established = False
@@ -144,6 +148,18 @@ class Gateway:
     def restart_session(self) -> None:
         self._restart = True
 
+    def settle(self) -> None:
+        if self._syncing:
+            self._syncing = False
+            self._online_now()
+
+    def _online_now(self) -> None:
+        self._logged_in = True
+        self._established = True
+        self._online = True
+        self._attempts = 0
+        self._on_status(ClientStatus.CONNECTED)
+
     async def _run(self) -> None:
         try:
             await self._loop()
@@ -155,7 +171,7 @@ class Gateway:
                 error.__cause__ = cause
                 self._end(error)
 
-    async def _loop(self) -> None:
+    async def _loop(self) -> None:  # ruff: ignore[complex-structure]
         self._on_status(ClientStatus.CONNECTING)
         while self._running:
             lost = await self._connection()
@@ -163,10 +179,16 @@ class Gateway:
                 return
             if lost.code in _FATAL:
                 raise errors.GatewayError(lost.reason or f"The gateway closed with {lost.code}.", lost.code)
-            if not self._established and not lost.reconnect_now:
-                reason = lost.reason or "The gateway connection could not be established."
-                raise errors.GatewayError(reason, lost.code) from lost.cause
-            if lost.code == _BAD_SEQUENCE:
+            if not self._established:
+                if not lost.reconnect_now:
+                    reason = lost.reason or "The gateway connection could not be established."
+                    raise errors.GatewayError(reason, lost.code) from lost.cause
+                if self._attempts >= _RECONNECT_REQUESTS:
+                    msg = "The hub kept asking to reconnect before it let the client in."
+                    raise errors.GatewayError(msg)
+            # A session whose state never fully arrived cannot be resumed into a complete one.
+            if lost.code == _BAD_SEQUENCE or self._syncing:
+                self._syncing = False
                 self._session = None
                 self._seq = None
             if self._online:
@@ -191,6 +213,7 @@ class Gateway:
             return _Lost(None, f"The gateway could not be reached: {cause}", cause=cause)
         self._silenced = None
         self._heart = None
+        self._logged_in = False
         socket: aiohttp.ClientWebSocketResponse | None = None
         try:
             # A socket that goes quiet before the session stands would otherwise be waited on forever.
@@ -230,7 +253,6 @@ class Gateway:
             frame = _FRAME.decode(message.data)
         except msgspec.MsgspecError:
             return None
-        logging_in = silence.when() is not None
         if frame.op == _HELLO:
             interval = msgspec.json.decode(frame.d, type=_Hello).heartbeat_interval / 1000
             await self._identify(socket)
@@ -244,24 +266,24 @@ class Gateway:
         elif frame.op == _INVALID_SESSION:
             self._session = None
             self._seq = None
-            logging_in = True
+            self._syncing = False
+            self._logged_in = False
             await self._identify(socket)
         elif frame.op == _DISPATCH and frame.t is not None:
-            if self._dispatch(frame.t, frame):
-                logging_in = False
+            self._dispatch(frame.t, frame)
             if self._restart:
                 self._restart = False
                 self._session = None
                 self._seq = None
                 return _Lost(None, "The session is started over.", reconnect_now=True)
-        silence.reschedule(asyncio.get_running_loop().time() + HANDSHAKE_SILENCE if logging_in else None)
+        silence.reschedule(None if self._logged_in else asyncio.get_running_loop().time() + HANDSHAKE_SILENCE)
         return None
 
-    def _dispatch(self, name: str, frame: _Frame) -> bool:
+    def _dispatch(self, name: str, frame: _Frame) -> None:
         if frame.s is not None:
             self._seq = frame.s
-        logged_in = name in {"READY", "RESUMED"}
         if name == "READY":
+            self._syncing = True
             try:
                 self._session = msgspec.json.decode(frame.d, type=_Session).session_id
             except msgspec.MsgspecError as cause:
@@ -276,12 +298,9 @@ class Gateway:
         if aborted is not None:
             self._running = False
             raise aborted
-        if logged_in:
-            self._established = True
-            self._online = True
-            self._attempts = 0
-            self._on_status(ClientStatus.CONNECTED)
-        return logged_in
+        if name == "RESUMED" or (name == "READY" and not self._sync_after_ready):
+            self._syncing = False
+            self._online_now()
 
     async def _identify(self, socket: aiohttp.ClientWebSocketResponse) -> None:
         if self._session is None:

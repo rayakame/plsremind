@@ -782,3 +782,65 @@ def test_calls_about_the_account_itself_take_no_user() -> None:
     assert [name for name in names if "user" in inspect.signature(getattr(RESTClient, name)).parameters] == []
     assert "user" in inspect.signature(RESTClient.list_reminder_plans).parameters
     assert "user" in inspect.signature(RESTClient.get_user).parameters
+
+
+@pytest.mark.parametrize("bad", ["", ".", ".."])
+async def test_an_id_that_would_change_the_path_is_refused_before_sending(hub: fakes.FakeHub, bad: str) -> None:
+    async with client(hub) as rest:
+        with pytest.raises(ValueError, match="not an ID"):
+            await rest.delete_subitem(ITEM, ID(bad))
+        with pytest.raises(ValueError, match="not an ID"):
+            await rest.get_item(ID(bad))
+        with pytest.raises(ValueError, match="not an ID"):
+            await rest.delete_reminder(ID(bad), REM)
+    async with client(hub, CONNECTION_TOKEN) as rest:
+        with pytest.raises(ValueError, match="not an ID"):
+            await rest.list_lists(user=ID(bad))
+    assert hub.requests == []
+
+
+async def test_ids_with_awkward_characters_stay_one_segment(hub: fakes.FakeHub) -> None:
+    hub.answer("GET", "/users/@me/items/a/b?c#d e%2F..", fakes.Reply(json=fixtures.ITEM))
+    async with client(hub) as rest:
+        await rest.get_item(ID("a/b?c#d e%2F.."))
+    assert hub.requests[0].raw_path == "/api/v1/users/@me/items/a%2Fb%3Fc%23d%20e%252F.."
+
+
+async def test_due_date_takes_a_day_and_not_a_moment(hub: fakes.FakeHub) -> None:
+    async with client(hub) as rest:
+        with pytest.raises(TypeError, match="due_at"):
+            await rest.create_item(title="x", due_date=WHEN)
+        with pytest.raises(TypeError, match="due_at"):
+            await rest.update_item(ITEM, due_date=WHEN)
+    assert hub.requests == []
+
+
+async def test_paginate_stops_on_a_cursor_that_repeats(hub: fakes.FakeHub) -> None:
+    hub.answer("GET", f"{ME}/items", fakes.Reply(json={"data": [fixtures.ITEM], "next_cursor": "again"}))
+    async with client(hub) as rest:
+        walking = paginate(rest.list_items)
+        assert (await anext(walking)).id == ITEM
+        assert (await anext(walking)).id == ITEM
+        with pytest.raises(errors.PlsremindError, match="same cursor"):
+            await anext(walking)
+    assert len(hub.requests) == 2
+
+
+@pytest.mark.parametrize("header", ["1_0", "\u0661", "1e1", "0x5", "+3", "5 5"])
+async def test_a_retry_after_that_is_not_plain_seconds_is_not_trusted(
+    hub: fakes.FakeHub, waits: list[float], header: str
+) -> None:
+    hub.answer("GET", "/info", fakes.limited(header), fakes.Reply(json=fixtures.INFO))
+    async with client(hub) as rest:
+        with pytest.raises(errors.RateLimitedError) as caught:
+            await rest.get_info()
+    assert caught.value.retry_after is None
+    assert waits == []
+
+
+async def test_a_clock_time_the_hub_cannot_hold_is_refused(hub: fakes.FakeHub) -> None:
+    async with client(hub) as rest:
+        for start in (ClockTime(22, 0, 30), ClockTime(22, 0, tzinfo=datetime.UTC)):
+            with pytest.raises(ValueError, match="hours and minutes"):
+                await rest.update_user(quiet_hours=models.QuietHours(start=start, end=ClockTime(7, 0)))
+    assert hub.requests == []

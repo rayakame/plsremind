@@ -16,7 +16,10 @@ _EARLIEST: typing.Final = datetime.datetime.min.replace(tzinfo=datetime.UTC)
 
 
 def _completion(item: Item) -> tuple[datetime.datetime, str]:
-    return (item.completed_at or _EARLIEST, item.id.lower())
+    completed = item.completed_at or _EARLIEST
+    if completed.tzinfo is None:
+        completed = completed.replace(tzinfo=datetime.UTC)
+    return (completed, item.id.lower())
 
 
 class UserState:

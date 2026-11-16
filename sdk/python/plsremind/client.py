@@ -42,7 +42,6 @@ type _AnyListener = collections.abc.Callable[[typing.Any], collections.abc.Corou
 
 _LOGGER: typing.Final = logging.getLogger("plsremind")
 
-# The events that change the cache or tell when a user's state is complete.
 _STATE: typing.Final = frozenset(
     {
         "user.sync",
@@ -78,6 +77,16 @@ def _annotated(listener: _AnyListener) -> type[events.Event]:
         msg = f"{_name(listener)} does not say which event it wants: annotate its parameter or pass listen(...) one."
         raise TypeError(msg)
     return kind
+
+
+class _ClientREST(RESTClient):
+    own_user: ID | None = None
+
+    def _target(self, path: str, user: ID | object | None) -> str:
+        # The hub knows the user of a personal token as "@me" only.
+        if user is not None and user == self.own_user:
+            user = None
+        return super()._target(path, user)
 
 
 class _Waiter(typing.NamedTuple):
@@ -130,7 +139,10 @@ class Client:
             A session for REST and the gateway instead of the client's own, for example
             to go through a proxy. It is left open on `close`.
         """
-        self.rest: typing.Final = RESTClient(url, token=token, timeout=rest_timeout, retry=rest_retry, session=session)
+        self._rest: typing.Final = _ClientREST(
+            url, token=token, timeout=rest_timeout, retry=rest_retry, session=session
+        )
+        self.rest: typing.Final[RESTClient] = self._rest
         """Every call of the REST API."""
         self._token: typing.Final = token
         self._given_session: typing.Final = session
@@ -150,6 +162,8 @@ class Client:
         self._ended: asyncio.Event | None = None
         self._failure: errors.GatewayError | None = None
         self._closing: asyncio.Future[None] | None = None
+        self._claimed = False
+        self._releasing: asyncio.Task[None] | None = None
 
     @property
     def cache(self) -> Cache:
@@ -255,29 +269,33 @@ class Client:
         if self._asked is Intents.NONE:
             msg = "start() needs intents: pass intents=... to the client."
             raise RuntimeError(msg)
-        if self._gateway is not None:
+        if self._gateway is not None or self._claimed:
             msg = "The client is already started."
             raise RuntimeError(msg)
-        loop = asyncio.get_running_loop()
-        leftover, self._socket_session = self._socket_session, None
-        if leftover is not None:
-            await leftover.close()
-        self._failure = None
-        self._ended = asyncio.Event()
-        self._starting = starting = loop.create_future()
-        session = self._given_session
-        if session is None:
-            self._socket_session = session = aiohttp.ClientSession()
-        self._gateway = _gateway.Gateway(
-            url=self._gateway_url,
-            token=self._token,
-            intents=intent_names(self._asked),
-            session=lambda: session,
-            on_dispatch=self._on_dispatch,
-            on_status=self._on_status,
-            on_disconnected=self._on_disconnected,
-            on_closed=self._on_closed,
-        )
+        self._claimed = True
+        try:
+            if self._closing is not None:
+                await asyncio.shield(self._closing)
+            await self._released()
+            self._failure = None
+            self._ended = asyncio.Event()
+            self._starting = starting = asyncio.get_running_loop().create_future()
+            session = self._given_session
+            if session is None:
+                self._socket_session = session = aiohttp.ClientSession()
+            self._gateway = _gateway.Gateway(
+                url=self._gateway_url,
+                token=self._token,
+                intents=intent_names(self._asked),
+                session=lambda: session,
+                on_dispatch=self._on_dispatch,
+                on_status=self._on_status,
+                on_disconnected=self._on_disconnected,
+                on_closed=self._on_closed,
+                sync_after_ready=True,
+            )
+        finally:
+            self._claimed = False
         self._gateway.start()
         try:
             await starting
@@ -307,13 +325,9 @@ class Client:
             self._waiting.clear()
             self._fail_waiters(closed)
             await self._finish_listeners()
-            session, self._socket_session = self._socket_session, None
-            if session is not None:
-                await session.close()
-            await self.rest.close()
+            await self._released()
+            await self._release()
             self._status = ClientStatus.IDLE if self._failure is None else ClientStatus.CLOSED
-            if self._ended is not None:
-                self._ended.set()
         finally:
             closing, self._closing = self._closing, None
             closing.set_result(None)
@@ -382,6 +396,19 @@ class Client:
     async def _gateway_url(self) -> str:
         return (await self.rest.get_info()).gateway_url
 
+    async def _release(self) -> None:
+        session, self._socket_session = self._socket_session, None
+        if session is not None:
+            await session.close()
+        await self.rest.close()
+        if self._ended is not None:
+            self._ended.set()
+
+    async def _released(self) -> None:
+        releasing, self._releasing = self._releasing, None
+        if releasing is not None:
+            await releasing
+
     async def _finish_listeners(self) -> None:
         own = asyncio.current_task()
         tasks = {task for task in self._tasks if task is not own}
@@ -416,10 +443,10 @@ class Client:
         starting, self._starting = self._starting, None
         if starting is not None and not starting.done():
             starting.set_exception(error)
-        if self._ended is not None:
-            self._ended.set()
+        # Without this a program that only waits for the end would leave its sessions open.
+        self._releasing = asyncio.create_task(self._release(), name="plsremind-release")
 
-    def _on_dispatch(self, name: str, payload: msgspec.Raw) -> None:
+    def _on_dispatch(self, name: str, payload: msgspec.Raw) -> None:  # ruff: ignore[too-many-return-statements]
         if name == "READY":
             try:
                 ready = _events.decode_ready(payload)
@@ -427,6 +454,7 @@ class Client:
                 self._abort("The hub's READY could not be read.", cause)
                 return
             self._principal = ready.principal
+            self._rest.own_user = ready.principal.user_id
             self._granted = ready.intents
             self._ready = ready
             self._waiting = set(ready.users)
@@ -446,7 +474,11 @@ class Client:
             return
         if event is None:
             return
-        applied = self._store.apply(event)
+        try:
+            applied = self._store.apply(event)
+        except Exception as cause:  # ruff: ignore[blind-except]
+            self._unreadable(name, cause)
+            return
         self._emit(applied.event)
         if applied.ready is not None:
             self._emit(events.UserReadyEvent(user_id=applied.ready))
@@ -454,12 +486,12 @@ class Client:
         elif isinstance(event, events.UserGoneEvent):
             self._arrived(event.user_id)
 
-    def _unreadable(self, name: str, cause: msgspec.MsgspecError) -> None:
+    def _unreadable(self, name: str, cause: Exception) -> None:
         if name == "user.sync":
             self._abort("The state of a user could not be read.", cause)
         elif name in _STATE and self._gateway is not None:
             # Skipping a change would leave the cache different from the hub without anyone noticing.
-            _LOGGER.error("The event %s could not be read, so the session starts over.", name, exc_info=cause)
+            _LOGGER.error("The event %s could not be taken in, so the session starts over.", name, exc_info=cause)
             self._gateway.restart_session()
         else:
             _LOGGER.error("The event %s could not be read and was skipped.", name, exc_info=cause)
@@ -478,6 +510,8 @@ class Client:
         if self._waiting or self._ready is None:
             return
         ready, self._ready = self._ready, None
+        if self._gateway is not None:
+            self._gateway.settle()
         starting, self._starting = self._starting, None
         if starting is not None and not starting.done():
             starting.set_result(None)

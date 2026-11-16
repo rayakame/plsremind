@@ -507,3 +507,16 @@ async def test_a_dispatch_can_end_the_gateway(hub: fakes.FakeHub, make: Make) ->
     assert seen.closed[0].reason == "The hub's READY could not be read."
     assert await connection.closed() == 1000
     assert ClientStatus.CONNECTED not in seen.statuses
+
+
+async def test_a_hub_that_only_ever_asks_to_reconnect_is_given_up_on(hub: fakes.FakeHub, make: Make) -> None:
+    gateway, seen = make()
+    gateway.start()
+    for _ in range(5):
+        connection = await hub.gateway.connection()
+        await connection.hello()
+        await connection.receive()
+        await connection.send(RECONNECT)
+    await asyncio.wait_for(seen.ended.wait(), 2)
+    assert seen.closed[0].reason == "The hub kept asking to reconnect before it let the client in."
+    assert seen.sleeps == [1.0, 2.0, 4.0, 8.0]

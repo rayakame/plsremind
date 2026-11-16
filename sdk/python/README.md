@@ -59,8 +59,8 @@ attempt fails, or the hub refuses the token or the intents, `start()` raises a
   instead of editing them, so `before is after` tells you whether something changed.
 - **Every HTTP call goes through `client.rest`**, and its answers do not touch the cache.
   The cache changes only through the gateway events that follow.
-- **A connection names the user.** A personal token acts for its one user, so leave
-  `user` out with it. With the token of a connection, pass `user=...` to every call and
+- **A connection names the user.** A personal token acts for its one user, so `user` can
+  be left out with it. With the token of a connection, pass `user=...` to every call and
   cache read that is about a user; leaving it out raises a `TypeError` before anything is
   sent.
 
@@ -97,6 +97,10 @@ types Python has for them:
   and `plsremind.ClockTime(22, 0)`. A `datetime` needs a time zone, and a duration is whole
   minutes, from one minute up; anything else raises a `ValueError` before it is sent.
   `format_duration` and `parse_duration` convert between a `timedelta` and the hub's text.
+
+To keep something the SDK handed out, `plsremind.to_json(delivery)` writes it as JSON in
+the hub's form and `plsremind.from_json(data, plsremind.Delivery)` reads it back. msgspec's
+own encoder does not know `Duration` and `ClockTime`.
 
 ## Events
 
@@ -154,7 +158,7 @@ A listener that raises never ends the connection. Without a listener for
 `client.status` is a `ClientStatus`: `IDLE`, `CONNECTING`, `CONNECTED`, `RECONNECTING` or
 `CLOSED`. `close()` ends the session and every retry, waits up to five seconds for
 running listeners and cancels the rest. The cache stays readable, and `start()` works
-again.
+again. After a `ClosedEvent` the client has let go of its connections by itself.
 
 ## The cache
 
@@ -215,6 +219,11 @@ await client.rest.create_reminder(item.id, after=datetime.timedelta(hours=2))
   raise a `TypeError`.
 - Listings return a `Page` with `data` and `next_cursor`. `plsremind.paginate` walks a
   listing to its end.
+- An ID that is empty, `.` or `..` raises a `ValueError` before anything is sent, so text a
+  person typed can be passed on as an ID without reaching another call.
+- `client.rest` accepts the ID of a personal token's own user as `user=`. A `RESTClient`
+  on its own does not know that ID, and the hub answers it with a 404: leave `user` out
+  there.
 - `RESTClient` also works alone, for a script that needs no gateway:
 
   ```python

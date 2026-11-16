@@ -10,6 +10,7 @@ import zoneinfo
 import msgspec
 import pytest
 
+import plsremind
 from plsremind import _codec
 from plsremind import models
 from plsremind.enums import CredentialKind
@@ -263,3 +264,23 @@ def test_encode_body_refuses_durations_the_hub_cannot_hold() -> None:
     for unsendable in (datetime.timedelta(seconds=30), datetime.timedelta(0), datetime.timedelta(minutes=1, seconds=1)):
         with pytest.raises(ValueError, match="whole minutes"):
             _codec.encode_body({"in": unsendable})
+
+
+@pytest.mark.parametrize(("kind", "document"), fixtures.ALL, ids=lambda value: getattr(value, "__name__", ""))
+def test_everything_received_can_be_written_and_read_again(
+    kind: type[typing.Any], document: dict[str, typing.Any]
+) -> None:
+    received = decode(kind, document)
+    written = plsremind.to_json(received)
+    assert plsremind.from_json(written, kind) == received
+    assert json.loads(written) == json.loads(plsremind.to_json(plsremind.from_json(written, kind)))
+
+
+def test_to_json_writes_the_form_the_hub_uses() -> None:
+    written = json.loads(plsremind.to_json(decode(models.Delivery, fixtures.DELIVERY)))
+    assert written["reminder"]["offset"] == "1d"
+    assert written["user"]["timezone"] == "Europe/Berlin"
+    assert written["item"]["due_at"] == "2026-11-13T18:00:00Z"
+    connection = json.loads(plsremind.to_json(decode(models.UserConnection, fixtures.USER_CONNECTION)))
+    assert connection["intents"] == ["items", "deliveries"]
+    assert json.loads(plsremind.to_json((decode(models.List, fixtures.LIST),)))[0]["name"] == "Inbox"

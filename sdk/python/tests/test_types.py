@@ -67,3 +67,13 @@ def test_clock_round_trip() -> None:
 def test_clock_rejects_garbage(text: str) -> None:
     with pytest.raises(ValueError, match="time of day"):
         parse_clock(text)
+
+
+@pytest.mark.parametrize("text", ["99999999999d", "4294967296m", "2147483648h"])
+def test_duration_rejects_counts_the_hub_rejects(text: str) -> None:
+    with pytest.raises(ValueError, match="duration"):
+        parse_duration(text)
+
+
+def test_duration_accepts_the_largest_count() -> None:
+    assert parse_duration("2147483647m") == datetime.timedelta(minutes=2147483647)
