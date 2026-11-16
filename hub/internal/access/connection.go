@@ -191,10 +191,16 @@ func setGrant(d *core.Deps) fiber.Handler {
 			if err != nil {
 				return err
 			}
+			found := false
 			for _, row := range rows {
 				if row.ID == id {
 					out = viewUserConnection(row)
+					found = true
 				}
+			}
+			// An admin can disable or delete the connection between the check above and this listing.
+			if !found {
+				return api.NotFound()
 			}
 			now := d.Now()
 			if err := events.Append(c.Context(), q, now, userID, auth.Actor(c), "connection.updated", out); err != nil {
