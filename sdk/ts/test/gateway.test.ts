@@ -383,6 +383,19 @@ test("a handshake that stalls after hello is given up as well", async () => {
   expect(seen.closed).toEqual([]);
 });
 
+test("answered heartbeats do not keep a stalled handshake waiting", async () => {
+  const { fake, seen } = await established();
+  fake.current.drop();
+  await vi.advanceTimersByTimeAsync(1000);
+  const stalled = await fake.opened();
+  stalled.hello();
+  await vi.advanceTimersByTimeAsync(14_000);
+  stalled.op(11);
+  await vi.advanceTimersByTimeAsync(1000);
+  expect(stalled.closedWith).toBe(4000);
+  expect(seen.closed).toEqual([]);
+});
+
 test("an outage is reported once, however many attempts it takes", async () => {
   const { fake, seen } = await established();
   for (let i = 0; i < 4; i++) {

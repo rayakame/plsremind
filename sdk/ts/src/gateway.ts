@@ -215,7 +215,8 @@ export class Gateway {
       return;
     }
     if (frame === null || typeof frame !== "object") return;
-    if (this.#login !== undefined) this.#expectLogin(socket);
+    // An answered heartbeat says nothing about a login that is still due.
+    if (this.#login !== undefined && frame.op !== opHeartbeatAck) this.#expectLogin(socket);
     switch (frame.op) {
       case opHello:
         this.#greeted = true;

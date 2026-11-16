@@ -16,6 +16,11 @@ func IsUniqueViolation(err error) bool {
 	return errors.As(err, &pgErr) && pgErr.Code == "23505"
 }
 
+func IsForeignKeyViolation(err error) bool {
+	var pgErr *pgconn.PgError
+	return errors.As(err, &pgErr) && pgErr.Code == "23503"
+}
+
 // IsDeadlock reports whether PostgreSQL aborted the statement to break a deadlock.
 func IsDeadlock(err error) bool {
 	var pgErr *pgconn.PgError

@@ -242,3 +242,15 @@ test("an abort that happens just before the wait for a retry is not slept throug
   ]);
   expect(outcome).toBe("AbortError");
 });
+
+test.each(["", ".", ".."])(
+  "an id of %j would reach another call and is refused first",
+  async (id) => {
+    const { rest, calls } = fake([{ status: 204 }]);
+    await expect(rest.deleteSubitem("item-1", id)).rejects.toBeInstanceOf(TypeError);
+    await expect(rest.getItem(id)).rejects.toBeInstanceOf(TypeError);
+    await expect(rest.deleteReminder(id, "reminder-1")).rejects.toBeInstanceOf(TypeError);
+    await expect(rest.listLists({ user: id || ".." })).rejects.toBeInstanceOf(TypeError);
+    expect(calls).toEqual([]);
+  },
+);

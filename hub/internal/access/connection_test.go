@@ -3,6 +3,7 @@ package access_test
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -295,4 +296,30 @@ func TestAllowedIntentsValidation(t *testing.T) {
 	r := admin.Do(t, "POST", "/admin/connections", J{"name": "x", "provider": "discord", "allowed_intents": []string{"items", "items", "lists"}})
 	require.Equal(t, 201, r.Status)
 	require.JSONEq(t, `["lists","items"]`, r.Get("allowed_intents").Raw)
+}
+
+func TestGrantForAConnectionDeletedMeanwhileIsNotFound(t *testing.T) {
+	e := testkit.New(t)
+	mia := e.User(t, "mia")
+	bot := e.Connection(t, "discord")
+	ctx := context.Background()
+
+	// The uncommitted delete is invisible to the request, which then waits for it on the foreign key.
+	deleting, err := e.Pool.Begin(ctx)
+	require.NoError(t, err)
+	defer func() { _ = deleting.Rollback(ctx) }()
+	_, err = deleting.Exec(ctx, "DELETE FROM connections WHERE id = $1", bot.ID)
+	require.NoError(t, err)
+
+	answered := make(chan int, 1)
+	go func() {
+		answered <- mia.Do(t, "PUT", "/users/@me/connections/"+bot.ID, J{"enabled": false}).Status
+	}()
+	select {
+	case status := <-answered:
+		t.Fatalf("the request did not wait for the delete and answered %d", status)
+	case <-time.After(300 * time.Millisecond):
+	}
+	require.NoError(t, deleting.Commit(ctx))
+	require.Equal(t, 404, <-answered)
 }

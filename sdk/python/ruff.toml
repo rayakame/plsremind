@@ -1,0 +1,76 @@
+line-length = 120
+target-version = "py312"
+
+[format]
+docstring-code-format = true
+docstring-code-line-length = 80
+quote-style = "double"
+line-ending = "lf"
+
+[lint]
+preview = true
+select = ["ALL"]
+ignore = [
+    "COM812", # missing trailing comma; conflicts with the formatter, which owns trailing commas
+    "CPY001", # the repository carries its licence in one file
+    "D105",   # magic methods document themselves
+    "PLW0717", # a try clause is as long as what it guards
+    "ICN001", # the standard library keeps its own names, as in hikari
+    "DOC201", # what a function returns is in its signature and its summary
+    "DOC402", # the same for what a generator yields
+    "DOC502", # a callee's exceptions reach the caller too, so they are documented where it can see them
+]
+
+[lint.per-file-ignores]
+"**/__init__.py" = [
+    "F401", # imported but unused
+    "F403", # unable to detect undefined names
+]
+"plsremind/internal/**" = ["D100", "D101", "D102", "D103", "D104", "D107"]
+"plsremind/rest.py" = ["PLR0904"] # one method for each call of the API
+"noxfile.py" = ["D", "DOC"]
+"tests/**" = [
+    "D",       # tests are not public API
+    "DOC",
+    "S101",    # use of assert
+    "PLR2004", # magic value comparison
+    "PLR0913", # fixtures and helpers take what they need
+    "PLR0917",
+    "SLF001",  # tests reach into the client's private parts
+    "TC",      # tests import what they name
+    "PLC2701", # and the private modules they test
+    "S105",    # test tokens are not secrets
+    "S106",
+    "RUF029",  # a listener in a test need not await anything
+    "PLR6301", # helpers stay methods of what they belong to
+    "PLR0914", # a test that walks the whole API holds a lot
+    "PLW0108", # a lambda in until() reads what it waits for when it is called
+    "S404",    # the hub under test is a subprocess
+    "INP001",
+]
+"tests/support/run_*.py" = ["T201"]
+"examples/**" = [
+    "D",
+    "DOC",
+    "INP001", # examples are scripts, not a package
+    "T201",   # an example prints
+    "RUF029", # a listener need not await anything
+]
+
+[lint.pylint]
+max-args = 16
+max-positional-args = 5
+
+[lint.isort]
+required-imports = ["from __future__ import annotations"]
+force-single-line = true
+
+[lint.pydocstyle]
+convention = "numpy"
+
+[lint.pydoclint]
+ignore-one-line-docstrings = true
+
+[lint.flake8-type-checking]
+# msgspec reads a Struct's annotations when the class is made.
+runtime-evaluated-base-classes = ["msgspec.Struct", "plsremind.models.Profile", "plsremind.events.Event"]

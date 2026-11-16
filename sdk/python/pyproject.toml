@@ -1,0 +1,73 @@
+[project]
+name = "plsremind"
+version = "0.1.0"
+description = "The Python SDK for plsremind: gateway client, cache and REST."
+readme = "README.md"
+authors = [{ name = "rayakame" }]
+license = "MIT"
+requires-python = ">=3.12"
+keywords = ["plsremind", "todo", "reminders"]
+classifiers = [
+    "Framework :: AsyncIO",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Programming Language :: Python :: 3.15",
+    "Typing :: Typed",
+]
+dependencies = [
+    "aiohttp~=3.14",
+    "msgspec~=0.22",
+    "tzdata>=2025.2",
+]
+
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["plsremind"]
+
+[tool.hatch.build.targets.sdist]
+only-include = ["plsremind"]
+
+[dependency-groups]
+nox = [
+    "nox[uv]==2026.10.20",
+]
+pyright = [
+    "pyright==1.1.414",
+]
+pytest = [
+    "asyncpg==0.32.0",
+    "asyncpg-stubs==0.32.0",
+    "coverage==7.17.3",
+    "pytest==9.2.0",
+    "pytest-asyncio==1.5.0",
+    "pyyaml==6.0.3",
+    "types-pyyaml==6.0.12.20261113",
+]
+ruff = [
+    "ruff==0.17.5",
+]
+
+[tool.pyright]
+include = ["plsremind", "tests", "examples"]
+pythonVersion = "3.12"
+typeCheckingMode = "strict"
+reportUnnecessaryTypeIgnoreComment = "error"
+
+[tool.coverage.run]
+source = ["plsremind"]
+branch = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+xfail_strict = true
+markers = ["hub: needs a real hub, built from this repository, and Docker"]
+filterwarnings = ["error"]
