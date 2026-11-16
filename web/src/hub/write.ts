@@ -160,15 +160,19 @@ function recalled<T>(hub: Writer, key: string): T[] {
   return (memoryOf(hub).unseen.get(key) ?? []).map((answer) => answer.value as T);
 }
 
-/** True if the hub has to be asked for its state, which then stands for everything kept. */
-function doubtful(hub: Writer, key: string): boolean {
+/**
+ * What the hub holds, asked for when neither the cache nor a kept answer can be trusted.
+ * Undefined if they can. A failed question stays open for the next write.
+ */
+async function asked<T>(hub: Writer, key: string, ask: () => Promise<T>): Promise<T | undefined> {
   const memory = memoryOf(hub);
   const stale = Date.now() - trustAnswer;
   const overdue = (memory.unseen.get(key) ?? []).some((answer) => answer.at <= stale);
-  if (!overdue && !memory.doubt.has(key)) return false;
+  if (!overdue && !memory.doubt.has(key)) return undefined;
+  const state = await ask();
   memory.unseen.delete(key);
   memory.doubt.delete(key);
-  return true;
+  return state;
 }
 
 // A call without an answer would hold back every later change to the same object for good.
@@ -529,13 +533,13 @@ export function setPlan(
       [{ kind: "plan", priority, update: (before) => ({ ...before, ...patch, isDefault: false }) }],
       (nonce) =>
         inOrder(hub, key, async (signal) => {
-          const asked = doubtful(hub, key)
-            ? (await hub.client.rest.listReminderPlans({ signal })).find(
-                (plan) => plan.priority === priority,
-              )
-            : undefined;
+          const fromHub = await asked(hub, key, async () =>
+            (await hub.client.rest.listReminderPlans({ signal })).find(
+              (plan) => plan.priority === priority,
+            ),
+          );
           const held =
-            asked ??
+            fromHub ??
             recalled<ReminderPlan>(hub, key).at(-1) ??
             hub.client.cache.user(hub.userId)?.plan(priority);
           const answered = issue(hub, nonce);
@@ -580,9 +584,10 @@ export function setQuiet(hub: Writer, part: Partial<QuietHours> | null): Promise
       ],
       (nonce) =>
         inOrder(hub, "profile", async (signal) => {
-          const last = doubtful(hub, "quiet")
-            ? { quiet: ((await hub.client.rest.getUser({ signal })) as User).quietHours }
-            : recalled<{ quiet: QuietHours | null }>(hub, "quiet").at(-1);
+          const fromHub = await asked(hub, "quiet", async () => ({
+            quiet: ((await hub.client.rest.getUser({ signal })) as User).quietHours,
+          }));
+          const last = fromHub ?? recalled<{ quiet: QuietHours | null }>(hub, "quiet").at(-1);
           const confirmed = hub.client.cache.user(hub.userId)?.profile as User | undefined;
           const held = last ? last.quiet : (confirmed?.quietHours ?? null);
           const quietHours = part === null ? null : { ...(held ?? quietDefault), ...part };
@@ -614,13 +619,17 @@ export function setPrefs(hub: Writer, patch: Partial<Prefs>): Promise<void> {
           // our own changes it has answered, never from one that may yet be refused.
           const confirmed = (hub.client.cache.user(hub.userId)?.profile as User | undefined)
             ?.preferences;
-          const base = doubtful(hub, "prefs")
-            ? ((await hub.client.rest.getUser({ signal })) as User).preferences
-            : recalled<Partial<Prefs>>(hub, "prefs").reduce(mergePrefs, { ...confirmed });
+          const fromHub = await asked(
+            hub,
+            "prefs",
+            async () => ((await hub.client.rest.getUser({ signal })) as User).preferences,
+          );
+          const base =
+            fromHub ?? recalled<Record<string, unknown>>(hub, "prefs").at(-1) ?? confirmed;
           const preferences = mergePrefs(base, patch);
           const answered = issue(hub, nonce);
           await hub.client.rest.updateUser({ preferences }, { nonce, signal });
-          answered("prefs", patch);
+          answered("prefs", preferences);
         }),
       { user: hub.userId },
     )

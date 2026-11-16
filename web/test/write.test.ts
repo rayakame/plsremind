@@ -488,6 +488,40 @@ test("a sync from before a preference was stored does not lose it", async () => 
   });
   await setPrefs(hub.own, { prefix: "!" });
   expect(hub.sent("GET", "/users/@me")).toHaveLength(1);
+  expect(hub.sent("PATCH", "/users/@me").at(-1)!.body).toEqual({
+    preferences: { theme: "dark", weekStart: "sunday", prefix: "!" },
+  });
+});
+
+test("if the hub cannot be asked, the change fails and the question stays open", async () => {
+  const hub = await connectedHub();
+  const answer = deferred<{ status: number; body: unknown }>();
+  let asked = 0;
+  hub.route("PATCH", "/users/@me", (call) =>
+    ++asked === 1
+      ? answer.promise
+      : { status: 200, body: wireUser({ locale: "en", ...(call.body as object) }) },
+  );
+  const { setPrefs } = await import("../src/hub/write.js");
+  const dark = setPrefs(hub.own, { theme: "dark" });
+  await settle();
+  await hub.send("user.sync", wholeState({}));
+  answer.resolve({ status: 200, body: wireUser({ locale: "en", preferences: { theme: "dark" } }) });
+  await dark;
+  hub.route("GET", "/users/@me", {
+    status: 500,
+    body: { error: { code: "internal", message: "no" } },
+  });
+  expect(await setPrefs(hub.own, { weekStart: "sunday" }).catch(() => "failed")).toBe("failed");
+  expect(hub.sent("PATCH", "/users/@me")).toHaveLength(1);
+  hub.route("GET", "/users/@me", {
+    status: 200,
+    body: wireUser({ locale: "en", preferences: { theme: "dark" } }),
+  });
+  await setPrefs(hub.own, { weekStart: "sunday" });
+  expect(hub.sent("PATCH", "/users/@me").at(-1)!.body).toEqual({
+    preferences: { theme: "dark", weekStart: "sunday" },
+  });
 });
 
 test("when the event for an answer does not come, the hub is asked before the next change", async () => {
