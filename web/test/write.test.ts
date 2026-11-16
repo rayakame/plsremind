@@ -545,3 +545,20 @@ test("when the event for an answer does not come, the hub is asked before the ne
     vi.useRealTimers();
   }
 });
+
+test("a sync that arrives after an answer may be older than it, so the hub is asked", async () => {
+  const hub = await connectedHub();
+  hub.route("PATCH", "/users/@me", (call) => ({
+    status: 200,
+    body: wireUser({ locale: "en", ...(call.body as object) }),
+  }));
+  const { setPrefs } = await import("../src/hub/write.js");
+  await setPrefs(hub.own, { theme: "dark" });
+  await hub.send("user.sync", wholeState({}));
+  hub.setUser(wireUser({ locale: "en", preferences: { theme: "dark" } }));
+  await setPrefs(hub.own, { weekStart: "sunday" });
+  expect(hub.sent("GET", "/users/@me")).toHaveLength(1);
+  expect(hub.sent("PATCH", "/users/@me").at(-1)!.body).toEqual({
+    preferences: { theme: "dark", weekStart: "sunday" },
+  });
+});

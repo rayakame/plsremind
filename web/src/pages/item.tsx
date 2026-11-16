@@ -1,9 +1,9 @@
 import { ApiError, type Item } from "plsremind";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { useLocation } from "wouter";
 import { useItem, useResolved } from "../hub/hooks.js";
 import { useHub } from "../hub/session.js";
-import { removeItem, setDone } from "../hub/write.js";
+import { aheadOf, aheadVersion, onAnsweredCall, removeItem, setDone } from "../hub/write.js";
 import { useT } from "../i18n/index.js";
 import { useNotices } from "../shell/notices.js";
 import { routes } from "../shell/router.js";
@@ -69,7 +69,14 @@ export function ItemPage(props: { id: string }) {
   const gone = !live && (seen === shown || draft);
   const fetched = useFetched(shown, live !== undefined || gone);
 
-  const loaded = fetched.state && "item" in fetched.state ? fetched.state.item : undefined;
+  const subscribe = useCallback((notify: () => void) => onAnsweredCall(hub, notify), [hub]);
+  const version = useSyncExternalStore(subscribe, () => aheadVersion(hub));
+  const raw = fetched.state && "item" in fetched.state ? fetched.state.item : undefined;
+  const loaded = useMemo(
+    () => (raw ? aheadOf(hub, raw) : raw),
+    // The version stands for the changes laid over the item.
+    [raw, hub, version],
+  );
   const item = live ?? (gone ? null : loaded);
   const fetchedItem = live ? undefined : (item ?? undefined);
   useEffect(() => {

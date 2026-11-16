@@ -155,3 +155,26 @@ test("an item that could not be loaded says so and loads on a second try", async
   await userEvent.click(screen.getByRole("button", { name: "Try again" }));
   expect(((await screen.findByLabelText("Title")) as HTMLInputElement).value).toBe("Long ago");
 });
+
+test("a change to an item only its page has loaded shows at once and is taken back if refused", async () => {
+  const app = await renderApp({ path: "/items/old", hold: true });
+  const old = wireItem({
+    id: "old",
+    title: "Long ago",
+    status: "done",
+    completed_at: "2026-01-01T10:00:00Z",
+  });
+  app.route("GET", "/users/@me/items/old", { status: 200, body: old });
+  let asked = 0;
+  app.route("PATCH", "/users/@me/items/old", () =>
+    ++asked === 1
+      ? { status: 500, body: { error: { code: "internal", message: "no" } } }
+      : new Promise(() => {}),
+  );
+  await act(() => app.connect());
+  await userEvent.click(await screen.findByRole("button", { name: "Reopen" }));
+  expect(await screen.findByRole("alert")).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Reopen" })).toBeTruthy();
+  await userEvent.click(screen.getByRole("button", { name: "Reopen" }));
+  expect(screen.getByRole("button", { name: "Complete" })).toBeTruthy();
+});

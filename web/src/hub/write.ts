@@ -90,6 +90,9 @@ interface Memory {
   syncs: number;
   /** What neither the cache nor an answer can be trusted on until the hub was asked. */
   doubt: Set<string>;
+  /** Changes to items the view does not hold, for the page that shows such an item. */
+  ahead: Map<string, ((item: Item) => Item)[]>;
+  aheadVersion: number;
 }
 
 const memories = new WeakMap<OptimisticView, Memory>();
@@ -109,13 +112,16 @@ function memoryOf(hub: Writer): Memory {
     unseen: new Map(),
     syncs: 0,
     doubt: new Set(),
+    ahead: new Map(),
+    aheadVersion: 0,
   };
   const { issued, seen, unseen } = memory;
   hub.client.cache.subscribe((change) => {
     if (change.userId !== hub.userId) return;
-    // A new sync holds everything the hub answered before it.
     if (!change.cause) {
       memory.syncs++;
+      // The sync may have been read before an answered change was stored.
+      for (const [key, answers] of unseen) if (answers.length > 0) memory.doubt.add(key);
       return unseen.clear();
     }
     const nonce = change.cause.nonce;
@@ -319,6 +325,9 @@ function updateItem(
   shown: (before: Item) => Item,
   call: (id: string, nonce: string, signal: AbortSignal) => Promise<unknown>,
 ): Promise<void> {
+  // The view only shows changes to what it holds. An item fetched by its page is not among it.
+  const outside = hub.view.user(hub.userId)?.item(item.id) === undefined;
+  if (outside) setAhead(hub, item.id, (before) => [...before, shown]);
   return hub.view
     .apply(
       [{ kind: "item", id: item.id, update: shown }],
@@ -326,7 +335,31 @@ function updateItem(
         inOrder(hub, item.id, async (signal) => call(await settled(hub, item.id), nonce, signal)),
       { user: hub.userId },
     )
-    .then(() => undefined);
+    .then(
+      () => undefined,
+      (error: unknown) => {
+        if (outside) setAhead(hub, item.id, (before) => before.filter((one) => one !== shown));
+        throw error;
+      },
+    );
+}
+
+type Ahead = ((item: Item) => Item)[];
+
+function setAhead(hub: Writer, id: string, change: (before: Ahead) => Ahead): void {
+  const memory = memoryOf(hub);
+  memory.ahead.set(id, change(memory.ahead.get(id) ?? []));
+  memory.aheadVersion++;
+  for (const listener of [...memory.listeners]) listener();
+}
+
+/** An item the view does not hold, with the changes made to it here laid over it. */
+export function aheadOf(hub: Writer, item: Item): Item {
+  return (memoryOf(hub).ahead.get(item.id) ?? []).reduce((shown, change) => change(shown), item);
+}
+
+export function aheadVersion(hub: Writer): number {
+  return memoryOf(hub).aheadVersion;
 }
 
 export function setDone(hub: Writer, item: Item, done: boolean): Promise<void> {
