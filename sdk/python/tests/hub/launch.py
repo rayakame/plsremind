@@ -1,10 +1,7 @@
-"""Builds the hub from this repository and runs it against a throwaway PostgreSQL in Docker."""
-
 from __future__ import annotations
 
 import asyncio
 import base64
-import contextlib
 import dataclasses
 import os
 import pathlib
@@ -21,21 +18,26 @@ import urllib.request
 import asyncpg
 
 HUB_SOURCE: typing.Final = pathlib.Path(__file__).parents[4] / "hub"
+# Clients behind this header count as separate addresses for the hub's rate limit.
 PROXY_HEADER: typing.Final = "X-Forwarded-For"
-"""Clients behind this header count as separate addresses for the hub's rate limit."""
 
 
 class MissingToolError(RuntimeError):
-    """Docker or Go is not there to run the hub with."""
+    pass
 
 
 def _run(command: list[str], cwd: pathlib.Path | None = None) -> str:
     try:
-        done = subprocess.run(command, cwd=cwd, check=True, capture_output=True, text=True)  # ruff: ignore[subprocess-without-shell-equals-true]
-    except (OSError, subprocess.CalledProcessError) as cause:
-        detail = getattr(cause, "stderr", "") or str(cause)
-        msg = f'The hub tests need Docker and Go: "{" ".join(command[:2])}" failed.\n{detail}'
+        done = subprocess.run(command, cwd=cwd, check=False, capture_output=True, text=True)  # ruff: ignore[subprocess-without-shell-equals-true]
+    except OSError as cause:
+        msg = f"The hub tests need Docker and Go: {command[0]} could not be started."
         raise MissingToolError(msg) from cause
+    if done.returncode != 0:
+        failed = f'"{" ".join(command[:2])}" failed:\n{done.stderr}'
+        # A daemon that is not running is a missing tool; a hub that does not build is a defect.
+        if command[0] == "docker" and "daemon" in done.stderr.lower():
+            raise MissingToolError(failed)
+        raise RuntimeError(failed)
     return done.stdout
 
 
@@ -45,12 +47,20 @@ def _free_port() -> int:
         return int(probe.getsockname()[1])
 
 
+class _GaveUpError(RuntimeError):
+    pass
+
+
 def _until(what: str, attempt: typing.Callable[[], bool], seconds: float = 60.0) -> None:
     deadline = time.monotonic() + seconds
     while time.monotonic() < deadline:
-        with contextlib.suppress(Exception):
+        try:
             if attempt():
                 return
+        except _GaveUpError:
+            raise
+        except Exception:  # ruff: ignore[blind-except, try-except-pass]
+            pass
         time.sleep(0.25)
     msg = f"Timed out waiting for {what}."
     raise TimeoutError(msg)
@@ -82,8 +92,8 @@ class LaunchedHub:
 
         def answers() -> bool:
             if process.poll() is not None:
-                msg = f"The hub exited with {process.returncode} while starting."
-                raise RuntimeError(msg)
+                msg = f"The hub exited with {process.returncode} while starting. Set PLSREMIND_TEST_LOG=1 to see why."
+                raise _GaveUpError(msg)
             with urllib.request.urlopen(f"{self.url}/api/v1/info", timeout=2) as response:  # ruff: ignore[suspicious-url-open-usage]
                 return bool(response.status == 200)
 
@@ -101,7 +111,6 @@ class LaunchedHub:
             process.wait()
 
     def restart(self) -> None:
-        """Stop the hub the way a deployment would and start it again on the same database."""
         self.halt()
         self.start()
 

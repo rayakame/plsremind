@@ -13,6 +13,7 @@ import aiohttp
 import msgspec
 
 from plsremind import _cache
+from plsremind import _events
 from plsremind import _gateway
 from plsremind import errors
 from plsremind import events
@@ -135,7 +136,7 @@ class Client:
         self._given_session: typing.Final = session
         self._asked: typing.Final = intents
         self._granted: Intents | None = None
-        self._store: typing.Final = _cache.CacheStore()
+        self._store: typing.Final = _cache.CacheStore(connection=self.rest.is_connection)
         self._listeners: dict[type[events.Event], list[_AnyListener]] = {}
         self._waiters: dict[type[events.Event], list[_Waiter]] = {}
         self._tasks: set[asyncio.Task[None]] = set()
@@ -143,7 +144,7 @@ class Client:
         self._socket_session: aiohttp.ClientSession | None = None
         self._status = ClientStatus.IDLE
         self._principal: Principal | None = None
-        self._ready: events.Ready | None = None
+        self._ready: _events.Ready | None = None
         self._waiting: set[ID] = set()
         self._starting: asyncio.Future[None] | None = None
         self._ended: asyncio.Event | None = None
@@ -225,6 +226,8 @@ class Client:
         ------
         TimeoutError
             If none arrives within `timeout` seconds. `None` waits without limit.
+        GatewayError
+            If the client is closed, or turned away by the hub, while waiting.
         """
         waiter = _Waiter(predicate, asyncio.get_running_loop().create_future())
         self._waiters.setdefault(event_type, []).append(waiter)
@@ -256,6 +259,9 @@ class Client:
             msg = "The client is already started."
             raise RuntimeError(msg)
         loop = asyncio.get_running_loop()
+        leftover, self._socket_session = self._socket_session, None
+        if leftover is not None:
+            await leftover.close()
         self._failure = None
         self._ended = asyncio.Event()
         self._starting = starting = loop.create_future()
@@ -282,20 +288,24 @@ class Client:
     async def close(self) -> None:
         """End the session and every retry. The cache stays readable, and `start` works again."""
         if self._closing is not None:
-            await asyncio.shield(self._closing)
+            # A listener that waited here would be waited for by the close that is already running.
+            if asyncio.current_task() not in self._tasks:
+                await asyncio.shield(self._closing)
             return
         self._closing = asyncio.get_running_loop().create_future()
         try:
             gateway, self._gateway = self._gateway, None
             if gateway is not None:
                 await gateway.stop()
+            closed = errors.GatewayError("The client was closed.")
             starting, self._starting = self._starting, None
             if starting is not None and not starting.done():
-                starting.set_exception(errors.GatewayError("The client was closed."))
+                starting.set_exception(closed)
                 # Nobody may be waiting for it any more.
                 starting.exception()
             self._ready = None
             self._waiting.clear()
+            self._fail_waiters(closed)
             await self._finish_listeners()
             session, self._socket_session = self._socket_session, None
             if session is not None:
@@ -345,17 +355,22 @@ class Client:
                 loop.add_signal_handler(number, stop.set)
                 handled.append(number)
         try:
-            await self.start()
-            waits: list[asyncio.Task[typing.Any]] = [
-                asyncio.create_task(stop.wait()),
-                asyncio.create_task(self.join()),
-            ]
+            starting = asyncio.create_task(self.start())
+            stopping = asyncio.create_task(stop.wait())
             try:
-                await asyncio.wait(waits, return_when=asyncio.FIRST_COMPLETED)
+                await asyncio.wait({starting, stopping}, return_when=asyncio.FIRST_COMPLETED)
+                if starting.done():
+                    starting.result()
+                    joining = asyncio.create_task(self.join())
+                    try:
+                        await asyncio.wait({stopping, joining}, return_when=asyncio.FIRST_COMPLETED)
+                    finally:
+                        joining.cancel()
+                        await asyncio.gather(joining, return_exceptions=True)
             finally:
-                for wait in waits:
-                    wait.cancel()
-                await asyncio.gather(*waits, return_exceptions=True)
+                for task in (starting, stopping):
+                    task.cancel()
+                await asyncio.gather(starting, stopping, return_exceptions=True)
         finally:
             failure = self._failure
             await self.close()
@@ -368,13 +383,21 @@ class Client:
         return (await self.rest.get_info()).gateway_url
 
     async def _finish_listeners(self) -> None:
-        tasks = self._tasks - {typing.cast("asyncio.Task[None]", asyncio.current_task())}
-        if not tasks:
-            return
-        _, running = await asyncio.wait(tasks, timeout=LISTENER_GRACE)
-        for task in running:
-            task.cancel()
-        await asyncio.gather(*running, return_exceptions=True)
+        own = asyncio.current_task()
+        tasks = {task for task in self._tasks if task is not own}
+        if tasks:
+            await asyncio.wait(tasks, timeout=LISTENER_GRACE)
+        # A listener that failed during the wait may have started another one.
+        while running := {task for task in self._tasks if task is not own}:
+            for task in running:
+                task.cancel()
+            await asyncio.gather(*running, return_exceptions=True)
+
+    def _fail_waiters(self, error: errors.GatewayError) -> None:
+        for waiters in self._waiters.values():
+            for waiter in waiters:
+                if not waiter.future.done():
+                    waiter.future.set_exception(error)
 
     def _on_status(self, status: ClientStatus) -> None:
         self._status = status
@@ -389,6 +412,7 @@ class Client:
         self._ready = None
         self._waiting.clear()
         self._emit(events.ClosedEvent(error=error))
+        self._fail_waiters(error)
         starting, self._starting = self._starting, None
         if starting is not None and not starting.done():
             starting.set_exception(error)
@@ -397,7 +421,11 @@ class Client:
 
     def _on_dispatch(self, name: str, payload: msgspec.Raw) -> None:
         if name == "READY":
-            ready = events.decode_ready(payload)
+            try:
+                ready = _events.decode_ready(payload)
+            except msgspec.MsgspecError as cause:
+                self._abort("The hub's READY could not be read.", cause)
+                return
             self._principal = ready.principal
             self._granted = ready.intents
             self._ready = ready
@@ -408,13 +436,13 @@ class Client:
         if name == "RESUMED":
             self._emit(events.ResumedEvent())
             return
-        kind = events.EVENT_CLASSES.get(name)
+        kind = _events.EVENT_CLASSES.get(name)
         if kind is None or not (name in _STATE or self._wanted(kind)):
             return
         try:
-            event = events.decode_event(name, payload, connection=self.rest.is_connection)
-        except msgspec.MsgspecError:
-            _LOGGER.exception("The event %s could not be read and was skipped.", name)
+            event = _events.decode_event(name, payload, connection=self.rest.is_connection)
+        except msgspec.MsgspecError as cause:
+            self._unreadable(name, cause)
             return
         if event is None:
             return
@@ -425,6 +453,22 @@ class Client:
             self._arrived(applied.ready)
         elif isinstance(event, events.UserGoneEvent):
             self._arrived(event.user_id)
+
+    def _unreadable(self, name: str, cause: msgspec.MsgspecError) -> None:
+        if name == "user.sync":
+            self._abort("The state of a user could not be read.", cause)
+        elif name in _STATE and self._gateway is not None:
+            # Skipping a change would leave the cache different from the hub without anyone noticing.
+            _LOGGER.error("The event %s could not be read, so the session starts over.", name, exc_info=cause)
+            self._gateway.restart_session()
+        else:
+            _LOGGER.error("The event %s could not be read and was skipped.", name, exc_info=cause)
+
+    def _abort(self, reason: str, cause: Exception) -> None:
+        error = errors.GatewayError(reason)
+        error.__cause__ = cause
+        if self._gateway is not None:
+            self._gateway.abort(error)
 
     def _arrived(self, user: ID | None) -> None:
         if user is not None:
@@ -465,7 +509,7 @@ class Client:
         try:
             await listener(event)
         except Exception as error:
-            if isinstance(event, events.ExceptionEvent) or events.ExceptionEvent not in self._listeners:
+            if isinstance(event, events.ExceptionEvent) or not self._wanted(events.ExceptionEvent):
                 _LOGGER.error(  # ruff: ignore[error-instead-of-exception]
                     "The listener %s raised while handling a %s.", _name(listener), type(event).__name__, exc_info=error
                 )

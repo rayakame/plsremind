@@ -41,7 +41,9 @@ class APIError(PlsremindError):
         self.code: typing.Final = code
         """The hub's name for what went wrong, for example `delivery_closed`."""
         self.message: typing.Final = message
-        self.fields: typing.Final = _NO_FIELDS if fields is None else types.MappingProxyType(dict(fields))
+        self.fields: typing.Final[collections.abc.Mapping[str, str]] = (
+            _NO_FIELDS if fields is None else types.MappingProxyType(dict(fields))
+        )
         """What is wrong with which field of the request."""
 
 
@@ -97,29 +99,3 @@ class GatewayError(PlsremindError):
         self.reason: typing.Final = reason
         self.code: typing.Final = code
         """The close code, if the hub gave one."""
-
-
-_BY_STATUS: typing.Final[dict[int, type[APIError]]] = {
-    400: BadRequestError,
-    401: UnauthorizedError,
-    403: ForbiddenError,
-    404: NotFoundError,
-    409: ConflictError,
-    422: BadRequestError,
-}
-_TOO_MANY: typing.Final = 429
-_SERVER: typing.Final = 500
-
-
-def api_error(
-    status: int,
-    code: str,
-    message: str,
-    fields: collections.abc.Mapping[str, str] | None = None,
-    retry_after: float | None = None,
-) -> APIError:
-    """Build the error for an answer of the hub."""
-    if status == _TOO_MANY:
-        return RateLimitedError(status, code, message, fields, retry_after)
-    kind = _BY_STATUS.get(status, ServerError if status >= _SERVER else APIError)
-    return kind(status, code, message, fields)

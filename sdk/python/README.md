@@ -59,9 +59,10 @@ attempt fails, or the hub refuses the token or the intents, `start()` raises a
   instead of editing them, so `before is after` tells you whether something changed.
 - **Every HTTP call goes through `client.rest`**, and its answers do not touch the cache.
   The cache changes only through the gateway events that follow.
-- **A connection names the user.** A personal token acts for its one user. With the token
-  of a connection, pass `user=...` to every call and cache read that is about a user;
-  leaving it out raises a `TypeError` before anything is sent.
+- **A connection names the user.** A personal token acts for its one user, so leave
+  `user` out with it. With the token of a connection, pass `user=...` to every call and
+  cache read that is about a user; leaving it out raises a `TypeError` before anything is
+  sent.
 
 ## Names and types
 
@@ -84,14 +85,18 @@ types Python has for them:
 - A field with fixed values is always the enum. A value this version of the SDK does not
   know yet arrives as the member `UNKNOWN` instead of failing the event.
 - A time zone the system does not know becomes UTC, with one warning per name in the log
-  (logger `plsremind`). On Windows, install `tzdata`.
+  (logger `plsremind`). On Windows, install `tzdata`. In the same way a duration or a time
+  of day in a form this version cannot read becomes zero or midnight, with a warning.
 - `preferences` is read-only at its top level only: lists and objects inside it can still
-  be changed, which changes nothing at the hub.
+  be changed, which changes nothing at the hub. Before Python 3.15 it is a
+  `types.MappingProxyType`, so a `User` cannot be pickled or deep-copied there.
 - Fields and events the SDK does not know are skipped, so an older SDK keeps working
   against a newer hub.
-- Methods of `client.rest` take the same types, and any `timedelta` or `time`. A
-  `datetime` needs a time zone. `format_duration` and `parse_duration` convert between a
-  `timedelta` and the hub's text.
+- Methods of `client.rest` take the same types. `before=` and `after=` take any
+  `timedelta`; inside a `ReminderOverride` or `QuietHours` write `plsremind.Duration(hours=3)`
+  and `plsremind.ClockTime(22, 0)`. A `datetime` needs a time zone, and a duration is whole
+  minutes, from one minute up; anything else raises a `ValueError` before it is sent.
+  `format_duration` and `parse_duration` convert between a `timedelta` and the hub's text.
 
 ## Events
 
@@ -127,6 +132,10 @@ event.
   its own, started in the order of the events and not waited for, so a slow listener
   holds up neither the connection nor other listeners.
 - An event nobody listens to, and the cache does not need, is never decoded.
+- If a change arrives that this version cannot read, the client logs it and starts the
+  session over, so the cache cannot quietly differ from the hub. If it cannot read the
+  hub's login answer or a user's state at all, it gives up with a `ClosedEvent`.
+- `wait_for` raises a `GatewayError` if the client is closed, or turned away, meanwhile.
 
 The client adds events of its own:
 
@@ -200,6 +209,10 @@ await client.rest.create_reminder(item.id, after=datetime.timedelta(hours=2))
 
 - IDs from the path come first, everything else is a keyword. Writes take `nonce=`, which
   comes back in every event the call causes.
+- Calls about the account itself (`update_user`, `list_identities`, changing reminder
+  plans, `list_user_connections`, `set_connection_grant`, `list_reminder_log`) take no
+  `user`: the hub opens them to the user alone, and with the token of a connection they
+  raise a `TypeError`.
 - Listings return a `Page` with `data` and `next_cursor`. `plsremind.paginate` walks a
   listing to its end.
 - `RESTClient` also works alone, for a script that needs no gateway:

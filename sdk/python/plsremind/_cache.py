@@ -1,4 +1,4 @@
-"""The writing side of the cache. Only gateway events go in."""
+# The writing side of the cache. Only gateway events go in.
 
 from __future__ import annotations
 
@@ -6,9 +6,10 @@ import typing
 
 import msgspec
 
+from plsremind import _events
 from plsremind import events
+from plsremind._state import UserState
 from plsremind.cache import Cache
-from plsremind.cache import UserState
 from plsremind.enums import CredentialKind
 from plsremind.enums import Intents
 from plsremind.enums import ItemStatus
@@ -22,12 +23,8 @@ if typing.TYPE_CHECKING:
 
 
 class Applied(typing.NamedTuple):
-    """What an event did to the cache."""
-
     event: events.Event
-    """The event, with what the cache held before the change filled in."""
     ready: ID | None
-    """The user whose state just became complete."""
 
 
 def _sharing(state: UserState, item: Item) -> Item:
@@ -40,9 +37,8 @@ def _sharing(state: UserState, item: Item) -> Item:
 
 class CacheStore(Cache):
     def begin(self, principal: Principal, users: collections.abc.Iterable[ID], intents: Intents) -> None:
-        """Start a new session: users it no longer names go, the others stay readable."""
         self._self = principal.user_id
-        self._connection = principal.kind is CredentialKind.CONNECTION
+        self._connection = self._connection or principal.kind is CredentialKind.CONNECTION
         self._history = Intents.HISTORY in intents
         self._pending.clear()
         named = set(users)
@@ -66,7 +62,7 @@ class CacheStore(Cache):
         if isinstance(event, events.ChangeEvent):
             state = self._users.get(event.user_id)
             if state is not None:
-                return Applied(events.with_old(event, self._change(state, event)), None)
+                return Applied(_events.with_old(event, self._change(state, event)), None)
         return Applied(event, None)
 
     def _sync(self, event: events.UserSyncEvent) -> ID | None:

@@ -1,4 +1,4 @@
-"""One gateway session kept alive across drops. It knows nothing about what the events mean."""
+# One gateway session kept alive across drops. It knows nothing about what the events mean.
 
 from __future__ import annotations
 
@@ -108,6 +108,8 @@ class Gateway:
         self._acked = True
         self._silenced: _Lost | None = None
         self._heart: asyncio.Task[None] | None = None
+        self._aborted: errors.GatewayError | None = None
+        self._restart = False
 
     def start(self) -> None:
         if self._running:
@@ -132,24 +134,38 @@ class Gateway:
 
     def _end(self, error: errors.GatewayError) -> None:
         self._running = False
+        self._restart = False
         self._reset()
         self._on_closed(error)
 
+    def abort(self, error: errors.GatewayError) -> None:
+        self._aborted = error
+
+    def restart_session(self) -> None:
+        self._restart = True
+
     async def _run(self) -> None:
+        try:
+            await self._loop()
+        except errors.GatewayError as error:
+            self._end(error)
+        except Exception as cause:  # ruff: ignore[blind-except]
+            if self._running:
+                error = errors.GatewayError(f"The gateway failed: {cause}")
+                error.__cause__ = cause
+                self._end(error)
+
+    async def _loop(self) -> None:
         self._on_status(ClientStatus.CONNECTING)
         while self._running:
             lost = await self._connection()
             if not self._running:
                 return
             if lost.code in _FATAL:
-                self._end(errors.GatewayError(lost.reason or f"The gateway closed with {lost.code}.", lost.code))
-                return
-            if not self._established:
+                raise errors.GatewayError(lost.reason or f"The gateway closed with {lost.code}.", lost.code)
+            if not self._established and not lost.reconnect_now:
                 reason = lost.reason or "The gateway connection could not be established."
-                error = errors.GatewayError(reason, lost.code)
-                error.__cause__ = lost.cause
-                self._end(error)
-                return
+                raise errors.GatewayError(reason, lost.code) from lost.cause
             if lost.code == _BAD_SEQUENCE:
                 self._session = None
                 self._seq = None
@@ -159,7 +175,7 @@ class Gateway:
                 self._on_disconnected(lost.code, lost.reason)
                 if not self._running:
                     return
-            if lost.reconnect_now:
+            if lost.reconnect_now and self._established:
                 continue
             wait = min(LONGEST_WAIT, FIRST_WAIT * 2**self._attempts) * (0.5 + 0.5 * self._random())
             self._attempts += 1
@@ -171,18 +187,22 @@ class Gateway:
         try:
             if self._address is None:
                 self._address = await self._url()
-            socket = await self._http().ws_connect(
-                self._address,
-                max_msg_size=0,
-                timeout=aiohttp.ClientWSTimeout(ws_close=CLOSE_GRACE),  # pyright: ignore[reportCallIssue]
-            )
-        except (aiohttp.ClientError, OSError, TimeoutError, errors.PlsremindError) as cause:
+        except errors.PlsremindError as cause:
             return _Lost(None, f"The gateway could not be reached: {cause}", cause=cause)
         self._silenced = None
         self._heart = None
+        socket: aiohttp.ClientWebSocketResponse | None = None
         try:
             # A socket that goes quiet before the session stands would otherwise be waited on forever.
             async with asyncio.timeout(HANDSHAKE_SILENCE) as silence:
+                try:
+                    socket = await self._http().ws_connect(
+                        self._address,
+                        max_msg_size=0,
+                        timeout=aiohttp.ClientWSTimeout(ws_close=CLOSE_GRACE),  # pyright: ignore[reportCallIssue]
+                    )
+                except (aiohttp.ClientError, OSError) as cause:
+                    return _Lost(None, f"The gateway could not be reached: {cause}", cause=cause)
                 while True:
                     lost = await self._receive(socket, await socket.receive(), silence)
                     if lost is not None:
@@ -196,10 +216,10 @@ class Gateway:
             if heart is not None:
                 heart.cancel()
                 await asyncio.gather(heart, return_exceptions=True)
-            if not socket.closed:
+            if socket is not None and not socket.closed:
                 await socket.close(code=_CLOSE_RESUMING if self._running else _CLOSE_NORMAL)
 
-    async def _receive(
+    async def _receive(  # ruff: ignore[complex-structure]
         self, socket: aiohttp.ClientWebSocketResponse, message: aiohttp.WSMessage, silence: asyncio.Timeout
     ) -> _Lost | None:
         if message.type is aiohttp.WSMsgType.CLOSE:
@@ -226,27 +246,41 @@ class Gateway:
             self._seq = None
             logging_in = True
             await self._identify(socket)
-        elif frame.op == _DISPATCH and frame.t is not None and self._dispatch(frame.t, frame):
-            logging_in = False
+        elif frame.op == _DISPATCH and frame.t is not None:
+            if self._dispatch(frame.t, frame):
+                logging_in = False
+            if self._restart:
+                self._restart = False
+                self._session = None
+                self._seq = None
+                return _Lost(None, "The session is started over.", reconnect_now=True)
         silence.reschedule(asyncio.get_running_loop().time() + HANDSHAKE_SILENCE if logging_in else None)
         return None
 
     def _dispatch(self, name: str, frame: _Frame) -> bool:
-        """Hand a dispatch on. True if it completed the login."""
         if frame.s is not None:
             self._seq = frame.s
         logged_in = name in {"READY", "RESUMED"}
         if name == "READY":
-            self._session = msgspec.json.decode(frame.d, type=_Session).session_id
+            try:
+                self._session = msgspec.json.decode(frame.d, type=_Session).session_id
+            except msgspec.MsgspecError as cause:
+                self._running = False
+                msg = "The hub's READY could not be read."
+                raise errors.GatewayError(msg) from cause
+        try:
+            self._on_dispatch(name, frame.d)
+        except Exception:
+            _LOGGER.exception("The event %s could not be handled.", name)
+        aborted, self._aborted = self._aborted, None
+        if aborted is not None:
+            self._running = False
+            raise aborted
         if logged_in:
             self._established = True
             self._online = True
             self._attempts = 0
             self._on_status(ClientStatus.CONNECTED)
-        try:
-            self._on_dispatch(name, frame.d)
-        except Exception:
-            _LOGGER.exception("The event %s could not be handled.", name)
         return logged_in
 
     async def _identify(self, socket: aiohttp.ClientWebSocketResponse) -> None:

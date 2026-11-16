@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
-import bisect
-import datetime
 import typing
 
 if typing.TYPE_CHECKING:
+    from plsremind._state import UserState
     from plsremind.enums import Priority
     from plsremind.models import Item
     from plsremind.models import List
@@ -16,56 +15,6 @@ if typing.TYPE_CHECKING:
 
 __all__ = ["Cache"]
 
-_EARLIEST: typing.Final = datetime.datetime.min.replace(tzinfo=datetime.UTC)
-
-
-def _completion(item: Item) -> tuple[datetime.datetime, str]:
-    return (item.completed_at or _EARLIEST, item.id.lower())
-
-
-class UserState:
-    """What the cache holds about one user. Not part of the public API."""
-
-    __slots__ = (
-        "done",
-        "history",
-        "history_cursor",
-        "history_view",
-        "items",
-        "items_view",
-        "lists",
-        "lists_view",
-        "plans",
-        "plans_view",
-        "profile",
-    )
-
-    def __init__(self) -> None:
-        self.profile: Profile | None = None
-        self.lists: dict[ID, List] = {}
-        self.items: dict[ID, Item] = {}
-        self.done: dict[ID, Item] = {}
-        # Oldest completion first, so that bisect can keep it sorted.
-        self.history: list[Item] = []
-        self.history_cursor: str | None = None
-        self.plans: dict[Priority, ReminderPlan] = {}
-        self.lists_view: tuple[List, ...] | None = None
-        self.items_view: tuple[Item, ...] | None = None
-        self.history_view: tuple[Item, ...] | None = None
-        self.plans_view: tuple[ReminderPlan, ...] | None = None
-
-    def add_done(self, item: Item) -> None:
-        bisect.insort(self.history, item, key=_completion)
-        self.done[item.id] = item
-        self.history_view = None
-
-    def remove_done(self, item_id: ID) -> Item | None:
-        item = self.done.pop(item_id, None)
-        if item is not None:
-            del self.history[bisect.bisect_left(self.history, _completion(item), key=_completion)]
-            self.history_view = None
-        return item
-
 
 class Cache:
     """What the gateway has sent about each user, as far as the client's intents reach.
@@ -74,7 +23,7 @@ class Cache:
     frozen, so nothing is copied.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, *, connection: bool = False) -> None:
         """Make an empty cache. A `Client` makes its own."""
         self._users: dict[ID, UserState] = {}
         self._pending: dict[ID, UserState] = {}
@@ -82,7 +31,7 @@ class Cache:
         self._items: dict[ID, Item] = {}
         self._lists: dict[ID, List] = {}
         self._self: ID | None = None
-        self._connection = False
+        self._connection = connection
         self._history = False
 
     def get_users(self) -> tuple[ID, ...]:

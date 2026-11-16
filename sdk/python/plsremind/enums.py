@@ -31,8 +31,6 @@ __all__ = [
 
 
 class _Received(enum.Enum):
-    """A value the hub sends. One this version does not know yet arrives as `UNKNOWN`."""
-
     @classmethod
     def _missing_(cls, value: object) -> _Received:  # ruff: ignore[unused-class-method-argument]
         return cls["UNKNOWN"]

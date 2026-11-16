@@ -1,5 +1,3 @@
-"""What the hub tests share: accounts, tokens, clients."""
-
 from __future__ import annotations
 
 import dataclasses
@@ -19,9 +17,6 @@ if typing.TYPE_CHECKING:
 EVERYTHING: typing.Final = plsremind.Intents.ALL
 until = fakes.until
 
-seen_event_types: set[type[plsremind.Event]] = set()
-"""Every event class some client of this test run was handed, for the coverage check at the end."""
-
 _addresses = 0
 
 
@@ -37,7 +32,7 @@ def _address() -> str:
 
 
 class Browser:
-    """A signed-in browser: what the SDK leaves to the dashboard."""
+    # A signed-in browser: what the SDK leaves to the dashboard.
 
     def __init__(self, hub_url: str) -> None:
         self._base = f"{hub_url}/api/v1"
@@ -59,7 +54,7 @@ class Browser:
 
 
 class Tap:
-    """A session that remembers its sockets, so a test can cut one the way a network would."""
+    # A session that remembers its sockets, so a test can cut one the way a network would.
 
     def __init__(self, session: aiohttp.ClientSession) -> None:
         self._session = session
@@ -82,8 +77,6 @@ class Tap:
 
 @dataclasses.dataclass
 class Account:
-    """A fresh user with a browser login and a personal token for the SDK."""
-
     id: plsremind.ID
     browser: Browser
     rest: plsremind.RESTClient
@@ -99,8 +92,6 @@ class Tapped:
 
 
 class Kit:
-    """Makes what a test needs and closes it afterwards."""
-
     def __init__(self, hub: launch.LaunchedHub, admin_password: str) -> None:
         self.hub = hub
         self._admin_password = admin_password
@@ -172,7 +163,6 @@ class Kit:
         return plsremind.ID(created["id"]), created["token"]
 
     async def complete_in_the_past(self, user: plsremind.ID, count: int) -> None:
-        """Add completed items to a user, one second apart, newest first."""
         await self._sql(
             """INSERT INTO items (id, user_id, list_id, title, status, completed_at, created_at, updated_at)
                SELECT gen_random_uuid(), $1, (SELECT id FROM lists WHERE user_id = $1 AND is_inbox),
@@ -196,10 +186,5 @@ class Kit:
         tap = Tap(self._session())
         session = typing.cast("aiohttp.ClientSession", tap)
         client = plsremind.Client(self.hub.url, token=token, intents=intents, session=session)
-
-        async def record(event: plsremind.Event) -> None:
-            seen_event_types.add(type(event))
-
-        client.subscribe(plsremind.Event, record)
         self._closers.append(client.close)
         return Tapped(client, tap)

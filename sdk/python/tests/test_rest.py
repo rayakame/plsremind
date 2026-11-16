@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import collections.abc
 import dataclasses
 import datetime
@@ -12,6 +13,7 @@ import pytest
 
 from plsremind import errors
 from plsremind import models
+from plsremind import rest as rest_module
 from plsremind.enums import DeliveryStatus
 from plsremind.enums import FollowUp
 from plsremind.enums import ItemSort
@@ -650,3 +652,133 @@ async def test_paginate_starts_at_a_given_cursor(hub: fakes.FakeHub) -> None:
     async with client(hub) as rest:
         assert len([item async for item in paginate(rest.list_items, cursor="from-sync")]) == 1
     assert hub.requests[0].query == {"cursor": "from-sync"}
+
+
+@pytest.fixture
+def waits(monkeypatch: pytest.MonkeyPatch) -> list[float]:
+    recorded: list[float] = []
+
+    async def sleep(seconds: float) -> None:
+        recorded.append(seconds)
+        await asyncio.sleep(0)
+
+    monkeypatch.setattr(rest_module, "_sleep", sleep)
+    return recorded
+
+
+async def test_the_wait_the_hub_asks_for_is_sat_out(hub: fakes.FakeHub, waits: list[float]) -> None:
+    hub.answer("GET", "/info", fakes.limited("7"), fakes.limited("29.5"), fakes.Reply(json=fixtures.INFO))
+    async with client(hub) as rest:
+        assert (await rest.get_info()).version == "0.3.0"
+    assert waits == [7.0, 29.5]
+    assert len(hub.requests) == 3
+
+
+async def test_a_wait_of_thirty_seconds_is_too_long(hub: fakes.FakeHub, waits: list[float]) -> None:
+    hub.answer("GET", "/info", fakes.limited("1"), fakes.limited("30"), fakes.Reply(json=fixtures.INFO))
+    async with client(hub) as rest:
+        with pytest.raises(errors.RateLimitedError) as caught:
+            await rest.get_info()
+    assert caught.value.retry_after == 30
+    assert waits == [1.0]
+    assert len(hub.requests) == 2
+
+
+async def test_a_timeout_is_not_retried(hub: fakes.FakeHub, waits: list[float]) -> None:
+    hub.answer("GET", "/info", fakes.Reply(json=fixtures.INFO, delay=0.5), fakes.Reply(json=fixtures.INFO))
+    async with client(hub, timeout=0.05) as rest:
+        with pytest.raises(errors.NetworkError):
+            await rest.get_info()
+    assert len(hub.requests) == 1
+    assert waits == []
+
+
+async def test_an_unreadable_answer_is_not_fetched_again(hub: fakes.FakeHub, waits: list[float]) -> None:
+    hub.answer("GET", "/info", fakes.Reply(200, body=b"<html>"), fakes.Reply(json=fixtures.INFO))
+    async with client(hub) as rest:
+        with pytest.raises(errors.NetworkError):
+            await rest.get_info()
+    assert len(hub.requests) == 1
+    assert waits == []
+
+
+@pytest.mark.parametrize("status", [400, 401, 403, 404, 409, 422, 500, 502, 503])
+async def test_no_other_error_is_retried(hub: fakes.FakeHub, waits: list[float], status: int) -> None:
+    refused = fakes.Reply(status, {"error": {"code": "x", "message": "no"}}, headers={"Retry-After": "1"})
+    hub.answer("GET", "/info", refused, fakes.Reply(json=fixtures.INFO))
+    async with client(hub) as rest:
+        with pytest.raises(errors.APIError):
+            await rest.get_info()
+    assert len(hub.requests) == 1
+    assert waits == []
+
+
+async def test_durations_the_hub_cannot_hold_are_refused_before_sending(hub: fakes.FakeHub) -> None:
+    async with client(hub) as rest:
+        with pytest.raises(ValueError, match="whole minutes"):
+            await rest.create_reminder(ITEM, after=datetime.timedelta(seconds=30))
+        with pytest.raises(ValueError, match="whole minutes"):
+            await rest.create_reminder(ITEM, after=datetime.timedelta(minutes=5, seconds=1))
+        with pytest.raises(ValueError, match="whole minutes"):
+            await rest.set_reminder_plan(Priority.LOW, before=[datetime.timedelta(0)], follow_up=FollowUp.NEVER)
+    assert hub.requests == []
+
+
+@pytest.mark.parametrize(
+    ("status", "kind"),
+    [
+        (400, errors.BadRequestError),
+        (401, errors.UnauthorizedError),
+        (403, errors.ForbiddenError),
+        (404, errors.NotFoundError),
+        (409, errors.ConflictError),
+        (418, errors.APIError),
+        (422, errors.BadRequestError),
+        (429, errors.RateLimitedError),
+        (500, errors.ServerError),
+        (503, errors.ServerError),
+    ],
+)
+async def test_the_status_picks_the_error_class(hub: fakes.FakeHub, status: int, kind: type[errors.APIError]) -> None:
+    hub.answer("GET", "/info", fakes.error(status, "some_code", "Something is wrong."))
+    async with client(hub) as rest:
+        with pytest.raises(errors.APIError) as caught:
+            await rest.get_info()
+    assert type(caught.value) is kind
+    assert (caught.value.status, caught.value.code) == (status, "some_code")
+
+
+OWN_ACCOUNT: list[Call] = [
+    lambda r: r.update_user(display_name="x"),
+    lambda r: r.list_identities(),
+    lambda r: r.set_reminder_plan(Priority.LOW, before=[datetime.timedelta(days=1)], follow_up=FollowUp.NEVER),
+    lambda r: r.reset_reminder_plan(Priority.LOW),
+    lambda r: r.list_user_connections(),
+    lambda r: r.set_connection_grant(CON, enabled=True),
+    lambda r: r.list_reminder_log(),
+]
+
+
+@pytest.mark.parametrize("call", OWN_ACCOUNT)
+async def test_what_only_the_user_may_do_is_refused_for_a_connection_before_sending(
+    hub: fakes.FakeHub, call: Call
+) -> None:
+    async with client(hub, CONNECTION_TOKEN) as rest:
+        with pytest.raises(TypeError, match="personal token"):
+            await call(rest)
+    assert hub.requests == []
+
+
+def test_calls_about_the_account_itself_take_no_user() -> None:
+    names = [
+        "update_user",
+        "list_identities",
+        "set_reminder_plan",
+        "reset_reminder_plan",
+        "list_user_connections",
+        "set_connection_grant",
+        "list_reminder_log",
+    ]
+    assert [name for name in names if "user" in inspect.signature(getattr(RESTClient, name)).parameters] == []
+    assert "user" in inspect.signature(RESTClient.list_reminder_plans).parameters
+    assert "user" in inspect.signature(RESTClient.get_user).parameters

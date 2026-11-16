@@ -1,5 +1,3 @@
-"""A stand-in hub on a local port: real HTTP and WebSocket, scripted answers."""
-
 from __future__ import annotations
 
 import asyncio
@@ -50,8 +48,6 @@ def limited(retry_after: str | None) -> Reply:
 
 
 class FakeConnection:
-    """The hub's end of one gateway connection."""
-
     def __init__(self, socket: aiohttp.web.WebSocketResponse, request: aiohttp.web.Request) -> None:
         self._socket = socket
         self._request = request
@@ -70,11 +66,9 @@ class FakeConnection:
                 self._closed.set_result(self._socket.close_code)
 
     async def receive(self, timeout: float = 2.0) -> dict[str, typing.Any]:  # ruff: ignore[async-function-with-timeout]
-        """The next frame the client sent."""
         return await asyncio.wait_for(self._frames.get(), timeout)
 
     async def receive_op(self, op: int, timeout: float = 2.0) -> dict[str, typing.Any]:  # ruff: ignore[async-function-with-timeout]
-        """The next frame with this opcode, skipping others such as heartbeats."""
         async with asyncio.timeout(timeout):
             while True:
                 frame = await self._frames.get()
@@ -119,13 +113,12 @@ class FakeConnection:
         await self._socket.close(code=code, message=reason.encode())
 
     def drop(self) -> None:
-        """Cut the connection the way a network would, without a close frame."""
+        # Cut the connection the way a network would, without a close frame.
         transport = self._request.transport
         assert transport is not None
         transport.abort()
 
     async def closed(self, timeout: float = 2.0) -> int | None:  # ruff: ignore[async-function-with-timeout]
-        """Wait until the client is gone and return the close code it sent."""
         return await asyncio.wait_for(asyncio.shield(self._closed), timeout)
 
 
@@ -135,7 +128,6 @@ class FakeGateway:
         self.opened = 0
 
     async def connection(self, timeout: float = 2.0) -> FakeConnection:  # ruff: ignore[async-function-with-timeout]
-        """The next connection a client opens."""
         return await asyncio.wait_for(self._connections.get(), timeout)
 
     def none_waiting(self) -> bool:
@@ -182,7 +174,7 @@ class FakeHub:
         await self._runner.cleanup()
 
     def answer(self, method: str, path: str, *replies: Reply) -> None:
-        """Queue answers for a call. The last one repeats."""
+        # Queue answers for a call. The last one repeats.
         self._answers[method, path] = list(replies)
 
     async def _handle(self, request: aiohttp.web.Request) -> aiohttp.web.StreamResponse:
@@ -207,7 +199,6 @@ class FakeHub:
 
 
 async def until(condition: collections.abc.Callable[[], object], timeout: float = 2.0) -> None:  # ruff: ignore[async-function-with-timeout]
-    """Wait for something another task brings about."""
     async with asyncio.timeout(timeout):
         while not condition():  # ruff: ignore[async-busy-wait]
             await asyncio.sleep(0.005)

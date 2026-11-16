@@ -5,6 +5,7 @@ import typing
 import msgspec
 import pytest
 
+from plsremind import _events
 from plsremind import events
 from plsremind import models
 from plsremind._cache import CacheStore
@@ -33,7 +34,7 @@ def done(number: int, completed_at: str, **changes: object) -> Document:
 
 
 def event(name: str, payload: Document, *, connection: bool = False) -> events.Event:
-    built = events.decode_event(name, msgspec.Raw(fixtures.raw(payload)), connection=connection)
+    built = _events.decode_event(name, msgspec.Raw(fixtures.raw(payload)), connection=connection)
     assert built is not None
     return built
 

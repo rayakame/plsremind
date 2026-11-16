@@ -56,8 +56,12 @@ _LONGEST_WAIT: typing.Final = 30.0
 _TOO_MANY: typing.Final = 429
 _FIRST_ERROR: typing.Final = 400
 
+_sleep = asyncio.sleep
+
+# Marks a call whose path names no user.
 _NO_USER: typing.Final = object()
-"""Marks a call whose path names no user."""
+# Marks a call about the account itself, which the hub opens to the user alone.
+_OWN: typing.Final = object()
 
 
 class _ErrorDetail(msgspec.Struct, frozen=True, kw_only=True):
@@ -68,6 +72,30 @@ class _ErrorDetail(msgspec.Struct, frozen=True, kw_only=True):
 
 class _ErrorBody(msgspec.Struct, frozen=True, kw_only=True):
     error: _ErrorDetail
+
+
+_BY_STATUS: typing.Final[dict[int, type[errors.APIError]]] = {
+    400: errors.BadRequestError,
+    401: errors.UnauthorizedError,
+    403: errors.ForbiddenError,
+    404: errors.NotFoundError,
+    409: errors.ConflictError,
+    422: errors.BadRequestError,
+}
+_SERVER: typing.Final = 500
+
+
+def _api_error(
+    status: int,
+    code: str,
+    message: str,
+    fields: collections.abc.Mapping[str, str] | None = None,
+    retry_after: float | None = None,
+) -> errors.APIError:
+    if status == _TOO_MANY:
+        return errors.RateLimitedError(status, code, message, fields, retry_after)
+    kind = _BY_STATUS.get(status, errors.ServerError if status >= _SERVER else errors.APIError)
+    return kind(status, code, message, fields)
 
 
 def _segment(value: str) -> str:
@@ -147,6 +175,11 @@ class RESTClient:
     def _target(self, path: str, user: ID | object | None) -> str:
         if user is _NO_USER:
             return path
+        if user is _OWN:
+            if self.is_connection:
+                msg = "This is about the account itself, so it takes a personal token and not a connection's."
+                raise TypeError(msg)
+            return f"/users/@me{path}"
         if user is None or user == "@me":
             if self.is_connection:
                 msg = "A connection must say which user it acts for: pass user=..."
@@ -189,13 +222,13 @@ class RESTClient:
                 return answer
             if self._retry and wait is not None and wait < _LONGEST_WAIT and attempt < _MAX_RETRIES:
                 attempt += 1
-                await asyncio.sleep(wait)
+                await _sleep(wait)
                 continue
             try:
                 detail = _codec.decode(answer, _ErrorBody).error
             except msgspec.MsgspecError:
                 detail = _ErrorDetail(code="unknown", message=f"The hub answered {method} {target} with {status}.")
-            raise errors.api_error(status, detail.code, detail.message, detail.fields, wait)
+            raise _api_error(status, detail.code, detail.message, detail.fields, wait)
 
     async def _fetch[T](
         self,
@@ -232,10 +265,9 @@ class RESTClient:
         locale: str | _Unset | None = _UNSET,
         preferences: collections.abc.Mapping[str, object] | _Unset = _UNSET,
         quiet_hours: QuietHours | _Unset | None = _UNSET,
-        user: ID | None = None,
         nonce: str | None = None,
     ) -> User:
-        """Change a user's profile. `preferences` replaces the stored ones as a whole."""
+        """Change the user's profile. `preferences` replaces the stored ones as a whole."""
         body = {
             "display_name": display_name,
             "timezone": timezone,
@@ -243,11 +275,11 @@ class RESTClient:
             "preferences": preferences,
             "quiet_hours": quiet_hours,
         }
-        return await self._fetch(User, "PATCH", "", user=user, body=body, nonce=nonce)
+        return await self._fetch(User, "PATCH", "", user=_OWN, body=body, nonce=nonce)
 
-    async def list_identities(self, *, user: ID | None = None) -> tuple[Identity, ...]:
-        """List the accounts a user signs in with or has linked."""
-        return await self._fetch(tuple[Identity, ...], "GET", "/identities", user=user)
+    async def list_identities(self) -> tuple[Identity, ...]:
+        """List the accounts the user signs in with or has linked."""
+        return await self._fetch(tuple[Identity, ...], "GET", "/identities", user=_OWN)
 
     async def list_lists(self, *, user: ID | None = None) -> tuple[List, ...]:
         """List a user's lists in their order."""
@@ -269,7 +301,7 @@ class RESTClient:
         return await self._fetch(List, "PATCH", path, user=user, body={"name": name}, nonce=nonce)
 
     async def delete_list(self, list_id: ID, *, user: ID | None = None, nonce: str | None = None) -> None:
-        """Delete a list together with its items. The inbox cannot be deleted."""
+        """Delete a list. Its items move to the inbox, which itself cannot be deleted."""
         await self._send("DELETE", f"/lists/{_segment(list_id)}", user=user, nonce=nonce)
 
     async def list_reminder_plans(self, *, user: ID | None = None) -> tuple[ReminderPlan, ...]:
@@ -282,19 +314,16 @@ class RESTClient:
         *,
         before: collections.abc.Sequence[datetime.timedelta],
         follow_up: FollowUp,
-        user: ID | None = None,
         nonce: str | None = None,
     ) -> ReminderPlan:
         """Replace the reminder plan of one priority."""
         path = f"/reminder-plans/{_segment(priority.value)}"
         body = {"before": before, "follow_up": follow_up}
-        return await self._fetch(ReminderPlan, "PUT", path, user=user, body=body, nonce=nonce)
+        return await self._fetch(ReminderPlan, "PUT", path, user=_OWN, body=body, nonce=nonce)
 
-    async def reset_reminder_plan(
-        self, priority: Priority, *, user: ID | None = None, nonce: str | None = None
-    ) -> None:
+    async def reset_reminder_plan(self, priority: Priority, *, nonce: str | None = None) -> None:
         """Put the reminder plan of one priority back to the hub's default."""
-        await self._send("DELETE", f"/reminder-plans/{_segment(priority.value)}", user=user, nonce=nonce)
+        await self._send("DELETE", f"/reminder-plans/{_segment(priority.value)}", user=_OWN, nonce=nonce)
 
     async def list_items(
         self,
@@ -469,9 +498,9 @@ class RESTClient:
         """For a connection: find the hub user behind an account at the connection's provider."""
         return await self._fetch(LookupResult, "GET", "/connection/users/lookup", query={"external_id": external_id})
 
-    async def list_user_connections(self, *, user: ID | None = None) -> tuple[UserConnection, ...]:
-        """List the hub's connections as a user sees them."""
-        return await self._fetch(tuple[UserConnection, ...], "GET", "/connections", user=user)
+    async def list_user_connections(self) -> tuple[UserConnection, ...]:
+        """List the hub's connections as the user sees them."""
+        return await self._fetch(tuple[UserConnection, ...], "GET", "/connections", user=_OWN)
 
     async def set_connection_grant(
         self,
@@ -479,13 +508,12 @@ class RESTClient:
         *,
         enabled: bool | _Unset = _UNSET,
         remind: bool | _Unset = _UNSET,
-        user: ID | None = None,
         nonce: str | None = None,
     ) -> UserConnection:
-        """Say whether a connection may act for a user and whether it reminds them."""
+        """Say whether a connection may act for the user and whether it reminds them."""
         path = f"/connections/{_segment(connection_id)}"
         body = {"enabled": enabled, "remind": remind}
-        return await self._fetch(UserConnection, "PUT", path, user=user, body=body, nonce=nonce)
+        return await self._fetch(UserConnection, "PUT", path, user=_OWN, body=body, nonce=nonce)
 
     async def list_deliveries(self) -> tuple[Delivery, ...]:
         """List the open deliveries of this token, for adapters that do not use the gateway.
@@ -524,11 +552,10 @@ class RESTClient:
         item_id: ID | _Unset = _UNSET,
         limit: int | _Unset = _UNSET,
         cursor: str | None = None,
-        user: ID | None = None,
     ) -> Page[ReminderLogEntry]:
-        """List one page of the reminders that came due for a user, newest first."""
+        """List one page of the reminders that came due for the user, newest first."""
         query = {"item_id": item_id, "limit": limit, "cursor": cursor}
-        return await self._fetch(Page[ReminderLogEntry], "GET", "/reminder-log", user=user, query=query)
+        return await self._fetch(Page[ReminderLogEntry], "GET", "/reminder-log", user=_OWN, query=query)
 
 
 async def paginate[T, **P](

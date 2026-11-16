@@ -9,6 +9,7 @@ import sys
 import typing
 
 import aiohttp
+import msgspec
 import pytest
 
 import plsremind
@@ -603,13 +604,17 @@ async def test_close_waits_for_running_listeners_and_cancels_stuck_ones(
     finished: list[str] = []
     cancelled: list[str] = []
 
+    brief_entered, stuck_entered = asyncio.Event(), asyncio.Event()
+
     @client.listen()
     async def brief(event: plsremind.ItemCreateEvent) -> None:
+        brief_entered.set()
         await asyncio.sleep(0.05)
         finished.append(event.item.title)
 
     @client.listen()
     async def stuck(event: plsremind.ItemCreateEvent) -> None:
+        stuck_entered.set()
         try:
             await asyncio.sleep(60)
         except asyncio.CancelledError:
@@ -619,8 +624,7 @@ async def test_close_waits_for_running_listeners_and_cancels_stuck_ones(
     monkeypatch.setattr(plsremind.client, "LISTENER_GRACE", 0.2)
     connection = await started(hub, client)
     await connection.dispatch("item.created", change(item(1)))
-    await until(lambda: len(asyncio.all_tasks()) > 3)
-    await asyncio.sleep(0.01)
+    await asyncio.wait_for(asyncio.gather(brief_entered.wait(), stuck_entered.wait()), 2)
     await client.close()
     assert finished == ["item 1"]
     assert cancelled == ["item 1"]
@@ -651,7 +655,8 @@ async def test_close_during_a_reconnect_wait(hub: fakes.FakeHub, make: Make) -> 
     connection.drop()
     await until(lambda: client.status is ClientStatus.RECONNECTING)
     await client.close()
-    await asyncio.sleep(0.05)
+    assert not [task for task in asyncio.all_tasks() if task.get_name().startswith("plsremind")]
+    await asyncio.sleep(1.2)
     assert hub.gateway.none_waiting()
 
 
@@ -741,3 +746,201 @@ async def test_the_reason_the_hub_could_not_be_reached_is_kept(hub: fakes.FakeHu
         await asyncio.wait_for(client.start(), 2)
     assert isinstance(caught.value.__cause__, plsremind.UnauthorizedError)
     assert client.status is ClientStatus.CLOSED
+
+
+async def test_an_unreadable_ready_ends_the_client(hub: fakes.FakeHub, make: Make) -> None:
+    client = make()
+    starting = asyncio.create_task(client.start())
+    connection = await hub.gateway.connection()
+    await connection.hello()
+    await connection.receive()
+    await connection.dispatch("READY", {"session_id": "s1", "intents": ["items"], "users": []})
+    with pytest.raises(plsremind.GatewayError, match="READY could not be read") as caught:
+        await asyncio.wait_for(starting, 2)
+    assert isinstance(caught.value.__cause__, msgspec.MsgspecError)
+    assert client.status is ClientStatus.CLOSED
+
+
+async def test_an_unreadable_sync_ends_the_client(hub: fakes.FakeHub, make: Make) -> None:
+    client = make()
+    starting = asyncio.create_task(client.start())
+    connection = await handshake(hub)
+    await connection.dispatch("user.sync", sync(items=[{"id": 5}]))
+    with pytest.raises(plsremind.GatewayError, match="state of a user could not be read"):
+        await asyncio.wait_for(starting, 2)
+    assert client.status is ClientStatus.CLOSED
+
+
+async def test_an_unreadable_change_starts_the_session_over_so_the_cache_cannot_drift(
+    hub: fakes.FakeHub, make: Make, caplog: pytest.LogCaptureFixture
+) -> None:
+    client = make()
+    ready = collect(client, plsremind.ReadyEvent)
+    connection = await started(hub, client, items=[item(1)])
+    with caplog.at_level(logging.ERROR, logger="plsremind"):
+        await connection.dispatch("item.updated", change({"id": item(1)["id"], "title": 5}))
+        again = await hub.gateway.connection()
+    assert "item.updated" in caplog.records[0].getMessage()
+    await again.hello()
+    assert (await again.receive())["op"] == IDENTIFY
+    await again.ready(users=[ME], principal=fixtures.PRINCIPAL, intents=["users", "lists", "items", "plans"])
+    await again.dispatch("user.sync", sync(items=[item(1, title="as the hub has it")]))
+    await until(lambda: len(ready) == 2)
+    assert [entry.title for entry in client.cache.get_items()] == ["as the hub has it"]
+
+
+async def test_exception_events_reach_base_class_listeners_and_waiters(hub: fakes.FakeHub, make: Make) -> None:
+    client = make()
+    everything = collect(client, plsremind.Event)
+
+    @client.listen()
+    async def broken(event: plsremind.ItemCreateEvent) -> None:
+        raise ValueError(event.item.title)
+
+    connection = await started(hub, client)
+    waiting = asyncio.create_task(client.wait_for(plsremind.ExceptionEvent, timeout=2))
+    await asyncio.sleep(0)
+    await connection.dispatch("item.created", change(item(1)))
+    failure = await waiting
+    assert str(failure.exception) == "item 1"
+    await until(lambda: plsremind.ExceptionEvent in {type(event) for event in everything})
+    assert broken is not None
+
+
+async def test_close_during_the_first_connect_fails_the_start(hub: fakes.FakeHub, make: Make) -> None:
+    before = asyncio.all_tasks()
+    client = make()
+    starting = asyncio.create_task(client.start())
+    connection = await hub.gateway.connection()
+    await connection.hello()
+    await connection.receive()
+    await client.close()
+    with pytest.raises(plsremind.GatewayError, match="The client was closed"):
+        await asyncio.wait_for(starting, 2)
+    assert await connection.closed() == 1000
+    assert client.status is ClientStatus.IDLE
+    await asyncio.sleep(0.05)
+    assert asyncio.all_tasks() - before == set()
+
+
+async def test_start_after_the_hub_turned_the_client_away_leaks_no_session(
+    hub: fakes.FakeHub, make: Make, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    opened: list[aiohttp.ClientSession] = []
+    original = aiohttp.ClientSession
+
+    def recording() -> aiohttp.ClientSession:
+        opened.append(original())
+        return opened[-1]
+
+    monkeypatch.setattr(plsremind.client.aiohttp, "ClientSession", recording)
+    client = make()
+    connection = await started(hub, client)
+    await connection.close(4004, "no")
+    await until(lambda: client.status is ClientStatus.CLOSED)
+    await started(hub, client)
+    assert client.status is ClientStatus.CONNECTED
+    # One session for REST and one for the gateway; the socket session of the first start is gone.
+    assert sum(not session.closed for session in opened) == 2
+    await client.close()
+    assert all(session.closed for session in opened)
+
+
+async def test_a_listener_calling_close_while_the_client_closes_does_not_stall(hub: fakes.FakeHub, make: Make) -> None:
+    client = make()
+    entered = asyncio.Event()
+    release = asyncio.Event()
+
+    @client.listen()
+    async def closes(event: plsremind.ItemCreateEvent) -> None:
+        del event
+        entered.set()
+        await release.wait()
+        await client.close()
+
+    connection = await started(hub, client)
+    await connection.dispatch("item.created", change(item(1)))
+    await asyncio.wait_for(entered.wait(), 2)
+    closing = asyncio.create_task(client.close())
+    await asyncio.sleep(0.01)
+    release.set()
+    await asyncio.wait_for(closing, 1)
+    assert closes is not None
+
+
+async def test_no_listener_task_outlives_close(hub: fakes.FakeHub, make: Make, monkeypatch: pytest.MonkeyPatch) -> None:
+    client = make()
+    entered = asyncio.Event()
+
+    @client.listen()
+    async def fails_slowly(event: plsremind.ItemCreateEvent) -> None:
+        entered.set()
+        await asyncio.sleep(0.05)
+        raise ValueError(event.item.title)
+
+    @client.listen()
+    async def stuck(event: plsremind.ExceptionEvent) -> None:
+        del event
+        await asyncio.sleep(60)
+
+    monkeypatch.setattr(plsremind.client, "LISTENER_GRACE", 0.2)
+    connection = await started(hub, client)
+    await connection.dispatch("item.created", change(item(1)))
+    await asyncio.wait_for(entered.wait(), 2)
+    await client.close()
+    assert not [task for task in asyncio.all_tasks() if task.get_name().startswith("plsremind-listener")]
+    assert fails_slowly is not stuck
+
+
+async def test_a_connection_must_name_the_user_even_before_it_is_connected(hub: fakes.FakeHub, make: Make) -> None:
+    client = make(token="plsr_con_secret")
+    with pytest.raises(TypeError, match="which user"):
+        client.cache.get_items()
+    assert client.cache.get_items(plsremind.ID(ME)) == ()
+    assert hub.requests == []
+
+
+async def test_waiters_fail_when_the_client_closes(hub: fakes.FakeHub, make: Make) -> None:
+    client = make()
+    await started(hub, client)
+    waiting = asyncio.create_task(client.wait_for(plsremind.ItemCreateEvent, timeout=None))
+    await asyncio.sleep(0)
+    await client.close()
+    with pytest.raises(plsremind.GatewayError, match="The client was closed"):
+        await asyncio.wait_for(waiting, 1)
+
+
+async def test_waiters_fail_when_the_hub_turns_the_client_away(hub: fakes.FakeHub, make: Make) -> None:
+    client = make()
+    connection = await started(hub, client)
+    waiting = asyncio.create_task(client.wait_for(plsremind.ItemCreateEvent, timeout=None))
+    closed = asyncio.create_task(client.wait_for(plsremind.ClosedEvent, timeout=2))
+    await asyncio.sleep(0)
+    await connection.close(4004, "The token was deleted.")
+    assert (await closed).error.code == 4004
+    with pytest.raises(plsremind.GatewayError, match="The token was deleted"):
+        await asyncio.wait_for(waiting, 1)
+
+
+async def test_run_stops_on_a_signal_while_still_connecting() -> None:
+    script = pathlib.Path(__file__).with_name("run_against_silence.py")
+    process = await asyncio.create_subprocess_exec(
+        sys.executable,
+        "-m",
+        f"tests.{script.stem}",
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.STDOUT,
+        cwd=script.parents[1],
+    )
+    assert process.stdout is not None
+    try:
+        assert (await asyncio.wait_for(process.stdout.readline(), 15)).decode().strip() == "connecting"
+        await asyncio.sleep(0.3)
+        process.send_signal(signal.SIGINT)
+        rest, _ = await asyncio.wait_for(process.communicate(), 5)
+    finally:
+        if process.returncode is None:
+            process.kill()
+            await process.wait()
+    assert process.returncode == 0, rest.decode()
+    assert "stopped idle" in rest.decode()

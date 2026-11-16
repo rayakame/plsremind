@@ -1,5 +1,3 @@
-"""One complete document per object, in the form the hub writes."""
-
 from __future__ import annotations
 
 import json

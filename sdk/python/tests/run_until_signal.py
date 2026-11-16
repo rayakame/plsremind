@@ -1,5 +1,3 @@
-"""Runs a client against a fake hub until a signal ends it. Started by test_client.py."""
-
 from __future__ import annotations
 
 import asyncio

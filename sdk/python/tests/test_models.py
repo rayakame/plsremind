@@ -237,3 +237,29 @@ def test_encode_query() -> None:
         "due_before": "2026-11-13T18:00:00Z",
         "priority": "high",
     }
+
+
+def test_a_duration_or_clock_time_the_sdk_cannot_read_does_not_fail_the_object(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    document = json.loads(fixtures.raw(fixtures.DELIVERY))
+    document["reminder"]["offset"] = "2w"
+    with caplog.at_level(logging.WARNING, logger="plsremind"):
+        delivery = decode(models.Delivery, document)
+        decode(models.Delivery, document)
+        profile = decode(models.Profile, {**fixtures.PROFILE, "quiet_hours": {"start": "24:00", "end": "07:00"}})
+    assert delivery.reminder.offset == datetime.timedelta(0)
+    assert delivery.item.title == "Hand in the report"
+    assert profile.quiet_hours is not None
+    assert profile.quiet_hours.start == datetime.time(0, 0)
+    assert profile.quiet_hours.end == datetime.time(7, 0)
+    assert [record.getMessage() for record in caplog.records] == [
+        "The duration '2w' is in a form this version does not know, zero stands in for it.",
+        "The time of day '24:00' is in a form this version does not know, midnight stands in for it.",
+    ]
+
+
+def test_encode_body_refuses_durations_the_hub_cannot_hold() -> None:
+    for unsendable in (datetime.timedelta(seconds=30), datetime.timedelta(0), datetime.timedelta(minutes=1, seconds=1)):
+        with pytest.raises(ValueError, match="whole minutes"):
+            _codec.encode_body({"in": unsendable})

@@ -114,3 +114,61 @@ async def test_a_connection_is_told_about_a_reminder_with_the_address_to_use(kit
     user = (await waiting).delivery.user
     assert (user.id, user.locale, user.external_ids) == (mia.id, "de", (mia.external_id,))
     assert str(user.timezone) == "Europe/Berlin"
+
+
+async def test_a_connection_acknowledges_and_the_log_names_it(kit: helpers.Kit) -> None:
+    provider = helpers.unique("chat")
+    mia = await kit.linked(provider, "mia")
+    bot_id, bot_token = await kit.connection(provider)
+    client = kit.client(bot_token, Intents.DELIVERIES).client
+    await client.start()
+    waiting = asyncio.create_task(client.wait_for(plsremind.DeliveryCreateEvent, timeout=30))
+    item = await mia.rest.create_item(title="ping me")
+    await mia.rest.create_reminder(item.id, at=datetime.datetime.now(datetime.UTC) + datetime.timedelta(seconds=2))
+    delivery = (await waiting).delivery
+    assert [open_one.id for open_one in await client.rest.list_deliveries()] == [delivery.id]
+    result = await client.rest.acknowledge_delivery(delivery.id, status=plsremind.DeliveryStatus.DELIVERED)
+    assert result.status is plsremind.DeliveryStatus.DELIVERED
+    assert await client.rest.list_deliveries() == ()
+    entry = (await mia.rest.list_reminder_log(item_id=item.id)).data[0].deliveries[0]
+    assert (entry.channel.kind, entry.channel.id) == (plsremind.ChannelKind.CONNECTION, bot_id)
+    assert entry.status is plsremind.DeliveryStatus.DELIVERED
+
+
+async def test_a_connection_resumes_after_a_drop_and_misses_nothing(kit: helpers.Kit) -> None:
+    provider = helpers.unique("chat")
+    mia = await kit.linked(provider, "mia")
+    tom = await kit.linked(provider, "tom")
+    _, bot_token = await kit.connection(provider)
+    tapped = kit.client(bot_token, Intents.USERS | Intents.ITEMS)
+    client = tapped.client
+    await client.start()
+    resumed = asyncio.create_task(client.wait_for(plsremind.ResumedEvent, timeout=20))
+    disconnected = asyncio.create_task(client.wait_for(plsremind.DisconnectedEvent, timeout=10))
+    await asyncio.sleep(0)
+    tapped.tap.drop_current()
+    await disconnected
+    first = await mia.rest.create_item(title="for mia, while away")
+    second = await tom.rest.create_item(title="for tom, while away")
+    await resumed
+    await until(lambda: client.cache.get_item(first.id) and client.cache.get_item(second.id))
+    assert [item.id for item in client.cache.get_items(mia.id)] == [first.id]
+    assert [item.id for item in client.cache.get_items(tom.id)] == [second.id]
+    assert len(tapped.tap.sockets) == 2
+
+
+async def test_a_connection_identifies_again_after_a_hub_restart(kit: helpers.Kit) -> None:
+    provider = helpers.unique("chat")
+    mia = await kit.linked(provider, "mia")
+    before = await mia.rest.create_item(title="before the restart")
+    _, bot_token = await kit.connection(provider)
+    client = kit.client(bot_token, Intents.USERS | Intents.ITEMS).client
+    await client.start()
+    ready = asyncio.create_task(client.wait_for(plsremind.ReadyEvent, timeout=40))
+    await asyncio.sleep(0)
+    await asyncio.to_thread(kit.hub.restart)
+    during = await mia.rest.create_item(title="during the restart")
+    assert (await ready).users == (mia.id,)
+    await until(lambda: client.cache.get_item(during.id), timeout=15)
+    assert sorted(item.id for item in client.cache.get_items(mia.id)) == sorted([before.id, during.id])
+    assert client.status is plsremind.ClientStatus.CONNECTED

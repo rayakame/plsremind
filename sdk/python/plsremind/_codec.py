@@ -1,5 +1,3 @@
-"""Turns the hub's JSON into the SDK's types and back."""
-
 from __future__ import annotations
 
 import collections.abc
@@ -26,6 +24,7 @@ from plsremind.types import parse_duration
 _LOGGER: typing.Final = logging.getLogger("plsremind")
 _UTC: typing.Final = zoneinfo.ZoneInfo("UTC")
 _unknown_zones: set[str] = set()
+_unknown_texts: set[str] = set()
 
 
 def _zone(name: str) -> zoneinfo.ZoneInfo:
@@ -38,11 +37,33 @@ def _zone(name: str) -> zoneinfo.ZoneInfo:
         return _UTC
 
 
+def _warn_once(text: str, message: str) -> None:
+    if text not in _unknown_texts:
+        _unknown_texts.add(text)
+        _LOGGER.warning(message, text)
+
+
+def _duration(text: str) -> Duration:
+    try:
+        return parse_duration(text)
+    except ValueError:
+        _warn_once(text, "The duration %r is in a form this version does not know, zero stands in for it.")
+        return Duration(0)
+
+
+def _clock(text: str) -> ClockTime:
+    try:
+        return parse_clock(text)
+    except ValueError:
+        _warn_once(text, "The time of day %r is in a form this version does not know, midnight stands in for it.")
+        return ClockTime(0, 0)
+
+
 def _hook(kind: type, value: typing.Any) -> object:  # ruff: ignore[any-type]
     if kind is Duration:
-        return parse_duration(value)
+        return _duration(value)
     if kind is ClockTime:
-        return parse_clock(value)
+        return _clock(value)
     if kind is zoneinfo.ZoneInfo:
         return _zone(value)
     if kind is types.MappingProxyType:
@@ -69,6 +90,13 @@ def _instant(value: datetime.datetime) -> str:
     return value.astimezone(datetime.UTC).isoformat().replace("+00:00", "Z")
 
 
+def _sendable(value: datetime.timedelta) -> str:
+    if value <= datetime.timedelta(0) or value.seconds % 60 or value.microseconds:
+        msg = f"{value!r} cannot be sent: the hub counts durations in whole minutes, from one minute up."
+        raise ValueError(msg)
+    return format_duration(value)
+
+
 def _plain(value: object) -> object:  # ruff: ignore[complex-structure, too-many-return-statements]
     if value is None or isinstance(value, str | bool | int | float):
         return value
@@ -79,14 +107,14 @@ def _plain(value: object) -> object:  # ruff: ignore[complex-structure, too-many
     if isinstance(value, datetime.date):
         return value.isoformat()
     if isinstance(value, datetime.timedelta):
-        return format_duration(value)
+        return _sendable(value)
     if isinstance(value, datetime.time):
         return format_clock(value)
     if isinstance(value, zoneinfo.ZoneInfo):
         return value.key
     if isinstance(value, models.ReminderOverride):
         if value.mode is OverrideMode.CUSTOM:
-            return {"mode": value.mode.value, "before": [format_duration(offset) for offset in value.before]}
+            return {"mode": value.mode.value, "before": [_sendable(offset) for offset in value.before]}
         return {"mode": value.mode.value}
     if isinstance(value, msgspec.Struct):
         return {name: _plain(getattr(value, name)) for name in value.__struct_fields__}

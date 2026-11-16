@@ -41,8 +41,18 @@ async def make(hub: fakes.FakeHub) -> collections.abc.AsyncIterator[Make]:
     rest = RESTClient(hub.url, token=TOKEN, session=session)
     made: list[Gateway] = []
 
-    def build(*, random: float = 1.0, url: str | None = None) -> tuple[Gateway, Seen]:
+    def build(
+        *,
+        random: float = 1.0,
+        url: str | None = None,
+        after_dispatch: collections.abc.Callable[[Gateway, str], None] | None = None,
+    ) -> tuple[Gateway, Seen]:
         seen = Seen()
+
+        def dispatched(name: str, payload: msgspec.Raw) -> None:
+            seen.dispatches.append((name, bytes(payload)))
+            if after_dispatch is not None:
+                after_dispatch(gateway, name)
 
         async def address() -> str:
             return url or (await rest.get_info()).gateway_url
@@ -60,7 +70,7 @@ async def make(hub: fakes.FakeHub) -> collections.abc.AsyncIterator[Make]:
             token=TOKEN,
             intents=["items", "deliveries"],
             session=lambda: session,
-            on_dispatch=lambda name, payload: seen.dispatches.append((name, bytes(payload))),
+            on_dispatch=dispatched,
             on_status=seen.statuses.append,
             on_disconnected=lambda code, reason: seen.disconnects.append((code, reason)),
             on_closed=closed,
@@ -365,9 +375,13 @@ async def test_stop_during_a_wait(hub: fakes.FakeHub) -> None:
         connection = await logged_in(hub, gateway)
         connection.drop()
         await asyncio.wait_for(waiting.wait(), 2)
+        before = asyncio.all_tasks()
         await gateway.stop()
+        assert [task for task in before - asyncio.all_tasks() if task.get_name() == "plsremind-gateway"]
+        release.set()
         await asyncio.sleep(0.05)
         assert hub.gateway.none_waiting()
+        assert not [task for task in asyncio.all_tasks() if task.get_name() == "plsremind-gateway"]
     finally:
         await gateway.stop()
         await session.close()
@@ -386,3 +400,110 @@ async def test_start_twice_and_restart_after_stop(hub: fakes.FakeHub, make: Make
     await again.hello()
     assert (await again.receive())["op"] == IDENTIFY
     assert seen.statuses.count(ClientStatus.CONNECTING) == 2
+
+
+async def test_an_unexpected_failure_ends_the_gateway_instead_of_killing_it_silently(hub: fakes.FakeHub) -> None:
+    session = aiohttp.ClientSession()
+    await session.close()
+    closed: list[errors.GatewayError] = []
+    ended = asyncio.Event()
+
+    async def address() -> str:
+        await asyncio.sleep(0)
+        return hub.url.replace("http", "ws") + "/api/v1/gateway"
+
+    def on_closed(error: errors.GatewayError) -> None:
+        closed.append(error)
+        ended.set()
+
+    def ignore(*_: object) -> None:
+        return None
+
+    gateway = Gateway(
+        url=address,
+        token=TOKEN,
+        intents=["items"],
+        session=lambda: session,
+        on_dispatch=ignore,
+        on_status=ignore,
+        on_disconnected=ignore,
+        on_closed=on_closed,
+    )
+    gateway.start()
+    try:
+        await asyncio.wait_for(ended.wait(), 2)
+    finally:
+        await gateway.stop()
+    assert isinstance(closed[0].__cause__, RuntimeError)
+    assert "Session is closed" in closed[0].reason
+
+
+async def test_a_hub_that_never_answers_the_upgrade_counts_as_lost(make: Make, monkeypatch: pytest.MonkeyPatch) -> None:
+    held: list[asyncio.StreamWriter] = []
+
+    async def swallow(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+        held.append(writer)
+        await reader.read()
+
+    server = await asyncio.start_server(swallow, "127.0.0.1", 0)
+    port = server.sockets[0].getsockname()[1]
+    monkeypatch.setattr(_gateway, "HANDSHAKE_SILENCE", 0.1)
+    gateway, seen = make(url=f"ws://127.0.0.1:{port}/api/v1/gateway")
+    try:
+        gateway.start()
+        await asyncio.wait_for(seen.ended.wait(), 2)
+    finally:
+        for writer in held:
+            writer.close()
+        server.close()
+        await server.wait_closed()
+    assert seen.closed[0].reason == "The hub did not finish the handshake."
+
+
+async def test_a_reconnect_request_before_the_first_ready_is_followed(hub: fakes.FakeHub, make: Make) -> None:
+    gateway, seen = make()
+    gateway.start()
+    connection = await hub.gateway.connection()
+    await connection.hello()
+    await connection.receive()
+    await connection.send(RECONNECT)
+    again = await hub.gateway.connection()
+    await again.hello()
+    assert (await again.receive())["op"] == IDENTIFY
+    await again.ready()
+    await until(lambda: seen.names() == ["READY"])
+    assert seen.closed == []
+    assert seen.sleeps == [1.0]
+
+
+async def test_the_session_can_be_started_over_from_a_dispatch(hub: fakes.FakeHub, make: Make) -> None:
+    def restart(gateway: Gateway, name: str) -> None:
+        if name == "item.created":
+            gateway.restart_session()
+
+    gateway, seen = make(after_dispatch=restart)
+    connection = await logged_in(hub, gateway)
+    await connection.dispatch("item.created", {})
+    assert await connection.closed() == 4000
+    again = await hub.gateway.connection()
+    await again.hello()
+    assert (await again.receive())["op"] == IDENTIFY
+    assert seen.sleeps == []
+    assert seen.disconnects == [(None, "The session is started over.")]
+
+
+async def test_a_dispatch_can_end_the_gateway(hub: fakes.FakeHub, make: Make) -> None:
+    def refuse(gateway: Gateway, name: str) -> None:
+        del name
+        gateway.abort(errors.GatewayError("The hub's READY could not be read."))
+
+    gateway, seen = make(after_dispatch=refuse)
+    gateway.start()
+    connection = await hub.gateway.connection()
+    await connection.hello()
+    await connection.receive()
+    await connection.ready()
+    await asyncio.wait_for(seen.ended.wait(), 2)
+    assert seen.closed[0].reason == "The hub's READY could not be read."
+    assert await connection.closed() == 1000
+    assert ClientStatus.CONNECTED not in seen.statuses
