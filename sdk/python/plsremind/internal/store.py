@@ -4,13 +4,13 @@ import typing
 
 import msgspec
 
-from plsremind import _events
 from plsremind import events
-from plsremind._state import UserState
 from plsremind.cache import Cache
 from plsremind.enums import CredentialKind
 from plsremind.enums import Intents
 from plsremind.enums import ItemStatus
+from plsremind.internal import wire
+from plsremind.internal.state import UserState
 
 if typing.TYPE_CHECKING:
     import collections.abc
@@ -60,7 +60,7 @@ class CacheStore(Cache):
         if isinstance(event, events.ChangeEvent):
             state = self._users.get(event.user_id)
             if state is not None:
-                return Applied(_events.with_old(event, self._change(state, event)), None)
+                return Applied(wire.with_old(event, self._change(state, event)), None)
         return Applied(event, None)
 
     def _sync(self, event: events.UserSyncEvent) -> ID | None:

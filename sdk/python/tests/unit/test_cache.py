@@ -5,15 +5,15 @@ import typing
 import msgspec
 import pytest
 
-from plsremind import _events
 from plsremind import events
 from plsremind import models
-from plsremind._cache import CacheStore
 from plsremind.enums import Intents
 from plsremind.enums import ItemStatus
 from plsremind.enums import Priority
+from plsremind.internal import wire
+from plsremind.internal.store import CacheStore
 from plsremind.types import ID
-from tests import fixtures
+from tests.support import fixtures
 
 ME = ID(fixtures.USER_ID)
 OTHER = ID(fixtures.OTHER_USER_ID)
@@ -34,7 +34,7 @@ def done(number: int, completed_at: str, **changes: object) -> Document:
 
 
 def event(name: str, payload: Document, *, connection: bool = False) -> events.Event:
-    built = _events.decode_event(name, msgspec.Raw(fixtures.raw(payload)), connection=connection)
+    built = wire.decode_event(name, msgspec.Raw(fixtures.raw(payload)), connection=connection)
     assert built is not None
     return built
 

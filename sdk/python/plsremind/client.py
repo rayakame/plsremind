@@ -12,14 +12,14 @@ import typing
 import aiohttp
 import msgspec
 
-from plsremind import _cache
-from plsremind import _events
-from plsremind import _gateway
 from plsremind import errors
 from plsremind import events
 from plsremind.enums import ClientStatus
 from plsremind.enums import Intents
 from plsremind.enums import intent_names
+from plsremind.internal import store
+from plsremind.internal import wire
+from plsremind.internal.gateway import Gateway
 from plsremind.rest import RESTClient
 
 if typing.TYPE_CHECKING:
@@ -148,15 +148,15 @@ class Client:
         self._given_session: typing.Final = session
         self._asked: typing.Final = intents
         self._granted: Intents | None = None
-        self._store: typing.Final = _cache.CacheStore(connection=self.rest.is_connection)
+        self._store: typing.Final = store.CacheStore(connection=self.rest.is_connection)
         self._listeners: dict[type[events.Event], list[_AnyListener]] = {}
         self._waiters: dict[type[events.Event], list[_Waiter]] = {}
         self._tasks: set[asyncio.Task[None]] = set()
-        self._gateway: _gateway.Gateway | None = None
+        self._gateway: Gateway | None = None
         self._socket_session: aiohttp.ClientSession | None = None
         self._status = ClientStatus.IDLE
         self._principal: Principal | None = None
-        self._ready: _events.Ready | None = None
+        self._ready: wire.Ready | None = None
         self._waiting: set[ID] = set()
         self._starting: asyncio.Future[None] | None = None
         self._ended: asyncio.Event | None = None
@@ -283,7 +283,7 @@ class Client:
             session = self._given_session
             if session is None:
                 self._socket_session = session = aiohttp.ClientSession()
-            self._gateway = _gateway.Gateway(
+            self._gateway = Gateway(
                 url=self._gateway_url,
                 token=self._token,
                 intents=intent_names(self._asked),
@@ -449,7 +449,7 @@ class Client:
     def _on_dispatch(self, name: str, payload: msgspec.Raw) -> None:  # ruff: ignore[too-many-return-statements]
         if name == "READY":
             try:
-                ready = _events.decode_ready(payload)
+                ready = wire.decode_ready(payload)
             except msgspec.MsgspecError as cause:
                 self._abort("The hub's READY could not be read.", cause)
                 return
@@ -464,11 +464,11 @@ class Client:
         if name == "RESUMED":
             self._emit(events.ResumedEvent())
             return
-        kind = _events.EVENT_CLASSES.get(name)
+        kind = wire.EVENT_CLASSES.get(name)
         if kind is None or not (name in _STATE or self._wanted(kind)):
             return
         try:
-            event = _events.decode_event(name, payload, connection=self.rest.is_connection)
+            event = wire.decode_event(name, payload, connection=self.rest.is_connection)
         except msgspec.MsgspecError as cause:
             self._unreadable(name, cause)
             return

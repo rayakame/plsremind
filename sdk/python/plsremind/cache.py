@@ -5,8 +5,8 @@ from __future__ import annotations
 import typing
 
 if typing.TYPE_CHECKING:
-    from plsremind._state import UserState
     from plsremind.enums import Priority
+    from plsremind.internal.state import UserState
     from plsremind.models import Item
     from plsremind.models import List
     from plsremind.models import Profile

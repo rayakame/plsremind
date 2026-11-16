@@ -6,7 +6,6 @@ import typing
 
 import msgspec
 
-from plsremind import _codec
 from plsremind.enums import DeliveryStatus
 from plsremind.events import ConnectionUpdateEvent
 from plsremind.events import DeliveryCloseEvent
@@ -28,6 +27,7 @@ from plsremind.events import SyncChunk
 from plsremind.events import UserGoneEvent
 from plsremind.events import UserSyncEvent
 from plsremind.events import UserUpdateEvent
+from plsremind.internal import codec
 from plsremind.models import Actor
 from plsremind.models import ConnectionUser
 from plsremind.models import Item
@@ -76,7 +76,7 @@ class _Sync[P: Profile](msgspec.Struct, frozen=True, kw_only=True, gc=False):
 
 def _deleted(kind: collections.abc.Callable[..., Event], field: str, *, of_item: bool = False) -> _Builder:
     def build(payload: msgspec.Raw, connection: bool) -> Event:  # ruff: ignore[unused-function-argument, boolean-type-hint-positional-argument]
-        wire = _codec.decode(payload, _Change[_Reference])
+        wire = codec.decode(payload, _Change[_Reference])
         fields: dict[str, object] = {field: wire.data.id}
         if of_item:
             if wire.data.item_id is None:
@@ -90,23 +90,23 @@ def _deleted(kind: collections.abc.Callable[..., Event], field: str, *, of_item:
 
 def _direct(kind: type[Event]) -> _Builder:
     def build(payload: msgspec.Raw, connection: bool) -> Event:  # ruff: ignore[unused-function-argument, boolean-type-hint-positional-argument]
-        return _codec.decode(payload, kind)
+        return codec.decode(payload, kind)
 
     return build
 
 
 def _user_updated(payload: msgspec.Raw, connection: bool) -> Event:  # ruff: ignore[boolean-type-hint-positional-argument]
-    wire = _codec.decode(payload, _Change[ConnectionUser] if connection else _Change[User])
+    wire = codec.decode(payload, _Change[ConnectionUser] if connection else _Change[User])
     return UserUpdateEvent(user_id=wire.user_id, actor=wire.actor, nonce=wire.nonce, user=wire.data)
 
 
 def _delivery_closed(payload: msgspec.Raw, connection: bool) -> Event:  # ruff: ignore[unused-function-argument, boolean-type-hint-positional-argument]
-    wire = _codec.decode(payload, _Change[_Closed])
+    wire = codec.decode(payload, _Change[_Closed])
     return DeliveryCloseEvent(user_id=wire.user_id, delivery_id=wire.data.id, status=wire.data.status)
 
 
 def _user_sync(payload: msgspec.Raw, connection: bool) -> Event:  # ruff: ignore[boolean-type-hint-positional-argument]
-    wire = _codec.decode(payload, _Sync[ConnectionUser] if connection else _Sync[User])
+    wire = codec.decode(payload, _Sync[ConnectionUser] if connection else _Sync[User])
     return UserSyncEvent(
         user_id=wire.user_id,
         chunk=wire.chunk,
@@ -165,7 +165,7 @@ def decode_event(name: str, payload: msgspec.Raw, *, connection: bool) -> Event 
 
 
 def decode_ready(payload: msgspec.Raw) -> Ready:
-    return _codec.decode(payload, Ready)
+    return codec.decode(payload, Ready)
 
 
 def with_old[E: Event](event: E, old: object | None) -> E:

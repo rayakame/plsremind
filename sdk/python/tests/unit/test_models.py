@@ -11,22 +11,22 @@ import msgspec
 import pytest
 
 import plsremind
-from plsremind import _codec
 from plsremind import models
 from plsremind.enums import CredentialKind
 from plsremind.enums import Intents
 from plsremind.enums import OverrideMode
 from plsremind.enums import Priority
 from plsremind.enums import ReminderKind
+from plsremind.internal import codec
 from plsremind.types import ClockTime
 from plsremind.types import Duration
-from tests import fixtures
+from tests.support import fixtures
 
 UTC = datetime.UTC
 
 
 def decode[T](kind: type[T], document: object) -> T:
-    return _codec.decode(fixtures.raw(document), kind)
+    return codec.decode(fixtures.raw(document), kind)
 
 
 def test_item_decodes_into_real_types() -> None:
@@ -176,7 +176,7 @@ def test_missing_required_field_is_an_error() -> None:
 
 
 def test_encode_body_formats_values_and_drops_unset() -> None:
-    body = _codec.encode_body(
+    body = codec.encode_body(
         {
             "due_at": datetime.datetime(2026, 11, 13, 19, 0, tzinfo=zoneinfo.ZoneInfo("Europe/Berlin")),
             "in": datetime.timedelta(hours=2),
@@ -207,20 +207,20 @@ def test_encode_body_formats_values_and_drops_unset() -> None:
 
 def test_encode_body_refuses_a_time_without_zone() -> None:
     with pytest.raises(ValueError, match="time zone"):
-        _codec.encode_body({"due_at": datetime.datetime(2026, 11, 13, 18, 0)})  # ruff: ignore[call-datetime-without-tzinfo]
+        codec.encode_body({"due_at": datetime.datetime(2026, 11, 13, 18, 0)})  # ruff: ignore[call-datetime-without-tzinfo]
 
 
 def test_encode_body_writes_an_override() -> None:
     override = models.ReminderOverride(mode=OverrideMode.CUSTOM, before=(Duration(hours=3),))
-    assert json.loads(_codec.encode_body({"reminder_override": override})) == {
+    assert json.loads(codec.encode_body({"reminder_override": override})) == {
         "reminder_override": {"mode": "custom", "before": ["3h"]}
     }
     off = models.ReminderOverride(mode=OverrideMode.OFF)
-    assert json.loads(_codec.encode_body({"reminder_override": off})) == {"reminder_override": {"mode": "off"}}
+    assert json.loads(codec.encode_body({"reminder_override": off})) == {"reminder_override": {"mode": "off"}}
 
 
 def test_encode_query() -> None:
-    query = _codec.encode_query(
+    query = codec.encode_query(
         {
             "status": "all",
             "has_due": True,
@@ -263,7 +263,7 @@ def test_a_duration_or_clock_time_the_sdk_cannot_read_does_not_fail_the_object(
 def test_encode_body_refuses_durations_the_hub_cannot_hold() -> None:
     for unsendable in (datetime.timedelta(seconds=30), datetime.timedelta(0), datetime.timedelta(minutes=1, seconds=1)):
         with pytest.raises(ValueError, match="whole minutes"):
-            _codec.encode_body({"in": unsendable})
+            codec.encode_body({"in": unsendable})
 
 
 @pytest.mark.parametrize(("kind", "document"), fixtures.ALL, ids=lambda value: getattr(value, "__name__", ""))

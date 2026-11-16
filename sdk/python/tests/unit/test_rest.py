@@ -25,8 +25,8 @@ from plsremind.rest import RESTClient
 from plsremind.rest import paginate
 from plsremind.types import ID
 from plsremind.types import ClockTime
-from tests import fakes
-from tests import fixtures
+from tests.support import fakes
+from tests.support import fixtures
 
 TOKEN = "plsr_pat_secret"
 CONNECTION_TOKEN = "plsr_con_secret"

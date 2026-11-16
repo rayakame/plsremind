@@ -4,7 +4,7 @@ import collections.abc
 
 import pytest
 
-from tests import fakes
+from tests.support import fakes
 
 
 @pytest.fixture

@@ -6,11 +6,11 @@ import typing
 
 import msgspec
 
-from plsremind import _events
 from plsremind import models
-from plsremind._cache import CacheStore
 from plsremind.enums import Intents
-from tests import fixtures
+from plsremind.internal import wire
+from plsremind.internal.store import CacheStore
+from tests.support import fixtures
 
 ITEMS = 5000
 CHUNK = 500
@@ -34,7 +34,7 @@ def synced() -> CacheStore:
     cache = CacheStore()
     cache.begin(msgspec.convert(fixtures.PRINCIPAL, models.Principal), [models.ID(fixtures.USER_ID)], Intents.ALL)
     for index in range(ITEMS // CHUNK):
-        event = _events.decode_event("user.sync", chunk(index), connection=False)
+        event = wire.decode_event("user.sync", chunk(index), connection=False)
         assert event is not None
         cache.apply(event)
     return cache

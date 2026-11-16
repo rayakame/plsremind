@@ -8,12 +8,12 @@ import aiohttp
 import msgspec
 import pytest
 
-from plsremind import _gateway
 from plsremind import errors
-from plsremind._gateway import Gateway
 from plsremind.enums import ClientStatus
+from plsremind.internal import gateway as gateway_module
+from plsremind.internal.gateway import Gateway
 from plsremind.rest import RESTClient
-from tests import fakes
+from tests.support import fakes
 
 TOKEN = "plsr_pat_secret"
 HEARTBEAT, IDENTIFY, RESUME, RECONNECT, INVALID_SESSION, ACK = 1, 2, 6, 7, 9, 11
@@ -307,7 +307,7 @@ async def test_unreachable_hub_ends_the_gateway(hub: fakes.FakeHub, make: Make) 
 async def test_silent_handshake_counts_as_lost(hub: fakes.FakeHub, make: Make, monkeypatch: pytest.MonkeyPatch) -> None:
     gateway, seen = make()
     connection = await logged_in(hub, gateway)
-    monkeypatch.setattr(_gateway, "HANDSHAKE_SILENCE", 0.05)
+    monkeypatch.setattr(gateway_module, "HANDSHAKE_SILENCE", 0.05)
     connection.drop()
     silent = await hub.gateway.connection()
     assert await silent.closed() == 4000
@@ -447,7 +447,7 @@ async def test_a_hub_that_never_answers_the_upgrade_counts_as_lost(make: Make, m
 
     server = await asyncio.start_server(swallow, "127.0.0.1", 0)
     port = server.sockets[0].getsockname()[1]
-    monkeypatch.setattr(_gateway, "HANDSHAKE_SILENCE", 0.1)
+    monkeypatch.setattr(gateway_module, "HANDSHAKE_SILENCE", 0.1)
     gateway, seen = make(url=f"ws://127.0.0.1:{port}/api/v1/gateway")
     try:
         gateway.start()

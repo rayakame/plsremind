@@ -14,14 +14,14 @@ from plsremind import events
 from plsremind import models
 from plsremind import rest
 from plsremind import types
-from plsremind._about import __version__
-from plsremind._codec import from_json
-from plsremind._codec import to_json
 from plsremind.cache import *
 from plsremind.client import *
 from plsremind.enums import *
 from plsremind.errors import *
 from plsremind.events import *
+from plsremind.internal.about import __version__
+from plsremind.internal.codec import from_json
+from plsremind.internal.codec import to_json
 from plsremind.models import *
 from plsremind.rest import *
 from plsremind.types import *

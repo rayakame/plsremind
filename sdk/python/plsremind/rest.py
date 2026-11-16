@@ -11,9 +11,9 @@ import urllib.parse
 import aiohttp
 import msgspec
 
-from plsremind import _codec
 from plsremind import errors
 from plsremind.enums import DeliveryStatus
+from plsremind.internal import codec
 from plsremind.models import Delivery
 from plsremind.models import DeliveryResult
 from plsremind.models import Identity
@@ -204,8 +204,8 @@ class RESTClient:
         data: bytes | None = None
         if body is not None:
             headers["Content-Type"] = "application/json"
-            data = _codec.encode_body(body)
-        params = _codec.encode_query(query) if query else None
+            data = codec.encode_body(body)
+        params = codec.encode_query(query) if query else None
         attempt = 0
         while True:
             try:
@@ -225,7 +225,7 @@ class RESTClient:
                 await _sleep(wait)
                 continue
             try:
-                detail = _codec.decode(answer, _ErrorBody).error
+                detail = codec.decode(answer, _ErrorBody).error
             except msgspec.MsgspecError:
                 detail = _ErrorDetail(code="unknown", message=f"The hub answered {method} {target} with {status}.")
             raise _api_error(status, detail.code, detail.message, detail.fields, wait)
@@ -243,7 +243,7 @@ class RESTClient:
     ) -> T:
         answer = await self._send(method, path, user=user, query=query, body=body, nonce=nonce)
         try:
-            return _codec.decode(answer, kind)
+            return codec.decode(answer, kind)
         except msgspec.MsgspecError as cause:
             msg = f"The hub's answer to {method} {self._target(path, user)} could not be read."
             raise errors.NetworkError(msg) from cause

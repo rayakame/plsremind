@@ -8,8 +8,8 @@ import aiohttp
 import asyncpg
 
 import plsremind
-from tests import fakes
 from tests.hub import launch
+from tests.support import fakes
 
 if typing.TYPE_CHECKING:
     import collections.abc

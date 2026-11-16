@@ -4,7 +4,7 @@ import asyncio
 import threading
 
 import plsremind
-from tests import fakes
+from tests.support import fakes
 
 started = threading.Event()
 address: list[str] = []

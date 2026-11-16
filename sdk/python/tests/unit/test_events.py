@@ -7,15 +7,15 @@ import typing
 import msgspec
 import pytest
 
-from plsremind import _events
 from plsremind import events
 from plsremind import models
 from plsremind.enums import DeliveryStatus
 from plsremind.enums import Intents
 from plsremind.enums import ReminderKind
-from tests import fixtures
+from plsremind.internal import wire
+from tests.support import fixtures
 
-GATEWAY_DOC = pathlib.Path(__file__).parents[3] / "docs" / "gateway.md"
+GATEWAY_DOC = pathlib.Path(__file__).parents[4] / "docs" / "gateway.md"
 CHANGE: dict[str, typing.Any] = {"user_id": fixtures.USER_ID, "actor": fixtures.ACTOR, "nonce": "n-1"}
 
 
@@ -24,7 +24,7 @@ def change(data: object) -> msgspec.Raw:
 
 
 def decode(name: str, payload: msgspec.Raw, *, connection: bool = False) -> events.Event:
-    event = _events.decode_event(name, payload, connection=connection)
+    event = wire.decode_event(name, payload, connection=connection)
     assert event is not None
     return event
 
@@ -32,7 +32,7 @@ def decode(name: str, payload: msgspec.Raw, *, connection: bool = False) -> even
 def test_every_gateway_event_has_a_class() -> None:
     table = GATEWAY_DOC.read_text(encoding="utf-8").split("## Events at a glance")[1].split("\n## ")[0]
     names = set(re.findall(r"`([a-z]+\.[a-z_]+)`", table))
-    assert names == set(_events.EVENT_CLASSES)
+    assert names == set(wire.EVENT_CLASSES)
     assert len(names) == 18
 
 
@@ -51,16 +51,16 @@ def test_item_updated_has_no_old_item_until_it_is_given_one() -> None:
     assert event.old_item is None
     previous = decode("item.created", change(fixtures.PLAIN_ITEM))
     assert isinstance(previous, events.ItemCreateEvent)
-    filled = _events.with_old(event, previous.item)
+    filled = wire.with_old(event, previous.item)
     assert filled.old_item is previous.item
     assert filled.item is event.item
 
 
 def test_with_old_leaves_events_without_a_past_alone() -> None:
     event = decode("item.created", change(fixtures.ITEM))
-    assert _events.with_old(event, object()) is event
+    assert wire.with_old(event, object()) is event
     update = decode("item.updated", change(fixtures.ITEM))
-    assert _events.with_old(update, None) is update
+    assert wire.with_old(update, None) is update
 
 
 @pytest.mark.parametrize(
@@ -217,7 +217,7 @@ def test_user_gone() -> None:
 
 
 def test_unknown_event_is_none() -> None:
-    assert _events.decode_event("item.exploded", msgspec.Raw(b"{}"), connection=False) is None
+    assert wire.decode_event("item.exploded", msgspec.Raw(b"{}"), connection=False) is None
 
 
 def test_ready() -> None:
@@ -231,7 +231,7 @@ def test_ready() -> None:
             }
         )
     )
-    ready = _events.decode_ready(payload)
+    ready = wire.decode_ready(payload)
     assert ready.principal.user_id == fixtures.USER_ID
     assert ready.users == (fixtures.USER_ID,)
     assert ready.intents == Intents.ITEMS | Intents.DELIVERIES
@@ -256,4 +256,4 @@ def test_events_are_frozen() -> None:
 
 def test_malformed_payload_is_an_error() -> None:
     with pytest.raises(msgspec.MsgspecError):
-        _events.decode_event("item.created", msgspec.Raw(b'{"user_id": 5}'), connection=False)
+        wire.decode_event("item.created", msgspec.Raw(b'{"user_id": 5}'), connection=False)

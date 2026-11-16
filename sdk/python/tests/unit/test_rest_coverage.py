@@ -9,7 +9,7 @@ import yaml
 
 from plsremind.rest import RESTClient
 
-SPEC = pathlib.Path(__file__).parents[3] / "docs" / "api" / "openapi.yaml"
+SPEC = pathlib.Path(__file__).parents[4] / "docs" / "api" / "openapi.yaml"
 METHODS = {"get", "post", "put", "patch", "delete"}
 # Opening the gateway is the client's job, and anyone may ask a hub about itself.
 NOT_A_CALL = {"connect_gateway"}

@@ -26,7 +26,7 @@ ignore = [
     "F401", # imported but unused
     "F403", # unable to detect undefined names
 ]
-"plsremind/_*.py" = ["D100", "D101", "D102", "D103", "D107"]
+"plsremind/internal/**" = ["D100", "D101", "D102", "D103", "D104", "D107"]
 "plsremind/rest.py" = ["PLR0904"] # one method for each call of the API
 "noxfile.py" = ["D", "DOC"]
 "tests/**" = [
@@ -48,7 +48,7 @@ ignore = [
     "S404",    # the hub under test is a subprocess
     "INP001",
 ]
-"tests/run_*.py" = ["T201"]
+"tests/support/run_*.py" = ["T201"]
 "examples/**" = [
     "D",
     "DOC",

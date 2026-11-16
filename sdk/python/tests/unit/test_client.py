@@ -13,12 +13,12 @@ import msgspec
 import pytest
 
 import plsremind
-from plsremind import _gateway
 from plsremind import events
 from plsremind.enums import ClientStatus
 from plsremind.enums import Intents
-from tests import fakes
-from tests import fixtures
+from plsremind.internal import gateway
+from tests.support import fakes
+from tests.support import fixtures
 
 TOKEN = "plsr_pat_secret"
 ME = fixtures.USER_ID
@@ -703,14 +703,14 @@ async def test_rest_works_without_the_gateway(hub: fakes.FakeHub, make: Make) ->
 
 
 async def test_run_closes_on_sigterm() -> None:
-    script = pathlib.Path(__file__).with_name("run_until_signal.py")
+    script = pathlib.Path(__file__).parents[1] / "support" / "run_until_signal.py"
     process = await asyncio.create_subprocess_exec(
         sys.executable,
         "-m",
-        f"tests.{script.stem}",
+        f"tests.support.{script.stem}",
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.STDOUT,
-        cwd=script.parents[1],
+        cwd=script.parents[2],
     )
     assert process.stdout is not None
     try:
@@ -924,14 +924,14 @@ async def test_waiters_fail_when_the_hub_turns_the_client_away(hub: fakes.FakeHu
 
 
 async def test_run_stops_on_a_signal_while_still_connecting() -> None:
-    script = pathlib.Path(__file__).with_name("run_against_silence.py")
+    script = pathlib.Path(__file__).parents[1] / "support" / "run_against_silence.py"
     process = await asyncio.create_subprocess_exec(
         sys.executable,
         "-m",
-        f"tests.{script.stem}",
+        f"tests.support.{script.stem}",
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.STDOUT,
-        cwd=script.parents[1],
+        cwd=script.parents[2],
     )
     assert process.stdout is not None
     try:
@@ -1007,7 +1007,7 @@ async def test_a_failure_while_applying_a_change_starts_the_session_over(
 async def test_start_gives_up_when_the_state_never_arrives(
     hub: fakes.FakeHub, make: Make, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(_gateway, "HANDSHAKE_SILENCE", 0.15)
+    monkeypatch.setattr(gateway, "HANDSHAKE_SILENCE", 0.15)
     client = make()
     starting = asyncio.create_task(client.start())
     await handshake(hub)
@@ -1021,7 +1021,7 @@ async def test_a_resync_that_stalls_is_started_again_from_scratch(
 ) -> None:
     client = make()
     connection = await started(hub, client, items=[item(1)])
-    monkeypatch.setattr(_gateway, "HANDSHAKE_SILENCE", 0.15)
+    monkeypatch.setattr(gateway, "HANDSHAKE_SILENCE", 0.15)
     connection.drop()
     again = await hub.gateway.connection()
     await again.hello()
