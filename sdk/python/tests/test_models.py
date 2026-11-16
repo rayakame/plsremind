@@ -63,11 +63,11 @@ def test_unknown_enum_value_decodes() -> None:
 
 def test_unknown_time_zone_falls_back_to_utc(caplog: pytest.LogCaptureFixture) -> None:
     with caplog.at_level(logging.WARNING, logger="plsremind"):
-        first = decode(models.Profile, {**fixtures.PROFILE, "timezone": "Mars/Olympus"})
-        decode(models.Profile, {**fixtures.PROFILE, "timezone": "Mars/Olympus"})
+        first = decode(models.Profile, {**fixtures.PROFILE, "timezone": "Venus/Maxwell"})
+        decode(models.Profile, {**fixtures.PROFILE, "timezone": "Venus/Maxwell"})
     assert first.timezone == zoneinfo.ZoneInfo("UTC")
     assert [record.getMessage() for record in caplog.records].count(
-        "The time zone 'Mars/Olympus' is unknown on this system, UTC stands in for it."
+        "The time zone 'Venus/Maxwell' is unknown on this system, UTC stands in for it."
     ) == 1
 
 

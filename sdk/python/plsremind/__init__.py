@@ -9,6 +9,7 @@ from __future__ import annotations
 from plsremind._about import __version__ as __version__
 from plsremind.enums import *
 from plsremind.errors import *
+from plsremind.events import *
 from plsremind.models import *
 from plsremind.rest import *
 from plsremind.types import *
