@@ -38,9 +38,9 @@ export function Keys() {
   const bar = useBar();
   const profile = useProfile();
   const prefs = readPrefs(profile.preferences);
-  const { selected, select, order, listed } = useSelection();
+  const { selected, select, order, listed, pageItem } = useSelection();
   const [, onItem] = useRoute("/items/:id");
-  const item = useItem(onItem?.id ?? selected);
+  const item = useItem(onItem?.id ?? selected) ?? (onItem ? pageItem : undefined);
   const open = useOpenItem();
   const leave = useLeaveItem();
   const [help, setHelp] = useState(false);

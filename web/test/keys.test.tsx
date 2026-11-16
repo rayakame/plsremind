@@ -225,3 +225,20 @@ test("Escape in a field is left to the field", async () => {
   await userEvent.keyboard("{Escape}");
   expect(screen.getByRole("complementary", { name: "Details" })).toBeTruthy();
 });
+
+test("x reopens an old completed item that only its page has loaded", async () => {
+  const app = await renderApp({ sync, path: "/items/old", hold: true });
+  const old = wireItem({
+    id: "old",
+    title: "Long ago",
+    status: "done",
+    completed_at: "2026-01-01T10:00:00Z",
+  });
+  app.route("GET", "/users/@me/items/old", { status: 200, body: old });
+  app.route("PATCH", "/users/@me/items/old", { status: 200, body: { ...old, status: "open" } });
+  const { act } = await import("@testing-library/react");
+  await act(() => app.connect());
+  await screen.findByLabelText("Title");
+  await userEvent.keyboard("x");
+  await waitFor(() => expect(app.sent("PATCH", "/users/@me/items/old")).toHaveLength(1));
+});

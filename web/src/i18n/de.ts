@@ -350,4 +350,5 @@ export const de: Texts = {
   "keys.back": "Abwählen oder zurück",
   "cmd.dueExample": "heute, morgen 12:00, fr., 13.11., 2026-11-13 oder - für keine",
   "cmd.remindExample": "30m, 2h, 1d",
+  "common.loadFailed": "Das ließ sich nicht laden.",
 };

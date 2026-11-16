@@ -7,6 +7,8 @@ import type {
   List,
   ManualReminder,
   Priority,
+  QuietHours,
+  ReminderPlan,
   ReminderOverride,
   Subitem,
   User,
@@ -79,8 +81,11 @@ interface Memory {
   /** How many calls about each object have come back, and who wants to know. */
   answered: Map<string, number>;
   listeners: Set<() => void>;
-  /** Preference changes the hub answered that its events may not have brought yet. */
-  prefs: Partial<Prefs>[];
+  /** Nonces of calls whose event the gateway has not brought yet, and of events that came first. */
+  issued: Set<string>;
+  seen: Set<string>;
+  /** What the hub answered to those calls, by what they were about. */
+  unseen: Map<string, { nonce: string; value: unknown }[]>;
 }
 
 const memories = new WeakMap<OptimisticView, Memory>();
@@ -95,11 +100,42 @@ function memoryOf(hub: Writer): Memory {
       partDrafts: new Map(),
       answered: new Map(),
       listeners: new Set(),
-      prefs: [],
+      issued: new Set(),
+      seen: new Set(),
+      unseen: new Map(),
     };
+    const { issued, seen, unseen } = memory;
+    hub.client.cache.subscribe((change) => {
+      if (change.userId !== hub.userId) return;
+      // A new sync holds everything the hub answered before it.
+      if (!change.cause) return unseen.clear();
+      const nonce = change.cause.nonce;
+      if (!nonce || !issued.delete(nonce)) return;
+      seen.add(nonce);
+      for (const [key, answers] of unseen) {
+        unseen.set(
+          key,
+          answers.filter((answer) => answer.nonce !== nonce),
+        );
+      }
+    });
     memories.set(hub.view, memory);
   }
   return memory;
+}
+
+/**
+ * Keeps what the hub answered until the gateway has brought the event for it. Until then the
+ * cache is behind, and a write that sends a whole object would be built on the older state.
+ */
+function remember(hub: Writer, key: string, nonce: string, value: unknown): void {
+  const memory = memoryOf(hub);
+  if (memory.seen.delete(nonce)) return;
+  memory.unseen.set(key, [...(memory.unseen.get(key) ?? []), { nonce, value }]);
+}
+
+function recalled<T>(hub: Writer, key: string): T[] {
+  return (memoryOf(hub).unseen.get(key) ?? []).map((answer) => answer.value as T);
 }
 
 // A call without an answer would hold back every later change to the same object for good.
@@ -448,38 +484,78 @@ export function updateProfile(hub: Writer, changes: UserChanges): Promise<void> 
     .then(() => undefined);
 }
 
+/** Changes part of a plan. The rest is sent as the hub last had it, not as it is shown. */
 export function setPlan(
   hub: Writer,
   priority: Priority,
-  plan: { before: readonly number[]; followUp: FollowUp },
+  patch: { before?: readonly number[]; followUp?: FollowUp },
 ): Promise<void> {
+  const key = `plan:${priority}`;
   return hub.view
     .apply(
-      [
-        {
-          kind: "plan",
-          priority,
-          update: (before) => ({ ...before, ...plan, isDefault: false }),
-        },
-      ],
+      [{ kind: "plan", priority, update: (before) => ({ ...before, ...patch, isDefault: false }) }],
       (nonce) =>
-        inOrder(hub, `plan:${priority}`, (signal) =>
-          hub.client.rest.setReminderPlan(priority, plan, { nonce, signal }),
-        ),
+        inOrder(hub, key, async (signal) => {
+          const held =
+            recalled<ReminderPlan>(hub, key).at(-1) ??
+            hub.client.cache.user(hub.userId)?.plan(priority);
+          memoryOf(hub).issued.add(nonce);
+          const answer = await hub.client.rest.setReminderPlan(
+            priority,
+            {
+              before: patch.before ?? held?.before ?? [],
+              followUp: patch.followUp ?? held?.followUp ?? "never",
+            },
+            { nonce, signal },
+          );
+          remember(hub, key, nonce, answer);
+        }),
       { user: hub.userId },
     )
     .then(() => undefined);
 }
 
 export function resetPlan(hub: Writer, priority: Priority): Promise<void> {
-  return inOrder(hub, `plan:${priority}`, (signal) =>
-    hub.client.rest.resetReminderPlan(priority, { signal }),
-  );
+  const key = `plan:${priority}`;
+  return inOrder(hub, key, async (signal) => {
+    await hub.client.rest.resetReminderPlan(priority, { signal });
+    memoryOf(hub).unseen.delete(key);
+  });
+}
+
+const quietDefault: QuietHours = { start: "22:00", end: "07:00" };
+
+/** Turns quiet hours on or off, or changes one end. The other end is sent as the hub last had it. */
+export function setQuiet(hub: Writer, part: Partial<QuietHours> | null): Promise<void> {
+  return hub.view
+    .apply(
+      [
+        {
+          kind: "profile",
+          update: (before) => ({
+            ...before,
+            quietHours:
+              part === null ? null : { ...((before as User).quietHours ?? quietDefault), ...part },
+          }),
+        },
+      ],
+      (nonce) =>
+        inOrder(hub, "profile", async (signal) => {
+          const last = recalled<{ quiet: QuietHours | null }>(hub, "quiet").at(-1);
+          const confirmed = hub.client.cache.user(hub.userId)?.profile as User | undefined;
+          const held = last ? last.quiet : (confirmed?.quietHours ?? null);
+          const quietHours = part === null ? null : { ...(held ?? quietDefault), ...part };
+          memoryOf(hub).issued.add(nonce);
+          const answer = await hub.client.rest.updateUser({ quietHours }, { nonce, signal });
+          remember(hub, "quiet", nonce, { quiet: answer.quietHours });
+        }),
+      { user: hub.userId },
+    )
+    .then(() => undefined);
 }
 
 /** Changes the dashboard's own preferences and keeps what other clients stored. */
 export function setPrefs(hub: Writer, patch: Partial<Prefs>): Promise<void> {
-  const memory = memoryOf(hub);
   return hub.view
     .apply(
       [
@@ -497,26 +573,15 @@ export function setPrefs(hub: Writer, patch: Partial<Prefs>): Promise<void> {
           // our own changes it has answered, never from one that may yet be refused.
           const confirmed = (hub.client.cache.user(hub.userId)?.profile as User | undefined)
             ?.preferences;
-          memory.prefs = memory.prefs.filter((sent) => !holds(confirmed, sent));
-          const base = memory.prefs.reduce(mergePrefs, { ...confirmed });
+          const base = recalled<Partial<Prefs>>(hub, "prefs").reduce(mergePrefs, { ...confirmed });
           const preferences = mergePrefs(base, patch);
+          memoryOf(hub).issued.add(nonce);
           await hub.client.rest.updateUser({ preferences }, { nonce, signal });
-          memory.prefs = [...memory.prefs.map((sent) => without(sent, patch)), patch];
+          remember(hub, "prefs", nonce, patch);
         }),
       { user: hub.userId },
     )
     .then(() => undefined);
-}
-
-function without(sent: Partial<Prefs>, newer: Partial<Prefs>): Partial<Prefs> {
-  return Object.fromEntries(Object.entries(sent).filter(([key]) => !(key in newer)));
-}
-
-function holds(preferences: unknown, patch: Partial<Prefs>): boolean {
-  const stored = (preferences ?? {}) as Record<string, unknown>;
-  return Object.entries(patch).every(
-    ([key, value]) => JSON.stringify(stored[key]) === JSON.stringify(value),
-  );
 }
 
 /** Creates a list, shown at once as a draft. Resolves with its real id. */

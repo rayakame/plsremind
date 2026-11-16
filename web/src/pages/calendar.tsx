@@ -69,6 +69,11 @@ export default function CalendarPage() {
   );
   useOrder(order);
 
+  const outOfSight = bar.defaultDue !== null && !days.includes(bar.defaultDue);
+  useEffect(() => {
+    if (outOfSight) setDefaultDue(null);
+  }, [outOfSight, setDefaultDue]);
+
   const changeView = (next: View) => {
     setView(next);
     if (bar.defaultDue) setAnchor(bar.defaultDue);

@@ -66,5 +66,8 @@ export function useOlderDone() {
     });
   }, []);
 
+  // The cache does not hold these, so their deletion has to be heard here.
+  useEffect(() => client.on("item.deleted", (event) => hide(event.data.id, true)), [client, hide]);
+
   return { items, more: cursor !== null, loading, loadMore, hide };
 }

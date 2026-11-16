@@ -8,6 +8,7 @@ import { useNotices } from "../../shell/notices.js";
 import { Button, Field, Input, Toggle } from "../../ui/controls.js";
 import { Dialog } from "../../ui/dialog.js";
 import { Card } from "../../ui/layout.js";
+import { LoadFailed } from "../../ui/load-failed.js";
 import { ConfirmDialog, NameDialog } from "../../ui/name-dialog.js";
 import { formatMoment } from "../item/labels.js";
 
@@ -147,6 +148,7 @@ export function TokenSettings() {
   return (
     <>
       <p className="lead">{t("tokens.text")}</p>
+      {tokens.failed && <LoadFailed onRetry={tokens.reload} />}
       {tokens.data?.length === 0 && <p className="text dim">{t("tokens.none")}</p>}
       {tokens.data?.map((token) => (
         <TokenCard

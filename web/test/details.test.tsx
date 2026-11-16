@@ -369,3 +369,10 @@ test("a duration of nothing is not a time to remind at", async () => {
   expect(panel.getByText("Write durations like 1d, 2h.")).toBeTruthy();
   expect(app.sent("PATCH", item)).toHaveLength(0);
 });
+
+test("a reminder further away than any date is refused", async () => {
+  const { app, panel } = await opened();
+  await userEvent.type(panel.getByLabelText("Remind me"), "100000000d{Enter}");
+  expect(panel.getByText(/Write a duration like 2h/)).toBeTruthy();
+  expect(app.sent("POST", `${item}/reminders`)).toHaveLength(0);
+});

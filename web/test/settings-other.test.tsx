@@ -298,3 +298,27 @@ test("a token made before the list has loaded is not wiped out by the list", asy
   await waitFor(() => expect(listed).toBe(2));
   expect(await screen.findByRole("group", { name: "Phone" })).toBeTruthy();
 });
+
+test("a list of tokens that did not load can be asked for again", async () => {
+  let asked = 0;
+  await settings("tokens", {}, (made) =>
+    made.route("GET", "/users/@me/tokens", () =>
+      ++asked === 1
+        ? { status: 500, body: { error: { code: "internal", message: "no" } } }
+        : {
+            status: 200,
+            body: [
+              {
+                id: "t1",
+                name: "Laptop",
+                remind: false,
+                created_at: "2026-11-01T10:00:00Z",
+                last_used_at: null,
+              },
+            ],
+          },
+    ),
+  );
+  await userEvent.click(await screen.findByRole("button", { name: "Try again" }));
+  expect(await screen.findByRole("group", { name: "Laptop" })).toBeTruthy();
+});

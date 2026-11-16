@@ -208,6 +208,7 @@ export function ItemFacts({ item, readOnly = false }: Props) {
       const when = parseWhen(text, now.today);
       if (when?.time) at = instantAt(when.day, when.time, now.zone);
     }
+    if (at && Number.isNaN(at.getTime())) at = undefined;
     setRemindError(!at);
     if (!at) return;
     setRemind("");

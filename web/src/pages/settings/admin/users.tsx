@@ -30,6 +30,7 @@ function PasswordDialog(props: { user: AdminUser; onClose: () => void }) {
           <Input
             type="password"
             autoComplete="new-password"
+            disabled={busy}
             value={password}
             onChange={(event) => setPassword(event.target.value)}
             required

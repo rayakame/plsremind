@@ -51,7 +51,7 @@ export function ItemPage(props: { id: string }) {
   const t = useT();
   const hub = useHub();
   const { guard } = useNotices();
-  const { order } = useSelection();
+  const { order, setPageItem } = useSelection();
   const leave = useLeaveItem();
   const [, navigate] = useLocation();
   const { id, key } = useResolved(props.id);
@@ -81,6 +81,11 @@ export function ItemPage(props: { id: string }) {
   }
   const loaded = fetched.state && "item" in fetched.state ? fetched.state.item : undefined;
   const item = live ?? (gone ? null : loaded);
+  const fetchedItem = live ? undefined : (item ?? undefined);
+  useEffect(() => {
+    setPageItem(fetchedItem);
+    return () => setPageItem(undefined);
+  }, [fetchedItem, setPageItem]);
   if (item === undefined) return null;
   if (item === null) return <NotFound />;
 

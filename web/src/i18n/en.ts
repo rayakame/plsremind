@@ -343,6 +343,7 @@ export const en = {
   "keys.back": "Deselect or go back",
   "cmd.dueExample": "today, tomorrow 12:00, fri, 13.11., 2026-11-13, or - for none",
   "cmd.remindExample": "30m, 2h, 1d",
+  "common.loadFailed": "This could not be loaded.",
 } as const;
 
 export type Key = keyof typeof en;

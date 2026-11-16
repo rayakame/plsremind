@@ -119,7 +119,13 @@ export class Session {
       client.on("closed", () => {
         if (!stale() && connected) void this.#boot(0);
       });
-      await client.connect();
+      await Promise.race([
+        client.connect(),
+        new Promise<never>((_, reject) => {
+          const timer = setTimeout(() => reject(new Error("no connection")), longestWait);
+          asking.signal.addEventListener("abort", () => clearTimeout(timer));
+        }),
+      ]);
       connected = true;
       show();
     } catch {

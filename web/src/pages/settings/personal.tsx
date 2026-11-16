@@ -10,7 +10,7 @@ import { useState } from "react";
 import { usePlans, useProfile } from "../../hub/hooks.js";
 import { isPrefix, readPrefs, type Prefs } from "../../hub/prefs.js";
 import { useHub } from "../../hub/session.js";
-import { resetPlan, setPlan, setPrefs, updateProfile } from "../../hub/write.js";
+import { resetPlan, setPlan, setPrefs, setQuiet, updateProfile } from "../../hub/write.js";
 import { languages, useT } from "../../i18n/index.js";
 import { useNotices } from "../../shell/notices.js";
 import { isZone } from "../../time/zone.js";
@@ -48,8 +48,7 @@ function PlanCard({ plan }: { plan: ReminderPlan }) {
   const before = useCheckedDraft(
     plan.before.map(formatDuration).join(", "),
     durations,
-    (parsed) =>
-      void guard(setPlan(hub, plan.priority, { before: parsed, followUp: plan.followUp })),
+    (parsed) => void guard(setPlan(hub, plan.priority, { before: parsed })),
   );
   return (
     <fieldset
@@ -69,12 +68,7 @@ function PlanCard({ plan }: { plan: ReminderPlan }) {
         <Select
           value={plan.followUp}
           onChange={(event) =>
-            void guard(
-              setPlan(hub, plan.priority, {
-                before: plan.before,
-                followUp: event.target.value as FollowUp,
-              }),
-            )
+            void guard(setPlan(hub, plan.priority, { followUp: event.target.value as FollowUp }))
           }
         >
           {followUps.map((one) => (
@@ -93,14 +87,14 @@ function PlanCard({ plan }: { plan: ReminderPlan }) {
   );
 }
 
-function QuietTimes(props: { quiet: QuietHours; onChange: (next: QuietHours) => void }) {
+function QuietTimes(props: { quiet: QuietHours; onChange: (part: Partial<QuietHours>) => void }) {
   const t = useT();
   const { quiet, onChange } = props;
-  const start = useDraft(quiet.start, (next) => onChange({ ...quiet, start: next }), {
+  const start = useDraft(quiet.start, (next) => onChange({ start: next }), {
     required: true,
     enter: true,
   });
-  const end = useDraft(quiet.end, (next) => onChange({ ...quiet, end: next }), {
+  const end = useDraft(quiet.end, (next) => onChange({ end: next }), {
     required: true,
     enter: true,
   });
@@ -145,8 +139,7 @@ export function PersonalSettings() {
   const base = profile.locale?.toLowerCase().split("-")[0] ?? "";
   const language = base in languages ? base : (profile.locale ?? "");
   const quiet = profile.quietHours;
-  const setQuiet = (next: { start: string; end: string } | null) =>
-    void guard(updateProfile(hub, { quietHours: next }));
+  const changeQuiet = (part: Partial<QuietHours> | null) => void guard(setQuiet(hub, part));
 
   return (
     <>
@@ -218,9 +211,9 @@ export function PersonalSettings() {
         <Toggle
           label={t("personal.quiet")}
           checked={quiet !== null}
-          onChange={(on) => setQuiet(on ? { start: "22:00", end: "07:00" } : null)}
+          onChange={(on) => changeQuiet(on ? {} : null)}
         />
-        {quiet && <QuietTimes quiet={quiet} onChange={setQuiet} />}
+        {quiet && <QuietTimes quiet={quiet} onChange={changeQuiet} />}
       </Card>
 
       <section className="stack" aria-label={t("personal.plans")}>

@@ -7,6 +7,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import type { Item } from "plsremind";
 import { useLocation } from "wouter";
 import { routes } from "./router.js";
 
@@ -22,6 +23,9 @@ interface Selection {
   /** True if the item page that is open was reached from a view of this page load. */
   entered: boolean;
   setEntered: (entered: boolean) => void;
+  /** The item an item page shows, which the cache may not hold. */
+  pageItem: Item | undefined;
+  setPageItem: (item: Item | undefined) => void;
 }
 
 const none: readonly string[] = Object.freeze([]);
@@ -32,9 +36,21 @@ export function SelectionProvider(props: { children: ReactNode }) {
   const [order, setOrder] = useState(none);
   const [listed, setListed] = useState(false);
   const [entered, setEntered] = useState(false);
+  const [pageItem, setPageItem] = useState<Item>();
   const value = useMemo(
-    () => ({ selected, select, order, listed, setOrder, setListed, entered, setEntered }),
-    [selected, order, listed, entered],
+    () => ({
+      selected,
+      select,
+      order,
+      listed,
+      setOrder,
+      setListed,
+      entered,
+      setEntered,
+      pageItem,
+      setPageItem,
+    }),
+    [selected, order, listed, entered, pageItem],
   );
   return <SelectionContext.Provider value={value}>{props.children}</SelectionContext.Provider>;
 }

@@ -128,3 +128,15 @@ test("clicking an older item opens its page instead of an empty column", async (
   fireEvent.click(screen.getByRole("link", { name: "Older" }), { detail: 1 });
   expect(app.path()).toBe("/items/o1");
 });
+
+test("an older item deleted elsewhere leaves the list", async () => {
+  const app = await renderApp({ path: "/done", sync: { history, history_cursor: "c1" } });
+  app.route("GET", "/users/@me/items", {
+    status: 200,
+    body: { data: [done("o1", "Older", "2026-09-01T10:00:00Z")], next_cursor: null },
+  });
+  await userEvent.click(screen.getByRole("button", { name: "Load older" }));
+  await waitFor(() => expect(titles()).toHaveLength(4));
+  await app.send("item.deleted", change("u1", { id: "o1" }));
+  expect(titles()).toHaveLength(3);
+});

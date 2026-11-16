@@ -71,7 +71,7 @@ function placeOf(rest: string, ctx: CommandContext): { path: string; label: stri
   const wanted = rest.trim().toLowerCase();
   if (wanted === "") return null;
   // With the hash a list is meant, also one that is named like a page.
-  const place = wanted.startsWith("#") ? undefined : places[wanted];
+  const place = Object.hasOwn(places, wanted) ? places[wanted] : undefined;
   if (place !== undefined) return { path: place, label: wanted };
   const list = listOf(wanted, ctx.lists);
   return list ? { path: routes.list(list.id), label: list.name } : null;

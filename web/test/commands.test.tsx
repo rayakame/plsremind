@@ -270,3 +270,11 @@ test("a list named like a page is reached with the hash", async () => {
   await userEvent.type(bar(), "/go settings{Enter}");
   expect(made.path()).toBe("/settings/personal");
 });
+
+test("a word that every object knows is not a place", async () => {
+  const made = await app();
+  await userEvent.type(bar(), "/go constructor");
+  expect(preview()).toBe("/go place");
+  await userEvent.keyboard("{Enter}");
+  expect(made.path()).toBe("/");
+});

@@ -8,6 +8,7 @@ import { useNotices } from "../../shell/notices.js";
 import { Button, Field, Input } from "../../ui/controls.js";
 import { Dialog } from "../../ui/dialog.js";
 import { Card, Notice } from "../../ui/layout.js";
+import { LoadFailed } from "../../ui/load-failed.js";
 
 function PasswordCard() {
   const t = useT();
@@ -20,7 +21,13 @@ function PasswordCard() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
   const [changed, setChanged] = useState(false);
-  if (!identities.data) return <Card title={t("pw.title")}>{null}</Card>;
+  if (!identities.data) {
+    return (
+      <Card title={t("pw.title")}>
+        {identities.failed && <LoadFailed onRetry={identities.reload} />}
+      </Card>
+    );
+  }
   const has = identities.data.some((identity) => identity.provider === "password");
 
   const submit = async (event: FormEvent) => {

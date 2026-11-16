@@ -186,3 +186,20 @@ test("switching to the week shows the week of the chosen day", async () => {
     "true",
   );
 });
+
+test("a chosen day that moves out of sight is let go", async () => {
+  const app = await calendar("2026-11-15T12:00:00Z");
+  app.route("POST", "/users/@me/items", { status: 201, body: wireItem({ id: "n" }) });
+  await userEvent.click(screen.getByRole("button", { name: "November 20" }));
+  await userEvent.click(screen.getByRole("button", { name: "Later" }));
+  await userEvent.click(screen.getByRole("button", { name: "Later" }));
+  await userEvent.type(
+    screen.getByRole("combobox", { name: /Search, create/ }),
+    "No date{Control>}{Enter}{/Control}",
+  );
+  await waitFor(() => expect(app.sent("POST", "/users/@me/items")).toHaveLength(1));
+  expect(app.sent("POST", "/users/@me/items")[0]!.body).toEqual({
+    title: "No date",
+    list_id: "l1",
+  });
+});

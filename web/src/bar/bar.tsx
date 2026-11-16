@@ -29,11 +29,11 @@ export function Bar() {
   const bar = useBar();
   const lists = useLists();
   const now = useNow();
-  const { selected } = useSelection();
+  const { selected, pageItem } = useSelection();
   const [, navigate] = useLocation();
   const [, onList] = useRoute("/lists/:id");
   const [, onItem] = useRoute("/items/:id");
-  const item = useItem(onItem?.id ?? selected);
+  const item = useItem(onItem?.id ?? selected) ?? (onItem ? pageItem : undefined);
   const [form, setForm] = useState(false);
   const [at, setAt] = useState(0);
   const listbox = useId();

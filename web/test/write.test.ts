@@ -10,7 +10,16 @@ import {
   renameList,
   setDone,
 } from "../src/hub/write.js";
-import { change, connectedHub, deferred, settle, wireItem, wireList, wireUser } from "./support.js";
+import {
+  change,
+  connectedHub,
+  deferred,
+  settle,
+  wireItem,
+  wireList,
+  wirePlan,
+  wireUser,
+} from "./support.js";
 
 const ids = (all: readonly { id: string }[]) => all.map((one) => one.id);
 
@@ -358,5 +367,62 @@ test("an answered preference that a later one replaced does not come back", asyn
   await setPrefs(hub.own, { weekStart: "sunday" });
   expect(hub.sent("PATCH", "/users/@me").at(-1)!.body).toEqual({
     preferences: { theme: "light", weekStart: "sunday" },
+  });
+});
+
+test("a preference changed on another device after ours is not undone by our next change", async () => {
+  const hub = await connectedHub();
+  hub.route("PATCH", "/users/@me", (call) => ({
+    status: 200,
+    body: wireUser({ locale: "en", ...(call.body as object) }),
+  }));
+  const { setPrefs } = await import("../src/hub/write.js");
+  await setPrefs(hub.own, { theme: "dark" });
+  const nonce = hub.sent("PATCH", "/users/@me")[0]!.headers["x-request-nonce"]!;
+  await hub.send(
+    "user.updated",
+    change("u1", wireUser({ locale: "en", preferences: { theme: "dark" } }), nonce),
+  );
+  await hub.send(
+    "user.updated",
+    change("u1", wireUser({ locale: "en", preferences: { theme: "light" } })),
+  );
+  await setPrefs(hub.own, { weekStart: "sunday" });
+  expect(hub.sent("PATCH", "/users/@me").at(-1)!.body).toEqual({
+    preferences: { theme: "light", weekStart: "sunday" },
+  });
+});
+
+test("a refused part of a plan or of the quiet hours is not sent along with the next part", async () => {
+  const hub = await connectedHub();
+  let plans = 0;
+  hub.route("PUT", "/users/@me/reminder-plans/normal", (call) =>
+    ++plans === 1
+      ? { status: 500, body: { error: { code: "internal", message: "no" } } }
+      : { status: 200, body: wirePlan(call.body as Record<string, unknown>) },
+  );
+  let profiles = 0;
+  hub.route("PATCH", "/users/@me", (call) =>
+    ++profiles === 2
+      ? { status: 500, body: { error: { code: "internal", message: "no" } } }
+      : { status: 200, body: wireUser({ locale: "en", ...(call.body as object) }) },
+  );
+  const { setPlan, setQuiet } = await import("../src/hub/write.js");
+  const refused = setPlan(hub.own, "normal", { before: [7_200_000] }).catch(() => "refused");
+  const kept = setPlan(hub.own, "normal", { followUp: "daily" });
+  expect(await refused).toBe("refused");
+  await kept;
+  expect(hub.sent("PUT", "/users/@me/reminder-plans/normal").at(-1)!.body).toEqual({
+    before: ["1d"],
+    follow_up: "daily",
+  });
+
+  await setQuiet(hub.own, { start: "22:00", end: "07:00" });
+  const late = setQuiet(hub.own, { start: "23:00" }).catch(() => "refused");
+  const end = setQuiet(hub.own, { end: "08:00" });
+  expect(await late).toBe("refused");
+  await end;
+  expect(hub.sent("PATCH", "/users/@me").at(-1)!.body).toEqual({
+    quiet_hours: { start: "22:00", end: "08:00" },
   });
 });

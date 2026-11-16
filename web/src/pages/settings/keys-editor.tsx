@@ -64,7 +64,9 @@ export function KeysEditor() {
           <Button
             aria-label={t("personal.keyChange", { action: t(`keys.${action}`) })}
             aria-pressed={changing === action}
-            onClick={() => {
+            onClick={(event) => {
+              // Safari and Firefox on macOS do not focus a button that is clicked.
+              event.currentTarget.focus();
               setChanging(changing === action ? undefined : action);
               setTaken(undefined);
             }}

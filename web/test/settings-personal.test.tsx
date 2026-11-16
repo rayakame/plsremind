@@ -9,8 +9,14 @@ const me = "/users/@me";
 
 async function personal(options: Parameters<typeof renderApp>[0] = {}) {
   const app = await renderApp({ path: "/settings/personal", ...options });
-  app.route("PATCH", me, { status: 200, body: wireUser({ locale: "en" }) });
-  app.route("PUT", /reminder-plans/, { status: 200, body: wirePlan() });
+  app.route("PATCH", me, (call) => ({
+    status: 200,
+    body: wireUser({ locale: "en", ...(call.body as object) }),
+  }));
+  app.route("PUT", /reminder-plans/, (call) => ({
+    status: 200,
+    body: wirePlan(call.body as Record<string, unknown>),
+  }));
   app.route("DELETE", /reminder-plans/, { status: 204 });
   await screen.findByRole("heading", { level: 1, name: "Settings" });
   return app;
