@@ -25,13 +25,13 @@ async def remind(
     try:
         at = timeparse.moment(timeparse.parse(when, now=now, zone=who.zone), now=now, zone=who.zone)
         making = actions.remind_me(tools.hub, who.user, title=title, note=(note or "").strip(), at=at)
-        item = await common.patient(ctx, making, public=public)
+        item, waited = await common.patient(ctx, making)
     except (timeparse.TimeError, plsremind.PlsremindError) as error:
         await common.say(ctx, tools, say(common.problem(error), who.locale))
         return
     shown = views_.plain(title, views_.TITLE_SHOWN)
     text = say("ack.remind", who.locale, when=texts_.stamp(at, "F"), title=shown)
-    await common.confirm(ctx, tools, who, text, item, public=public)
+    await common.confirm(ctx, tools, who, text, item, public=public, waited=waited)
 
 
 @loader.command

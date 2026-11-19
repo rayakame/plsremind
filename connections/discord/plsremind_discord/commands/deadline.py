@@ -44,13 +44,13 @@ async def deadline(
             due_at=parsed.at if isinstance(parsed, timeparse.Moment) else None,
             due_date=parsed.date if isinstance(parsed, timeparse.Day) else None,
         )
-        item = await common.patient(ctx, making, public=public)
+        item, waited = await common.patient(ctx, making)
     except (timeparse.TimeError, plsremind.PlsremindError) as error:
         await common.say(ctx, tools, say(common.problem(error), who.locale))
         return
     when = texts_.stamp(parsed.at, "F") if isinstance(parsed, timeparse.Moment) else texts_.day(parsed.date, who.locale)
     text = say("ack.deadline", who.locale, when=when, title=views_.plain(title, views_.TITLE_SHOWN))
-    await common.confirm(ctx, tools, who, text, item, public=public)
+    await common.confirm(ctx, tools, who, text, item, public=public, waited=waited)
 
 
 @loader.command

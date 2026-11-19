@@ -81,11 +81,17 @@ async def asking(ctx: lightbulb.Context, tools: Tools) -> Asking | None:
     )
 
 
-async def patient[T](
-    ctx: lightbulb.Context, work: collections.abc.Coroutine[object, object, T], *, public: bool = False
-) -> T:
-    """Do `work`, and have Discord wait if the hub takes long. The wait is as public as the answer will be."""
-    return await patience.unhurried(work, lambda: ctx.defer(ephemeral=not public))
+async def patient[T](ctx: lightbulb.Context, work: collections.abc.Coroutine[object, object, T]) -> tuple[T, bool]:
+    """Do `work`, and have Discord wait if the hub takes long. Also returns whether it had to wait."""
+    waited = False
+
+    async def wait() -> None:
+        nonlocal waited
+        # Private, because only a success may be seen by others, and the outcome is not known yet.
+        await ctx.defer(ephemeral=True)
+        waited = True
+
+    return await patience.unhurried(work, wait), waited
 
 
 def for_all(ctx: lightbulb.Context, *, asked: bool) -> bool:
@@ -94,13 +100,14 @@ def for_all(ctx: lightbulb.Context, *, asked: bool) -> bool:
 
 
 async def confirm(
-    ctx: lightbulb.Context, tools: Tools, who: Asking, text: str, item: plsremind.Item, *, public: bool
+    ctx: lightbulb.Context, tools: Tools, who: Asking, text: str, item: plsremind.Item, *, public: bool, waited: bool
 ) -> None:
+    # After a wait the private confirmation comes first, because it takes the place of the wait.
+    if not public or waited:
+        private = views_.confirmation(tools.hub, tools.config, tools.texts, who.locale, text=text, item=item)
+        await say(ctx, tools, *private)
     if public:
         await say(ctx, tools, text, public=True)
-        return
-    private = views_.confirmation(tools.hub, tools.config, tools.texts, who.locale, text=text, item=item)
-    await say(ctx, tools, *private)
 
 
 def problem(error: timeparse.TimeError | plsremind.PlsremindError) -> str:

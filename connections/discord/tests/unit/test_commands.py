@@ -427,20 +427,69 @@ async def test_between_two_people_a_public_confirmation_stays_public(hub: FakeHu
     assert discord.replied(ctx)[0] is False
 
 
+def answers(ctx: mock.Mock) -> list[tuple[bool, str]]:
+    """Every answer a command gave, in order: whether only the user sees it, and what it says."""
+    found: list[tuple[bool, str]] = []
+    for call in ctx.respond.await_args_list:
+        built = [builder.build()[0] for builder in call.kwargs.get("components", [])]
+        found.append((call.kwargs["ephemeral"], "\n".join(discord.payload_texts(built))))
+    return found
+
+
 @pytest.mark.usefixtures("impatient")
-@pytest.mark.parametrize("public", [False, True])
 async def test_a_hub_that_takes_its_time_makes_remind_ask_discord_to_wait(
-    hub: FakeHub, monkeypatch: pytest.MonkeyPatch, *, public: bool
+    hub: FakeHub, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     go = discord.slow(monkeypatch, hub, "add")
     ctx = discord.command()
-    running = asyncio.create_task(remind.remind(ctx, the(hub), when="2h", what="Laundry", note=None, public=public))
+    running = asyncio.create_task(remind.remind(ctx, the(hub), when="2h", what="Laundry", note=None, public=False))
     await discord.until(lambda: ctx.defer.await_count == 1)
-    ctx.defer.assert_awaited_once_with(ephemeral=not public)
+    ctx.defer.assert_awaited_once_with(ephemeral=True)
     ctx.respond.assert_not_called()
     go.set()
     await running
-    assert "**Laundry**" in discord.replied(ctx)[1]
+    ((hidden, text),) = answers(ctx)
+    assert hidden is True
+    assert "**Laundry**" in text
+
+
+@pytest.mark.usefixtures("impatient")
+async def test_a_slow_public_confirmation_resolves_the_private_wait_first_and_then_goes_to_the_channel(
+    hub: FakeHub, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    go = discord.slow(monkeypatch, hub, "add")
+    ctx = discord.command()
+    running = asyncio.create_task(remind.remind(ctx, the(hub), when="2h", what="Laundry", note=None, public=True))
+    await discord.until(lambda: ctx.defer.await_count == 1)
+    ctx.defer.assert_awaited_once_with(ephemeral=True)
+    go.set()
+    await running
+    (private, private_text), (public, public_text) = answers(ctx)
+    assert (private, public) == (True, False)
+    assert "todo.example.com/items/" in private_text
+    assert "**Laundry**" in public_text
+    assert "todo.example.com" not in public_text
+    sent = ctx.respond.await_args.kwargs
+    assert (sent["mentions_everyone"], sent["user_mentions"], sent["role_mentions"]) == (False, False, False)
+
+
+@pytest.mark.usefixtures("impatient")
+async def test_what_goes_wrong_after_a_public_command_waited_is_said_in_private(
+    hub: FakeHub, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    hub.fail["add"] = plsremind.ServerError(500, "boom", "no")
+    go = discord.slow(monkeypatch, hub, "add")
+    ctx = discord.command()
+    running = asyncio.create_task(
+        deadline.deadline(ctx, the(hub), due="fr", what="Taxes", note=None, priority=None, list_=None, public=True)
+    )
+    await discord.until(lambda: ctx.defer.await_count == 1)
+    ctx.defer.assert_awaited_once_with(ephemeral=True)
+    go.set()
+    await running
+    ((hidden, text),) = answers(ctx)
+    assert hidden is True
+    assert "Das hat nicht geklappt" in text
 
 
 @pytest.mark.usefixtures("impatient")
