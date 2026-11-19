@@ -5,6 +5,7 @@ import collections.abc
 import datetime
 import http
 import pathlib
+import sqlite3
 import typing
 from unittest import mock
 
@@ -103,13 +104,17 @@ async def test_a_reminder_goes_out_is_recorded_and_then_confirmed(made: Made) ->
         order.append("record")
         return mock.DEFAULT
 
-    made.rest.create_message.side_effect = sent
-    spy = mock.AsyncMock(wraps=made.store.record, side_effect=recorded)
-    with mock.patch.object(made.store, "record", spy):
-        await made.reminders.deliver(delivery())
-    order.extend(name for name, _ in made.hub.calls if name == "delivered")
+    def confirmed(*_: object) -> object:
+        order.append("confirm")
+        return mock.DEFAULT
 
-    assert order == ["send", "record", "delivered"]
+    made.rest.create_message.side_effect = sent
+    record = mock.AsyncMock(wraps=made.store.record, side_effect=recorded)
+    confirm = mock.AsyncMock(wraps=made.hub.delivered, side_effect=confirmed)
+    with mock.patch.object(made.store, "record", record), mock.patch.object(made.hub, "delivered", confirm):
+        await made.reminders.deliver(delivery())
+
+    assert order == ["send", "record", "confirm"]
     made.rest.create_dm_channel.assert_awaited_once_with(1234)
     assert made.rest.create_message.await_args.args[0].id == CHANNEL + 1234
     assert made.rest.create_message.await_args.kwargs["components"]
@@ -191,13 +196,19 @@ async def test_passing_trouble_is_tried_again_and_not_confirmed_until_it_works(m
     assert made.rest.create_message.await_count == 3
 
 
-def held(made: Made) -> Reminders:
-    """Reminders whose wait between tries never ends by itself."""
+class Held(typing.NamedTuple):
+    reminders: Reminders
+    go: asyncio.Event
+
+
+def held(made: Made) -> Held:
+    """Reminders whose wait between tries only ends when the test says so."""
+    go = asyncio.Event()
 
     async def sleep(_: float) -> None:
-        await asyncio.Event().wait()
+        await go.wait()
 
-    return Reminders(
+    reminders = Reminders(
         hub=made.hub,
         views=discord.views(made.hub, ReminderView),
         rest=typing.cast("hikari.api.RESTClient", made.rest),
@@ -206,11 +217,12 @@ def held(made: Made) -> Reminders:
         clock=made.clock,
         sleep=sleep,
     )
+    return Held(reminders, go)
 
 
 async def test_the_same_delivery_arriving_again_starts_no_second_try(made: Made) -> None:
     made.rest.create_message.side_effect = broken()
-    waiting = held(made)
+    waiting = held(made).reminders
     try:
         await waiting.deliver(delivery())
         await waiting.deliver(delivery())
@@ -235,7 +247,7 @@ async def test_tries_end_a_day_after_the_reminder_was_due(made: Made) -> None:
 
 async def test_a_withdrawn_delivery_is_not_tried_again(made: Made) -> None:
     made.rest.create_message.side_effect = broken()
-    waiting = held(made)
+    waiting = held(made).reminders
     try:
         await waiting.deliver(delivery())
         assert waiting.waiting == frozenset({things.uid(9001)})
@@ -248,22 +260,114 @@ async def test_a_withdrawn_delivery_is_not_tried_again(made: Made) -> None:
         await waiting.close()
 
 
-async def test_a_confirmation_that_does_not_get_through_is_made_up_for_later(
+async def test_a_delivery_withdrawn_during_its_first_try_is_not_tried_again(made: Made) -> None:
+    sending, let_go = asyncio.Event(), asyncio.Event()
+
+    async def stuck(*_: object, **__: object) -> mock.Mock:
+        sending.set()
+        await let_go.wait()
+        raise broken()
+
+    made.rest.create_message.side_effect = stuck
+    first = asyncio.create_task(made.reminders.deliver(delivery()))
+    await asyncio.wait_for(sending.wait(), 2)
+    made.reminders.withdraw(things.uid(9001))
+    let_go.set()
+    await first
+    assert made.reminders.waiting == frozenset()
+    assert made.slept == []
+    assert made.rest.create_message.await_count == 1
+
+
+async def test_trouble_nobody_foresaw_is_tried_again_like_any_other(
     made: Made, caplog: pytest.LogCaptureFixture
 ) -> None:
-    made.hub.fail["delivered"] = plsremind.NetworkError("no route")
-    await made.reminders.deliver(delivery())
-    assert await made.store.knows_delivery(things.uid(9001))
-    assert "could not be confirmed" in caplog.text
+    answers = mock.AsyncMock(side_effect=[plsremind.NetworkError("the hub is away"), ITEM, ITEM])
+    with mock.patch.object(made.hub, "item", answers):
+        await made.reminders.deliver(delivery())
+        await discord.until(lambda: not made.reminders.waiting)
+    assert made.slept == [60.0]
+    assert len(made.hub.named("delivered")) == 1
+    assert "could not be handled" in caplog.text
 
-    del made.hub.fail["delivered"]
-    await made.reminders.deliver(delivery())
+
+async def test_a_sent_reminder_that_cannot_be_recorded_is_still_confirmed_and_not_sent_again(
+    made: Made, caplog: pytest.LogCaptureFixture
+) -> None:
+    with mock.patch.object(
+        made.store, "record", mock.AsyncMock(side_effect=sqlite3.OperationalError("disk I/O error"))
+    ):
+        await made.reminders.deliver(delivery())
+    assert made.rest.create_message.await_count == 1
+    assert len(made.hub.named("delivered")) == 1
+    assert made.reminders.waiting == frozenset()
+    assert "could not be recorded" in caplog.text
+
+
+async def test_a_confirmation_that_does_not_get_through_is_made_again(
+    made: Made, caplog: pytest.LogCaptureFixture
+) -> None:
+    waiting, go = held(made)
+    try:
+        made.hub.fail["delivered"] = plsremind.NetworkError("no route")
+        await waiting.deliver(delivery())
+        assert await made.store.knows_delivery(things.uid(9001))
+        assert waiting.waiting == frozenset({things.uid(9001)})
+        assert "could not be confirmed" in caplog.text
+
+        del made.hub.fail["delivered"]
+        go.set()
+        await discord.until(lambda: not waiting.waiting)
+    finally:
+        await waiting.close()
     assert made.rest.create_message.await_count == 1
     assert len(made.hub.named("delivered")) == 2
 
 
-async def test_a_report_that_does_not_get_through_is_logged(made: Made, caplog: pytest.LogCaptureFixture) -> None:
-    made.rest.create_message.side_effect = forbidden()
-    made.hub.fail["failed"] = plsremind.NetworkError("no route")
-    await made.reminders.deliver(delivery())
-    assert "could not be reported" in caplog.text
+async def test_a_report_that_does_not_get_through_is_made_again(made: Made, caplog: pytest.LogCaptureFixture) -> None:
+    waiting, go = held(made)
+    try:
+        made.rest.create_message.side_effect = forbidden()
+        made.hub.fail["failed"] = plsremind.NetworkError("no route")
+        await waiting.deliver(delivery())
+        assert waiting.waiting == frozenset({things.uid(9001)})
+        assert "could not be reported" in caplog.text
+
+        del made.hub.fail["failed"]
+        go.set()
+        await discord.until(lambda: not waiting.waiting)
+    finally:
+        await waiting.close()
+    assert made.rest.create_message.await_count == 1, "the verdict stands; the user is not tried a second time"
+    assert len(made.hub.named("failed")) == 2
+    assert made.hub.named("delivered") == []
+
+
+async def test_a_later_try_goes_to_the_accounts_the_user_has_then(made: Made) -> None:
+    waiting, go = held(made)
+    try:
+        made.rest.create_message.side_effect = broken()
+        await waiting.deliver(delivery())
+        made.hub.knows(things.user(external_ids=("5678",)), ITEM)
+        made.rest.create_message.side_effect = None
+        made.rest.create_message.return_value = mock.Mock(id=hikari.Snowflake(300))
+        go.set()
+        await discord.until(lambda: not waiting.waiting)
+    finally:
+        await waiting.close()
+    assert [call.args[0] for call in made.rest.create_dm_channel.await_args_list] == [1234, 5678]
+    assert len(made.hub.named("delivered")) == 1
+
+
+async def test_a_later_try_for_a_user_who_is_gone_reports_that_no_account_is_left(made: Made) -> None:
+    waiting, go = held(made)
+    try:
+        made.rest.create_message.side_effect = broken()
+        await waiting.deliver(delivery())
+        made.hub.people.clear()
+        go.set()
+        await discord.until(lambda: not waiting.waiting)
+    finally:
+        await waiting.close()
+    assert made.rest.create_message.await_count == 1
+    assert made.hub.named("failed")[0]["reason"] == "Es ist kein Discord-Konto verknüpft."
