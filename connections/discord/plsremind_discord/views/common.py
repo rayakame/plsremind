@@ -28,7 +28,7 @@ _MORNING: typing.Final = datetime.time(8, 0)
 _UTC: typing.Final = zoneinfo.ZoneInfo("UTC")
 _LINK: typing.Final = re.compile(r"https://(?:(?:ptb|canary)\.)?discord\.com/channels/(?:@me|\d+)/\d+/\d+")
 _MARKDOWN: typing.Final = re.compile(r"([\\*_~`|#\[\]<>])")
-_GONE: typing.Final = "reminder.gone"
+GONE: typing.Final = "reminder.gone"
 _PAST: typing.Final = "error.time_past"
 _REFUSALS: typing.Final = {"reminder_limit": "error.reminder_limit", "item_done": "reminder.item_done"}
 
@@ -210,11 +210,13 @@ async def finish(hub: Hub, view: Shown, user: bytes, *, done: bool, nonce: str) 
     return msgspec.structs.replace(view, item=changed)
 
 
-async def remind_at(hub: Hub, user: plsremind.ID, item: plsremind.ID, at: datetime.datetime, *, nonce: str) -> None:
+async def remind_at(
+    hub: Hub, user: plsremind.ID, item: plsremind.ID, at: datetime.datetime, *, nonce: str | None
+) -> None:
     try:
         await hub.remind(user, item, at, nonce=nonce)
     except plsremind.NotFoundError:
-        raise RefusedError(_GONE) from None
+        raise RefusedError(GONE) from None
     except plsremind.ConflictError as error:
         if error.code not in _REFUSALS:
             raise
@@ -223,7 +225,7 @@ async def remind_at(hub: Hub, user: plsremind.ID, item: plsremind.ID, at: dateti
 
 async def remind_later(hub: Hub, view: Shown, user: bytes, choice: str, *, nonce: str) -> datetime.datetime:
     if view.item is None:
-        raise RefusedError(_GONE)
+        raise RefusedError(GONE)
     at = snooze_at(choice, view.now, view.zone)
     if at is None or at <= view.now:
         raise RefusedError(_PAST)
@@ -245,3 +247,8 @@ def notice_layout(text: str, link: str, label: str) -> ui.Layout:
     if not link:
         return ui.Container(ui.TextDisplay(text))
     return ui.Container(ui.TextDisplay(text), ui.Separator(), ui.Row(ui.LinkButton(link, label=label)))
+
+
+def unlinked(texts: texts_.Texts, locale: hikari.Locale, config: Config) -> tuple[str, str, str]:
+    """The text, the link and the link's label of the hint for a Discord account the hub does not know."""
+    return texts("error.not_linked", locale), f"{config.public_url}/settings", texts("button.settings", locale)

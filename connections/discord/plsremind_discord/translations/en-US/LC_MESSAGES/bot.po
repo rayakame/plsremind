@@ -173,3 +173,27 @@ msgstr "Deadline (empty for none)"
 
 msgid "modal.edit.note"
 msgstr "Note"
+
+msgid "modal.message.title"
+msgstr "Remind me"
+
+msgid "ack.remind"
+msgstr "I will remind you {when}: **{title}**"
+
+msgid "error.time_unreadable"
+msgstr "I could not read that time. Try for example: tomorrow 9, in 2h, fri 18:00"
+
+msgid "error.not_linked"
+msgstr "Your Discord account is not linked to plsremind, or the Discord connection is switched off."
+
+msgid "error.failed"
+msgstr "That did not work. Please try again."
+
+msgid "error.starting"
+msgstr "The bot is just starting. Try again in a moment."
+
+msgid "error.invalid"
+msgstr "The hub did not accept that."
+
+msgid "button.settings"
+msgstr "Settings"

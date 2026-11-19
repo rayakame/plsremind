@@ -8,6 +8,7 @@ import msgspec
 import plsremind
 
 from plsremind_discord.hub import Hub
+from plsremind_discord.hub import Unchanged
 from plsremind_discord.timeparse import Day
 from plsremind_discord.timeparse import Moment
 from tests.support import things
@@ -176,20 +177,20 @@ class FakeHub(Hub):
         item: plsremind.ID,
         *,
         title: str,
-        due: Moment | Day | None,
+        due: Moment | Day | Unchanged | None,
         note: str | None,
         nonce: str | None = None,
     ) -> plsremind.Item:
         self._called("edit", user=user, item=item, title=title, due=due, note=note, nonce=nonce)
         before = self._items(user)[item]
-        changed = msgspec.structs.replace(
-            before,
-            title=title,
-            note=before.note if note is None else note,
-            due_at=due.at if isinstance(due, Moment) else None,
-            due_date=due.date if isinstance(due, Day) else None,
-            all_day=isinstance(due, Day),
-        )
+        changed = msgspec.structs.replace(before, title=title, note=before.note if note is None else note)
+        if not isinstance(due, Unchanged):
+            changed = msgspec.structs.replace(
+                changed,
+                due_at=due.at if isinstance(due, Moment) else None,
+                due_date=due.date if isinstance(due, Day) else None,
+                all_day=isinstance(due, Day),
+            )
         self._items(user)[item] = changed
         return changed
 

@@ -135,3 +135,37 @@ def bound(button: ui.Button) -> int:
     """The one whole number a button carries to its handler."""
     (frame,) = button.binding.frames
     return int.from_bytes(frame.data, "little")
+
+
+def submitted(
+    custom_id: str, values: dict[str, str], *, user: int = 1234, message: int | None = 555, locale: str = "de"
+) -> mock.Mock:
+    """The event of a modal someone sent off."""
+    interaction = mock.Mock(spec=hikari.ModalInteraction)
+    interaction.custom_id = custom_id
+    interaction.user.id = hikari.Snowflake(user)
+    interaction.locale = locale
+    interaction.message = mock.Mock(id=hikari.Snowflake(message)) if message is not None else None
+    interaction.components = [[mock.Mock(custom_id=key, value=value)] for key, value in values.items()]
+    event = mock.Mock(spec=hikari.ModalInteractionCreateEvent)
+    event.interaction = interaction
+    return event
+
+
+def payload_texts(payload: object) -> list[str]:
+    """Every text, label and link of a built message, in order."""
+    if isinstance(payload, dict):
+        document = typing.cast("dict[str, object]", payload)
+        own = [str(document[key]) for key in ("content", "label", "url") if key in document]
+        return own + [found for value in document.values() for found in payload_texts(value)]
+    if isinstance(payload, list):
+        return [found for value in typing.cast("list[object]", payload) for found in payload_texts(value)]
+    return []
+
+
+def answer(responder: mock.Mock) -> tuple[object, bool, str]:
+    """How an interaction was answered: the kind of response, whether only the user sees it, and what it says."""
+    call = responder.create_initial_response.await_args
+    built = [builder.build()[0] for builder in call.kwargs.get("components", [])]
+    hidden = call.kwargs.get("flags") == hikari.MessageFlag.EPHEMERAL
+    return call.args[0], hidden, "\n".join(payload_texts(built))

@@ -238,6 +238,9 @@ async def test_an_edit_sends_the_deadline_the_way_it_was_meant(made: Made) -> No
     rest.update_item.reset_mock()
     await made.hub.edit(MIA, ITEM.id, title="A", due=None, note="")
     rest.update_item.assert_awaited_once_with(ITEM.id, title="A", due_at=None, note="", user=MIA, nonce=None)
+    rest.update_item.reset_mock()
+    await made.hub.edit(MIA, ITEM.id, title="A", due=hub_module.UNCHANGED, note=None)
+    rest.update_item.assert_awaited_once_with(ITEM.id, title="A", user=MIA, nonce=None)
 
 
 async def test_a_delivery_the_hub_closed_meanwhile_counts_as_confirmed(made: Made) -> None:

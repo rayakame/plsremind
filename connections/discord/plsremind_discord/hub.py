@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import collections.abc
 import datetime
+import enum
 import typing
 
 import plsremind
@@ -24,6 +25,13 @@ _CLOSED: typing.Final = "delivery_closed"
 
 class HubError(Exception):
     pass
+
+
+class Unchanged(enum.Enum):
+    UNCHANGED = enum.auto()
+
+
+UNCHANGED: typing.Final = Unchanged.UNCHANGED
 
 
 class Hub:
@@ -135,7 +143,7 @@ class Hub:
         item: plsremind.ID,
         *,
         title: str,
-        due: Moment | Day | None,
+        due: Moment | Day | Unchanged | None,
         note: str | None,
         nonce: str | None = None,
     ) -> plsremind.Item:
@@ -143,7 +151,7 @@ class Hub:
         # Only one of the two is sent: the hub clears the other, and clears both for a null.
         if isinstance(due, Day):
             fields["due_date"] = due.date
-        else:
+        elif not isinstance(due, Unchanged):
             fields["due_at"] = due.at if due is not None else None
         if note is not None:
             fields["note"] = note

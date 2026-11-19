@@ -173,3 +173,27 @@ msgstr "Frist (leer für keine)"
 
 msgid "modal.edit.note"
 msgstr "Notiz"
+
+msgid "modal.message.title"
+msgstr "Erinnere mich"
+
+msgid "ack.remind"
+msgstr "Ich erinnere dich {when}: **{title}**"
+
+msgid "error.time_unreadable"
+msgstr "Diese Zeit habe ich nicht verstanden. Versuch zum Beispiel: morgen 9, in 2h, fr 18:00"
+
+msgid "error.not_linked"
+msgstr "Dein Discord-Konto ist nicht mit plsremind verbunden, oder die Discord-Connection ist ausgeschaltet."
+
+msgid "error.failed"
+msgstr "Das hat nicht geklappt. Bitte versuch es noch einmal."
+
+msgid "error.starting"
+msgstr "Der Bot startet gerade. Versuch es gleich noch einmal."
+
+msgid "error.invalid"
+msgstr "Der Hub hat das nicht angenommen."
+
+msgid "button.settings"
+msgstr "Einstellungen"
