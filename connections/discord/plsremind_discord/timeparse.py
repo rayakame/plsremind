@@ -98,7 +98,6 @@ def moment(parsed: Moment | Day, *, now: datetime.datetime, zone: zoneinfo.ZoneI
 
 
 def _span(words: str) -> tuple[int, int] | None:
-    """The days and the seconds a span adds up to."""
     match = _SPAN.fullmatch(words)
     if match is None:
         return None
@@ -181,7 +180,6 @@ def _clock(text: str) -> datetime.time:
 def _next(
     date: datetime.date, clock: datetime.time, zone: zoneinfo.ZoneInfo, after: datetime.datetime
 ) -> datetime.datetime | None:
-    """The first time after `after` that the clocks show `clock` on that day."""
     for fold in (0, 1):
         at = _local(date, clock, zone, fold=fold)
         if at.astimezone(datetime.UTC) > after:

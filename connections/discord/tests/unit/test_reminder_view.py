@@ -117,6 +117,12 @@ def test_a_choice_whose_time_has_passed_is_not_offered() -> None:
     assert common.snooze_options(night)[-1].label == "Eigene Zeit ..."
 
 
+def test_in_the_hour_the_clocks_show_twice_a_short_snooze_is_still_offered() -> None:
+    first = datetime.datetime(2026, 10, 25, 2, 50, tzinfo=BERLIN)
+    offered = [option.value for option in common.snooze_options(seen(things.item(), now=first))]
+    assert offered[:2] == ["15m", "1h"]
+
+
 @pytest.mark.parametrize(
     ("note", "expected"),
     [

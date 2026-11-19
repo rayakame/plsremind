@@ -100,8 +100,6 @@ class Store:
 
 
 class _Write:
-    """One transaction: everything inside it is kept, or nothing."""
-
     def __init__(self, connection: aiosqlite.Connection, lock: asyncio.Lock) -> None:
         self._db: typing.Final = connection
         self._lock: typing.Final = lock

@@ -32,8 +32,6 @@ type Values = dict[str, str]
 
 
 class _Reply:
-    """Answers one modal, whether or not Discord had to be asked to wait first."""
-
     def __init__(self, interaction: hikari.ModalInteraction, views: risa.Client) -> None:
         self._interaction: typing.Final = interaction
         self._views: typing.Final = views
@@ -49,7 +47,6 @@ class _Reply:
         self._waiting = True
 
     async def redraw(self, view: risa.View) -> None:
-        """Put a view in the place of the message the modal came from."""
         rendered = await self._views.build(view)
         if self._waiting:
             await self._interaction.edit_initial_response(**rendered)
@@ -57,7 +54,6 @@ class _Reply:
             await self._interaction.create_initial_response(hikari.ResponseType.MESSAGE_UPDATE, **rendered)
 
     async def say(self, text: str, link: str = "", label: str = "") -> None:
-        """Tell the user something nobody else sees."""
         rendered = await self._views.build(Notice(text=text, link=link, label=label))
         if not self._waiting:
             await self._interaction.create_initial_response(

@@ -181,3 +181,11 @@ async def test_a_schema_step_that_fails_changes_nothing(
     assert await version(path) == 1
     async with aiosqlite.connect(path) as connection, connection.execute("SELECT name FROM sqlite_master") as cursor:
         assert [row[0] for row in await cursor.fetchall()] == ["first"]
+
+
+async def test_age_counts_the_same_whatever_zone_a_time_came_in(store: Store) -> None:
+    berlin = zoneinfo.ZoneInfo("Europe/Berlin")
+    await record(store, "d1", 100, now=NOW.astimezone(berlin))
+    await store.purge(NOW + datetime.timedelta(days=30, minutes=15))
+    assert await store.messages_for_item(ITEM) == []
+    assert not await store.knows_delivery("d1")
