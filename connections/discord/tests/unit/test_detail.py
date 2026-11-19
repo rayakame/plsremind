@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import datetime
 import uuid
 from unittest import mock
@@ -11,6 +12,7 @@ import pytest
 from risa import ui
 
 from plsremind_discord import modals
+from plsremind_discord import patience
 from plsremind_discord.views import common
 from plsremind_discord.views.detail import DetailView
 from plsremind_discord.views.overview import OverviewView
@@ -139,6 +141,20 @@ async def test_a_schedule_that_cannot_be_read_is_left_out() -> None:
     hub.fail["schedule"] = plsremind.NetworkError("no route")
     view = DetailView(user=common.pack(MIA), item=common.pack(item.id))
     await discord.views(hub, DetailView, OverviewView).build(view)
+    assert view.upcoming is None
+    assert view.shown is not None
+    assert view.shown.item == item
+
+
+async def test_a_schedule_that_takes_too_long_is_left_out(monkeypatch: pytest.MonkeyPatch) -> None:
+    hub = FakeHub()
+    item = things.item(1)
+    hub.knows(things.user(), item)
+    hub.schedules[item.id] = (things.scheduled(NOW + HOUR),)
+    discord.slow(monkeypatch, hub, "schedule")
+    monkeypatch.setattr(patience, "PATIENCE", 0.01)
+    view = DetailView(user=common.pack(MIA), item=common.pack(item.id))
+    await asyncio.wait_for(discord.views(hub, DetailView, OverviewView).build(view), 2)
     assert view.upcoming is None
     assert view.shown is not None
     assert view.shown.item == item

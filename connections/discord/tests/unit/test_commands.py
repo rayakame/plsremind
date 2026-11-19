@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import collections.abc
 import datetime
 import typing
@@ -11,6 +12,7 @@ import plsremind
 import pytest
 
 from plsremind_discord import modals
+from plsremind_discord import patience
 from plsremind_discord import texts
 from plsremind_discord.commands import common
 from plsremind_discord.commands import deadline
@@ -377,3 +379,134 @@ async def test_every_command_is_announced_in_both_languages_for_both_kinds_of_in
     assert [choice.value for choice in deadlines.options[3].choices or ()] == ["low", "normal", "high"]
     assert deadlines.options[4].autocomplete is True
     assert (await message.RemindMe.as_command_builder(EN, provider)).name == "Remind me"
+
+
+@pytest.fixture
+def impatient(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(patience, "PATIENCE", 0.01)
+
+
+async def test_a_private_confirmation_names_the_list(hub: FakeHub) -> None:
+    ctx = discord.command()
+    await deadline.deadline(ctx, the(hub), due="fr", what="Taxes", note=None, priority=None, list_="Work", public=False)
+    assert "-# Work" in discord.replied(ctx)[1]
+
+    ctx = discord.command()
+    await remind.remind(ctx, the(hub), when="2h", what="Laundry", note=None, public=False)
+    assert "-# Inbox" in discord.replied(ctx)[1]
+
+    ctx = discord.command()
+    await remind.remind(ctx, the(hub), when="2h", what="Laundry", note=None, public=True)
+    assert "Inbox" not in discord.replied(ctx)[1]
+
+    hub.their_lists[MIA] = ()
+    ctx = discord.command()
+    await remind.remind(ctx, the(hub), when="2h", what="Laundry", note=None, public=False)
+    assert "-#" not in discord.replied(ctx)[1]
+
+
+async def test_in_a_dm_with_the_bot_a_public_confirmation_is_the_private_one(hub: FakeHub) -> None:
+    alone = hikari.ApplicationContextType.BOT_DM
+    ctx = discord.command(where=alone)
+    await remind.remind(ctx, the(hub), when="2h", what="Laundry", note=None, public=True)
+    hidden, text = discord.replied(ctx)
+    assert hidden is True
+    assert "todo.example.com/items/" in text
+
+    ctx = discord.command(where=alone)
+    await deadline.deadline(ctx, the(hub), due="fr", what="Taxes", note=None, priority=None, list_=None, public=True)
+    hidden, text = discord.replied(ctx)
+    assert hidden is True
+    assert "todo.example.com/items/" in text
+
+
+async def test_between_two_people_a_public_confirmation_stays_public(hub: FakeHub) -> None:
+    ctx = discord.command(where=hikari.ApplicationContextType.PRIVATE_CHANNEL)
+    await remind.remind(ctx, the(hub), when="2h", what="Laundry", note=None, public=True)
+    assert discord.replied(ctx)[0] is False
+
+
+@pytest.mark.usefixtures("impatient")
+@pytest.mark.parametrize("public", [False, True])
+async def test_a_hub_that_takes_its_time_makes_remind_ask_discord_to_wait(
+    hub: FakeHub, monkeypatch: pytest.MonkeyPatch, *, public: bool
+) -> None:
+    go = discord.slow(monkeypatch, hub, "add")
+    ctx = discord.command()
+    running = asyncio.create_task(remind.remind(ctx, the(hub), when="2h", what="Laundry", note=None, public=public))
+    await discord.until(lambda: ctx.defer.await_count == 1)
+    ctx.defer.assert_awaited_once_with(ephemeral=not public)
+    ctx.respond.assert_not_called()
+    go.set()
+    await running
+    assert "**Laundry**" in discord.replied(ctx)[1]
+
+
+@pytest.mark.usefixtures("impatient")
+async def test_a_hub_that_takes_its_time_makes_deadline_ask_discord_to_wait(
+    hub: FakeHub, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    go = discord.slow(monkeypatch, hub, "add")
+    ctx = discord.command()
+    running = asyncio.create_task(
+        deadline.deadline(ctx, the(hub), due="fr", what="Taxes", note=None, priority=None, list_=None, public=False)
+    )
+    await discord.until(lambda: ctx.defer.await_count == 1)
+    ctx.defer.assert_awaited_once_with(ephemeral=True)
+    go.set()
+    await running
+    assert "**Taxes**" in discord.replied(ctx)[1]
+
+
+@pytest.mark.usefixtures("impatient")
+async def test_a_hub_that_takes_its_time_makes_done_ask_discord_to_wait(
+    hub: FakeHub, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    go = discord.slow(monkeypatch, hub, "set_done")
+    ctx = discord.command()
+    running = asyncio.create_task(done.done(ctx, the(hub), item=things.uid(1002)))
+    await discord.until(lambda: ctx.defer.await_count == 1)
+    ctx.defer.assert_awaited_once_with(ephemeral=True)
+    go.set()
+    await running
+    assert "Call Ben" in discord.replied(ctx)[1]
+
+
+@pytest.mark.usefixtures("impatient")
+async def test_a_slow_hub_that_then_refuses_is_still_answered(hub: FakeHub, monkeypatch: pytest.MonkeyPatch) -> None:
+    hub.fail["add"] = plsremind.ServerError(500, "boom", "no")
+    go = discord.slow(monkeypatch, hub, "add")
+    ctx = discord.command()
+    running = asyncio.create_task(remind.remind(ctx, the(hub), when="2h", what="Laundry", note=None, public=False))
+    await discord.until(lambda: ctx.defer.await_count == 1)
+    go.set()
+    await running
+    assert "Das hat nicht geklappt" in discord.replied(ctx)[1]
+
+
+async def test_a_hub_that_answers_at_once_needs_no_waiting(hub: FakeHub) -> None:
+    ctx = discord.command()
+    await remind.remind(ctx, the(hub), when="2h", what="Laundry", note=None, public=False)
+    await done.done(ctx, the(hub), item=things.uid(1002))
+    ctx.defer.assert_not_called()
+
+
+async def test_if_discord_cannot_be_asked_to_wait_the_work_is_given_up() -> None:
+    started, cancelled = asyncio.Event(), asyncio.Event()
+
+    async def work() -> None:
+        started.set()
+        try:
+            await asyncio.sleep(60)
+        except asyncio.CancelledError:
+            cancelled.set()
+            raise
+
+    async def wait() -> None:
+        raise hikari.HikariError
+
+    with mock.patch.object(patience, "PATIENCE", 0.01), pytest.raises(hikari.HikariError):
+        await patience.unhurried(work(), wait)
+    await asyncio.sleep(0)
+    assert started.is_set()
+    assert cancelled.is_set()

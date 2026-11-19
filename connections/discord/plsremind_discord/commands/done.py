@@ -19,7 +19,7 @@ async def done(ctx: lightbulb.Context, tools: common.Tools, *, item: str) -> Non
         await common.say(ctx, tools, tools.texts("error.unknown_item", who.locale))
         return
     try:
-        await tools.hub.set_done(who.user, found.id, done=True)
+        await common.patient(ctx, tools.hub.set_done(who.user, found.id, done=True))
     except plsremind.PlsremindError as error:
         await common.say(ctx, tools, tools.texts(common.problem(error), who.locale))
         return

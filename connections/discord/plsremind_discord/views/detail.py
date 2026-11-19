@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import datetime
 import typing
@@ -11,6 +12,7 @@ import risa
 from risa import ui
 
 from plsremind_discord import modals
+from plsremind_discord import patience
 from plsremind_discord import texts as texts_
 from plsremind_discord.clock import Clock
 from plsremind_discord.config import Config
@@ -42,8 +44,10 @@ class DetailView(common.Owned):
         if view.item is None or view.item.status is plsremind.ItemStatus.DONE:
             return
         try:
-            schedule = await hub.schedule(common.unpack(self.user), view.item.id)
-        except plsremind.PlsremindError:
+            # Bounded, because a click that opens a modal cannot ask Discord to wait.
+            async with asyncio.timeout(patience.PATIENCE):
+                schedule = await hub.schedule(common.unpack(self.user), view.item.id)
+        except plsremind.PlsremindError, TimeoutError:
             return
         self.upcoming = min((one.fire_at for one in schedule), default=None)
 

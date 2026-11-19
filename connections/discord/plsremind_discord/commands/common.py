@@ -11,6 +11,7 @@ import msgspec
 import plsremind
 import risa
 
+from plsremind_discord import patience
 from plsremind_discord import texts as texts_
 from plsremind_discord import timeparse
 from plsremind_discord.clock import Clock
@@ -78,6 +79,28 @@ async def asking(ctx: lightbulb.Context, tools: Tools) -> Asking | None:
         locale=texts_.locale_for(profile, speaks),
         zone=profile.timezone if profile is not None else _UTC,
     )
+
+
+async def patient[T](
+    ctx: lightbulb.Context, work: collections.abc.Coroutine[object, object, T], *, public: bool = False
+) -> T:
+    """Do `work`, and have Discord wait if the hub takes long. The wait is as public as the answer will be."""
+    return await patience.unhurried(work, lambda: ctx.defer(ephemeral=not public))
+
+
+def for_all(ctx: lightbulb.Context, *, asked: bool) -> bool:
+    """Whether a confirmation goes to the channel. Alone with the bot there is nobody else to show it to."""
+    return asked and ctx.interaction.context is not hikari.ApplicationContextType.BOT_DM
+
+
+async def confirm(
+    ctx: lightbulb.Context, tools: Tools, who: Asking, text: str, item: plsremind.Item, *, public: bool
+) -> None:
+    if public:
+        await say(ctx, tools, text, public=True)
+        return
+    private = views_.confirmation(tools.hub, tools.config, tools.texts, who.locale, text=text, item=item)
+    await say(ctx, tools, *private)
 
 
 def problem(error: timeparse.TimeError | plsremind.PlsremindError) -> str:

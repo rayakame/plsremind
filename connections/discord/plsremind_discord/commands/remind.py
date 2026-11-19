@@ -20,19 +20,17 @@ async def remind(
         return
     say, now = tools.texts, tools.clock.now()
     title = what.strip()
+    public = common.for_all(ctx, asked=public)
     try:
         at = timeparse.moment(timeparse.parse(when, now=now, zone=who.zone), now=now, zone=who.zone)
-        item = await actions.remind_me(tools.hub, who.user, title=title, note=(note or "").strip(), at=at)
+        making = actions.remind_me(tools.hub, who.user, title=title, note=(note or "").strip(), at=at)
+        item = await common.patient(ctx, making, public=public)
     except (timeparse.TimeError, plsremind.PlsremindError) as error:
         await common.say(ctx, tools, say(common.problem(error), who.locale))
         return
     shown = views_.plain(title, views_.TITLE_SHOWN)
     text = say("ack.remind", who.locale, when=texts_.stamp(at, "F"), title=shown)
-    if public:
-        await common.say(ctx, tools, text, public=True)
-        return
-    link = f"{tools.config.public_url}/items/{item.id}"
-    await common.say(ctx, tools, text, link, say("button.dashboard", who.locale))
+    await common.confirm(ctx, tools, who, text, item, public=public)
 
 
 @loader.command

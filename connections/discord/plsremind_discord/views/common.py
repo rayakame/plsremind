@@ -263,6 +263,16 @@ def snoozed(view: Shown, until: datetime.datetime) -> tuple[str, str, str]:
     return text, item_url(view, item) if item is not None else view.public_url, say("button.dashboard", locale)
 
 
+def confirmation(
+    hub: Hub, config: Config, texts: texts_.Texts, locale: hikari.Locale, *, text: str, item: plsremind.Item
+) -> tuple[str, str, str]:
+    """The text, the link and the link's label of a confirmation only the user sees."""
+    where = hub.list_name(item.list_id)
+    if where:
+        text += f"\n-# {plain(where, TITLE_SHOWN)}"
+    return text, f"{config.public_url}/items/{item.id}", texts("button.dashboard", locale)
+
+
 def notice_layout(text: str, link: str, label: str) -> ui.Layout:
     if not link:
         return ui.Container(ui.TextDisplay(text))

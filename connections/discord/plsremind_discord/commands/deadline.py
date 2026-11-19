@@ -31,9 +31,10 @@ async def deadline(
         await common.say(ctx, tools, say("error.unknown_list", who.locale))
         return
     title = what.strip()
+    public = common.for_all(ctx, asked=public)
     try:
         parsed = timeparse.parse(due, now=tools.clock.now(), zone=who.zone)
-        item = await hub.add(
+        making = hub.add(
             who.user,
             title=title,
             note=(note or "").strip(),
@@ -42,16 +43,13 @@ async def deadline(
             due_at=parsed.at if isinstance(parsed, timeparse.Moment) else None,
             due_date=parsed.date if isinstance(parsed, timeparse.Day) else None,
         )
+        item = await common.patient(ctx, making, public=public)
     except (timeparse.TimeError, plsremind.PlsremindError) as error:
         await common.say(ctx, tools, say(common.problem(error), who.locale))
         return
     when = texts_.stamp(parsed.at, "F") if isinstance(parsed, timeparse.Moment) else texts_.day(parsed.date, who.locale)
     text = say("ack.deadline", who.locale, when=when, title=views_.plain(title, views_.TITLE_SHOWN))
-    if public:
-        await common.say(ctx, tools, text, public=True)
-        return
-    link = f"{tools.config.public_url}/items/{item.id}"
-    await common.say(ctx, tools, text, link, say("button.dashboard", who.locale))
+    await common.confirm(ctx, tools, who, text, item, public=public)
 
 
 @loader.command

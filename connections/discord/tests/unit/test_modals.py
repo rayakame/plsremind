@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import asyncio
 import collections.abc
 import datetime
 import pathlib
 import typing
 import uuid
+from unittest import mock
 
 import hikari
 import plsremind
@@ -12,6 +14,7 @@ import pytest
 
 from plsremind_discord import hub as hub_module
 from plsremind_discord import modals
+from plsremind_discord import patience
 from plsremind_discord.store import Sent
 from plsremind_discord.store import Store
 from plsremind_discord.submits import Modals
@@ -268,3 +271,128 @@ async def test_a_snooze_modal_without_its_message_still_sets_the_reminder(made: 
     await made.modals.submitted(event)
     assert made.hub.named("remind")[0]["origin"] is None
     assert discord.answer(event.interaction)[0] == UPDATE
+
+
+@pytest.fixture
+def impatient(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(patience, "PATIENCE", 0.01)
+
+
+DEFERRED_UPDATE = hikari.ResponseType.DEFERRED_MESSAGE_UPDATE
+DEFERRED_CREATE = hikari.ResponseType.DEFERRED_MESSAGE_CREATE
+
+
+async def waited_for(event: mock.Mock) -> None:
+    await discord.until(lambda: event.interaction.create_initial_response.await_count == 1)
+
+
+@pytest.mark.usefixtures("impatient")
+async def test_a_slow_edit_asks_discord_to_wait_and_then_redraws_the_message(
+    made: Made, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    go = discord.slow(monkeypatch, made.hub, "edit")
+    event = discord.submitted(modals.edit_id(ITEM.id, (None, 0)), {modals.TITLE: "Final report", modals.DUE: ""})
+    running = asyncio.create_task(made.modals.submitted(event))
+    await waited_for(event)
+    event.interaction.create_initial_response.assert_awaited_once_with(DEFERRED_UPDATE)
+    go.set()
+    await running
+    assert "Final report" in discord.edited(event.interaction)
+    event.interaction.execute.assert_not_called()
+
+
+@pytest.mark.usefixtures("impatient")
+async def test_a_slow_snooze_of_a_reminder_asks_discord_to_wait_and_then_turns_it_into_the_notice(
+    made: Made, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    go = discord.slow(monkeypatch, made.hub, "remind")
+    event = discord.submitted(modals.snooze_id(ITEM.id, detail=None), {modals.WHEN: "3h"})
+    running = asyncio.create_task(made.modals.submitted(event))
+    await waited_for(event)
+    event.interaction.create_initial_response.assert_awaited_once_with(DEFERRED_UPDATE)
+    go.set()
+    await running
+    assert "Report" in discord.edited(event.interaction)
+
+
+@pytest.mark.usefixtures("impatient")
+async def test_a_slow_reminder_for_a_message_shows_that_the_bot_is_thinking_and_then_confirms(
+    made: Made, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    go = discord.slow(monkeypatch, made.hub, "add")
+    event = discord.submitted(
+        modals.message_id(guild=1, channel=2, message=3), {modals.TITLE: "Call Ben", modals.WHEN: "2h"}, message=None
+    )
+    running = asyncio.create_task(made.modals.submitted(event))
+    await waited_for(event)
+    event.interaction.create_initial_response.assert_awaited_once_with(
+        DEFERRED_CREATE, flags=hikari.MessageFlag.EPHEMERAL
+    )
+    go.set()
+    await running
+    assert "**Call Ben**" in discord.edited(event.interaction)
+
+
+@pytest.mark.usefixtures("impatient")
+async def test_what_goes_wrong_after_discord_was_asked_to_wait_is_said_in_private(
+    made: Made, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    made.hub.fail["remind"] = plsremind.ServerError(500, "boom", "no")
+    go = discord.slow(monkeypatch, made.hub, "remind")
+    event = discord.submitted(modals.snooze_id(ITEM.id, detail=(None, 0)), {modals.WHEN: "3h"})
+    running = asyncio.create_task(made.modals.submitted(event))
+    await waited_for(event)
+    go.set()
+    await running
+    hidden, text = discord.followed_up(event.interaction)
+    assert hidden is True
+    assert "Das hat nicht geklappt" in text
+    event.interaction.edit_initial_response.assert_not_called()
+
+
+@pytest.mark.usefixtures("impatient")
+async def test_what_goes_wrong_for_a_message_after_the_wait_takes_the_place_of_the_thinking(
+    made: Made, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    made.hub.fail["add"] = plsremind.ServerError(500, "boom", "no")
+    go = discord.slow(monkeypatch, made.hub, "add")
+    event = discord.submitted(
+        modals.message_id(guild=1, channel=2, message=3), {modals.TITLE: "x", modals.WHEN: "2h"}, message=None
+    )
+    running = asyncio.create_task(made.modals.submitted(event))
+    await waited_for(event)
+    go.set()
+    await running
+    assert "Das hat nicht geklappt" in discord.edited(event.interaction)
+    event.interaction.execute.assert_not_called()
+
+
+async def test_a_modal_that_fails_for_a_reason_nobody_foresaw_is_answered_and_logged(
+    made: Made, caplog: pytest.LogCaptureFixture
+) -> None:
+    made.hub.fail["edit"] = RuntimeError("boom")
+    event = discord.submitted(modals.edit_id(ITEM.id, (None, 0)), {modals.TITLE: "x", modals.DUE: ""})
+    await made.modals.submitted(event)
+    kind, hidden, text = discord.answer(event.interaction)
+    assert (kind, hidden) == (CREATE, True)
+    assert "Das hat nicht geklappt" in text
+    assert "boom" in caplog.text
+
+
+@pytest.mark.parametrize("due", ["", "bald"], ids=["the redraw", "the refusal"])
+async def test_a_modal_that_can_no_longer_be_answered_is_only_logged(
+    made: Made, caplog: pytest.LogCaptureFixture, due: str
+) -> None:
+    event = discord.submitted(modals.edit_id(ITEM.id, (None, 0)), {modals.TITLE: "x", modals.DUE: due})
+    event.interaction.create_initial_response.side_effect = hikari.HikariError("the token ran out")
+    await made.modals.submitted(event)
+    assert "could not be answered" in caplog.text
+    assert event.interaction.create_initial_response.await_count == 1
+
+
+async def test_a_private_confirmation_for_a_message_names_the_list(made: Made) -> None:
+    event = discord.submitted(
+        modals.message_id(guild=1, channel=2, message=3), {modals.TITLE: "Call Ben", modals.WHEN: "2h"}, message=None
+    )
+    await made.modals.submitted(event)
+    assert "-# Inbox" in discord.answer(event.interaction)[2]
