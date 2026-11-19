@@ -216,3 +216,25 @@ func TestDroppingForAnItemOrAUserThatIsGoneIsNoError(t *testing.T) {
 	require.NoError(t, err)
 	require.Zero(t, n)
 }
+
+func TestOneItemThatCannotBeSweptDoesNotHoldUpTheOthers(t *testing.T) {
+	e := testkit.New(t)
+	ctx := context.Background()
+	mia, ben := e.User(t, "mia"), e.User(t, "ben")
+	stuck, freed := newItem(t, mia), newItem(t, ben)
+	for id, at := range map[string]time.Time{stuck: e.Clock.Now().Add(-2 * time.Hour), freed: e.Clock.Now().Add(-time.Hour)} {
+		_, err := e.Pool.Exec(ctx,
+			`INSERT INTO manual_reminders (id, item_id, remind_at, created_at) VALUES (gen_random_uuid(), $1, $2, $2)`, id, at)
+		require.NoError(t, err)
+	}
+	_, err := e.Pool.Exec(ctx, `CREATE FUNCTION refuse() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'refused'; END $$`)
+	require.NoError(t, err)
+	_, err = e.Pool.Exec(ctx, `CREATE TRIGGER refuse BEFORE DELETE ON manual_reminders FOR EACH ROW
+		WHEN (OLD.item_id = '`+stuck+`') EXECUTE FUNCTION refuse()`)
+	require.NoError(t, err)
+
+	require.Error(t, delivery.RunOnce(ctx, e.Deps))
+
+	require.Len(t, remindersOf(t, mia, stuck), 1)
+	require.Empty(t, remindersOf(t, ben, freed), "the item after the one that failed is swept all the same")
+}

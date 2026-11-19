@@ -24,9 +24,9 @@ type spentItem struct {
 // sweepRounds caps one run, so that a large backlog does not hold up the reminders that are due.
 const sweepRounds = 5
 
-// sweepSpent drops manual reminders whose time has passed and that are no longer scheduled.
 // Not in fireBatch: that holds schedule rows before the user's row, the reverse of a request.
 func sweepSpent(ctx context.Context, d *core.Deps) error {
+	var failed []error
 	for range sweepRounds {
 		var spent []sqlc.ListSpentManualRemindersRow
 		err := store.Tx(ctx, d.Pool, func(q *sqlc.Queries) error {
@@ -35,21 +35,23 @@ func sweepSpent(ctx context.Context, d *core.Deps) error {
 			return err
 		})
 		if err != nil {
-			return err
+			return errors.Join(append(failed, err)...)
 		}
 		removed := 0
 		for _, item := range bySpentItem(spent) {
 			n, err := dropSpent(ctx, d, item)
 			if err != nil {
-				return err
+				// Reported once the others are done: the list comes in order, so this item would block those after it.
+				failed = append(failed, err)
+				continue
 			}
 			removed += n
 		}
 		if removed == 0 {
-			return nil
+			break
 		}
 	}
-	return nil
+	return errors.Join(failed...)
 }
 
 func bySpentItem(rows []sqlc.ListSpentManualRemindersRow) []*spentItem {
