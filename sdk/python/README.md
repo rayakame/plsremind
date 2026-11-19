@@ -128,7 +128,8 @@ event.
 
 - Every event about a user has `user_id`. Change events also have `actor` (compare
   `actor.id` with `client.principal.id` to recognise your own changes) and `nonce`, the
-  `nonce=` of the REST call that made the change.
+  `nonce=` of the REST call that made the change. `actor` is `None` for what the hub does
+  by itself, such as removing a manual reminder whose time has passed.
 - `old_*` is the object the cache held before the change, or `None` if it held none.
 - Listening to a base class gets every event below it: `ItemEvent`, `ListEvent`,
   `DeliveryEvent`, `ChangeEvent`, `UserEvent`, or `Event` for everything.

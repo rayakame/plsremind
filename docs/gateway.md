@@ -174,9 +174,10 @@ counterparts of Discord's `GUILD_DELETE` and `GUILD_CREATE`.
   `*.deleted` it is `{"id": "..."}`, with `item_id` added for subitems and reminders.
 - `actor` says who made the change: `kind` is `session`, `personal_token` or `connection`,
   and `id` identifies it. Compare it with `principal.id` from `READY` to recognise changes
-  made with your own token or login. It is
-  `null` when the hub tells a connection that something about a user's access changed,
-  for example that they switched reminders through it off.
+  made with your own token or login. It is `null` for what the hub does by itself: when
+  it tells a connection that something about a user's access changed, for example that
+  they switched reminders through it off, and when it removes a manual reminder whose time
+  has passed.
 - `nonce` is the `X-Request-Nonce` header of the request that made the change, or `null`
   if it sent none. Send a random one with a request and you can tell exactly which change
   events are the result of that call, however many it writes. Every client that receives
@@ -187,6 +188,10 @@ counterparts of Discord's `GUILD_DELETE` and `GUILD_CREATE`.
 - Every change to a subitem or a manual reminder is followed by `item.updated` with the
   whole item. If you keep items in memory you can ignore the `subitem.*` and `reminder.*`
   events and just replace the item.
+- A manual reminder leaves its item once its time has passed, whether it went out or
+  not. An item's `reminders` are therefore always the ones still ahead. The hub announces
+  the removal as `reminder.deleted` and `item.updated` without an actor; when several
+  reminders of one item go at once, one `item.updated` follows them all.
 - An item that is completed arrives as `item.updated` with `status: "done"`. Remove it
   from your open items. If you keep a history, store it there and keep the history ordered
   by `completed_at`, then `id`, both descending: that is the order of `user.sync` and of

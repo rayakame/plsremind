@@ -84,6 +84,9 @@ A change event carries:
 | `actor`  | who made the change; compare `actor?.id` with `client.principal.id` |
 | `nonce`  | the `nonce` option of the REST call that made the change, or `null` |
 
+`actor` is `null` for what the hub does by itself, such as removing a manual reminder whose
+time has passed.
+
 The cache is already up to date when a handler runs. Handlers run in the order of the
 events; a handler that returns a promise is not waited for.
 
