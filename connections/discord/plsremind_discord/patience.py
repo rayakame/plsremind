@@ -3,8 +3,8 @@ from __future__ import annotations
 import asyncio
 import collections.abc
 
-# Discord gives an interaction three seconds; this leaves room for the way there and back.
-PATIENCE = 1.5
+# Discord gives an interaction three seconds; measured, the way there and back takes up to about one.
+PATIENCE = 1.0
 
 
 async def unhurried[T](

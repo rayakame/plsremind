@@ -16,6 +16,7 @@ from plsremind_discord.views import common
 @risa.register(name="reminder", hooks=[common.owned])
 class ReminderView(common.Owned):
     item: bytes
+    account: int = 0
     shown: risa.Prop[common.Shown | None] = None
 
     async def load(
@@ -30,7 +31,9 @@ class ReminderView(common.Owned):
         item, say, locale = view.item, view.texts, view.locale
         if item is None:
             return ui.Container(ui.TextDisplay(say("reminder.gone", locale)))
-        text = ui.TextDisplay(common.card(view, item))
+        # A mention, so that the reminder also lands among the user's mentions.
+        mention = f"<@{self.account}>\n" if self.account else ""
+        text = ui.TextDisplay(mention + common.card(view, item))
         dashboard = ui.LinkButton(common.item_url(view, item), label=say("button.dashboard", locale))
         state = common.state_of(item, view.now)
         if state == "done":

@@ -160,13 +160,15 @@ class Reminders:
         accounts = self._accounts(delivery, first=first)
         if not accounts:
             return await self._report(delivery.id, self._texts("delivery.no_account", locale))
-        view = ReminderView(user=common.pack(delivery.user.id), item=common.pack(delivery.item.id))
-        rendered = await self._views.build(view)
-        if view.shown is None or view.shown.item is None:
-            # The user or the item is out of reach this moment; if it stays so, the hub withdraws the delivery.
-            _LOGGER.info("delivery %s waits until its item can be read", delivery.id)
-            return _Outcome.PASSING
-        return await self._conclude(delivery, await self._send(delivery, rendered, accounts), locale)
+        views: dict[int, ui.Rendered] = {}
+        for account in accounts:
+            view = ReminderView(user=common.pack(delivery.user.id), item=common.pack(delivery.item.id), account=account)
+            views[account] = await self._views.build(view)
+            if view.shown is None or view.shown.item is None:
+                # The user or the item is out of reach this moment; if it stays so, the hub withdraws the delivery.
+                _LOGGER.info("delivery %s waits until its item can be read", delivery.id)
+                return _Outcome.PASSING
+        return await self._conclude(delivery, await self._send(delivery, views), locale)
 
     async def _conclude(self, delivery: plsremind.Delivery, sending: _Sending, locale: hikari.Locale) -> _Outcome:
         if sending.sent:
@@ -178,13 +180,15 @@ class Reminders:
         reason = "delivery.refused" if sending.refused else "delivery.closed_dms"
         return await self._report(delivery.id, self._texts(reason, locale))
 
-    async def _send(self, delivery: plsremind.Delivery, rendered: ui.Rendered, accounts: list[int]) -> _Sending:
+    async def _send(self, delivery: plsremind.Delivery, views: dict[int, ui.Rendered]) -> _Sending:
         sent: list[Sent] = []
         passing = refused = False
-        for account in accounts:
+        for account, rendered in views.items():
             try:
                 channel = await self._rest.create_dm_channel(account)
-                message = await rendered.send_to(self._rest, channel)
+                message = await self._rest.create_message(
+                    channel, **rendered, user_mentions=[account], role_mentions=False, mentions_everyone=False
+                )
             except hikari.ForbiddenError, hikari.NotFoundError:
                 continue
             except hikari.ClientHTTPResponseError:

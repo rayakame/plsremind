@@ -192,6 +192,17 @@ def test_the_fullest_reminder_stays_within_what_discord_allows_of_text(*, done: 
     assert texts.units(discord.written(view.render())) <= 1000
 
 
+@pytest.mark.parametrize("done", [False, True])
+def test_a_reminder_for_an_account_opens_with_its_mention(*, done: bool) -> None:
+    view = ReminderView(user=common.pack(MIA), item=common.pack(things.uid(1001)), account=1234)
+    view.shown = seen(things.item(done=done))
+    assert discord.written(view.render()).startswith("<@1234>\n")
+
+
+def test_a_reminder_without_an_account_mentions_nobody() -> None:
+    assert "<@" not in discord.written(drawn(things.item()))
+
+
 def test_an_item_ahead_shows_when_it_is_due_and_what_can_be_done() -> None:
     item = things.item(title="Tax return", due_at=NOW + HOUR, priority=plsremind.Priority.HIGH)
     layout = drawn(item)

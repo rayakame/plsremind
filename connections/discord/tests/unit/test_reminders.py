@@ -175,6 +175,18 @@ async def test_one_account_that_takes_the_message_is_enough(made: Made) -> None:
     assert [row.channel_id for row in await made.store.messages_for_item(ITEM.id)] == [CHANNEL + 5678]
 
 
+async def test_each_reminder_mentions_the_account_it_goes_to_and_only_that_one(made: Made) -> None:
+    await made.reminders.deliver(delivery(to=things.user(external_ids=("1234", "5678"))))
+    calls = made.rest.create_message.await_args_list
+    assert len(calls) == 2
+    for call, account in zip(calls, (1234, 5678), strict=True):
+        built = [builder.build()[0] for builder in call.kwargs["components"]]
+        said = "\n".join(discord.payload_texts(built))
+        assert said.startswith(f"<@{account}>\n")
+        assert (call.kwargs["user_mentions"], call.kwargs["role_mentions"]) == ([account], False)
+        assert call.kwargs["mentions_everyone"] is False
+
+
 async def test_a_user_without_a_discord_account_is_reported(made: Made) -> None:
     await made.reminders.deliver(delivery(to=things.user(external_ids=("mia#0001",))))
     assert made.hub.named("failed") == [

@@ -65,7 +65,7 @@ async def drawn(made: Made, view: risa.View) -> list[dict[str, typing.Any]]:
 
 
 def reminder() -> ReminderView:
-    return ReminderView(user=common.pack(MIA), item=common.pack(ITEM.id))
+    return ReminderView(user=common.pack(MIA), item=common.pack(ITEM.id), account=1234)
 
 
 async def test_done_on_a_reminder_reaches_the_hub_and_redraws_the_message(made: Made) -> None:
@@ -77,6 +77,7 @@ async def test_done_on_a_reminder_reaches_the_hub_and_redraws_the_message(made: 
     assert (kind, hidden) == (UPDATE, False)
     assert "~~Report~~" in wire.texts(after)
 
+    assert wire.texts(after).startswith("<@1234>"), "the mention stays through a click"
     rest = await wire.click(made.views, after, wire.custom_id(after, label="Rückgängig"))
     assert made.hub.named("set_done")[-1]["done"] is False
     assert "~~" not in wire.texts(wire.answered(rest)[2])

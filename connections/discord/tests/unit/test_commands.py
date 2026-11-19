@@ -560,3 +560,8 @@ async def test_if_discord_cannot_be_asked_to_wait_the_work_is_given_up() -> None
     await asyncio.sleep(0)
     assert started.is_set()
     assert cancelled.is_set()
+
+
+def test_discord_is_asked_to_wait_with_room_to_spare() -> None:
+    # Measured against Discord: up to 0.4 s until the bot has a command, up to 0.7 s to answer.
+    assert patience.PATIENCE <= 1.0
