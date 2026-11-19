@@ -243,6 +243,9 @@ await client.rest.create_reminder(item.id, after=datetime.timedelta(hours=2))
   Nothing else is retried. A call may take 30 seconds (`rest_timeout=`).
 - `session=` on `Client` and `RESTClient` takes an `aiohttp.ClientSession` of your own,
   for example to go through a proxy.
+- The client asks the hub where its gateway listens, and the hub names its public address.
+  A client that reaches the hub by another address, such as one inside a container
+  network, passes `gateway_url="ws://hub:8080/api/v1/gateway"`.
 
 ## A connection
 

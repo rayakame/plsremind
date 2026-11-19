@@ -117,6 +117,7 @@ class Client:
         *,
         token: str,
         intents: Intents = Intents.NONE,
+        gateway_url: str | None = None,
         rest_timeout: float = 30.0,
         rest_retry: bool = True,
         session: aiohttp.ClientSession | None = None,
@@ -131,6 +132,9 @@ class Client:
             A personal token or the token of a connection.
         intents
             What to ask the gateway for. Without any, the client can only use `rest`.
+        gateway_url
+            Where the gateway listens. Left out, the client asks the hub, which names its
+            public address; give it when the client reaches the hub by another one.
         rest_timeout
             How many seconds a REST call may take.
         rest_retry
@@ -146,6 +150,7 @@ class Client:
         """Every call of the REST API."""
         self._token: typing.Final = token
         self._given_session: typing.Final = session
+        self._gateway_address: typing.Final = gateway_url
         self._asked: typing.Final = intents
         self._granted: Intents | None = None
         self._store: typing.Final = store.CacheStore(connection=self.rest.is_connection)
@@ -396,6 +401,8 @@ class Client:
             raise failure
 
     async def _gateway_url(self) -> str:
+        if self._gateway_address is not None:
+            return self._gateway_address
         return (await self.rest.get_info()).gateway_url
 
     async def _release(self) -> None:

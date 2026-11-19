@@ -159,6 +159,22 @@ async def test_start_raises_on_a_fatal_close(hub: fakes.FakeHub, make: Make) -> 
     assert closed[0].error is caught.value
 
 
+async def test_a_given_gateway_address_is_used_and_info_is_never_asked(hub: fakes.FakeHub) -> None:
+    hub.answer("GET", "/info", fakes.error(503, "down"))
+    address = hub.url.replace("http://", "ws://") + fakes.PREFIX + "/gateway"
+    client = plsremind.Client(hub.url, token=TOKEN, intents=STATE, gateway_url=address)
+    try:
+        await started(hub, client)
+        assert hub.requests == []
+    finally:
+        await client.close()
+
+
+async def test_without_a_gateway_address_info_is_asked(hub: fakes.FakeHub, make: Make) -> None:
+    await started(hub, make())
+    assert [request.path for request in hub.requests] == ["/info"]
+
+
 async def test_start_raises_when_the_hub_is_unreachable(hub: fakes.FakeHub, make: Make) -> None:
     hub.answer("GET", "/info", fakes.error(503, "unavailable", "Down."))
     client = make()
