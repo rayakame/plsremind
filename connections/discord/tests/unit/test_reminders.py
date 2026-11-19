@@ -39,6 +39,12 @@ def broken() -> hikari.InternalServerError:
     )
 
 
+def refused() -> hikari.BadRequestError:
+    return hikari.BadRequestError(
+        url="https://discord.test", headers={}, raw_body=b"", message="Invalid Form Body", code=50035
+    )
+
+
 def channel(account: int) -> mock.Mock:
     return mock.Mock(id=hikari.Snowflake(CHANNEL + account))
 
@@ -298,15 +304,18 @@ async def test_a_delivery_sent_again_while_a_later_try_is_under_way_is_left_to_i
     assert len(made.hub.named("delivered")) == 1
 
 
-async def test_tries_end_a_day_after_the_reminder_was_due(made: Made) -> None:
+@pytest.mark.parametrize("due", [datetime.timedelta(0), datetime.timedelta(hours=23, minutes=59, seconds=30)])
+async def test_tries_end_a_day_after_the_first_one(made: Made, due: datetime.timedelta) -> None:
     made.rest.create_message.side_effect = broken()
-    await made.reminders.deliver(delivery(scheduled_for=made.clock.moment - datetime.timedelta(hours=23)))
+    await made.reminders.deliver(delivery(scheduled_for=made.clock.moment - due))
     await discord.until(lambda: not made.reminders.waiting)
 
-    assert made.slept == [60.0, 300.0, 900.0, 1800.0, 1800.0]
+    day = 24 * 3600
+    assert made.slept[:4] == [60.0, 300.0, 900.0, 1800.0]
+    assert sum(made.slept[:-1]) < day <= sum(made.slept)
     assert made.hub.named("delivered") == []
     assert made.hub.named("failed") == []
-    assert made.rest.create_message.await_count == 5
+    assert made.rest.create_message.await_count == len(made.slept)
 
 
 async def test_a_withdrawn_delivery_is_not_tried_again(made: Made) -> None:
@@ -483,3 +492,106 @@ async def test_a_later_try_for_a_user_who_is_gone_reports_that_no_account_is_lef
         await waiting.close()
     assert made.rest.create_message.await_count == 1
     assert made.hub.named("failed")[0]["reason"] == "Es ist kein Discord-Konto verknüpft."
+
+
+async def test_a_reminder_that_could_be_neither_recorded_nor_confirmed_is_not_sent_again(
+    made: Made, caplog: pytest.LogCaptureFixture
+) -> None:
+    waiting, go = held(made)
+    try:
+        made.hub.fail["delivered"] = plsremind.NetworkError("no route")
+        with mock.patch.object(made.store, "record", mock.AsyncMock(side_effect=sqlite3.OperationalError())):
+            await waiting.deliver(delivery())
+            assert waiting.waiting == frozenset({things.uid(9001)})
+            await waiting.deliver(delivery())
+            del made.hub.fail["delivered"]
+            go.set()
+            await discord.until(lambda: not waiting.waiting)
+    finally:
+        await waiting.close()
+    assert made.rest.create_message.await_count == 1
+    assert len(made.hub.named("delivered")) == 3
+    assert "could not be recorded" in caplog.text
+
+
+async def test_a_message_that_went_out_is_not_sent_again_after_a_withdrawal_and_a_new_arrival(made: Made) -> None:
+    made.hub.fail["delivered"] = plsremind.NetworkError("no route")
+    with mock.patch.object(made.store, "record", mock.AsyncMock(side_effect=sqlite3.OperationalError())):
+        await made.reminders.deliver(delivery())
+        made.reminders.withdraw(things.uid(9001))
+        del made.hub.fail["delivered"]
+        await made.reminders.deliver(delivery())
+    assert made.rest.create_message.await_count == 2, "a withdrawal ends what the bot knows of it"
+
+
+async def test_a_message_discord_refuses_for_good_is_reported_and_not_tried_again(
+    made: Made, caplog: pytest.LogCaptureFixture
+) -> None:
+    made.rest.create_message.side_effect = refused()
+    await made.reminders.deliver(delivery())
+    assert made.reminders.waiting == frozenset()
+    assert made.rest.create_message.await_count == 1
+    (failed,) = made.hub.named("failed")
+    assert failed["reason"] == "Discord hat die Erinnerung nicht angenommen."
+    assert "Invalid Form Body" in caplog.text
+
+
+async def test_passing_trouble_on_one_account_outweighs_a_refusal_on_another(made: Made) -> None:
+    made.hub.knows(things.user(external_ids=("1234", "5678")), ITEM)
+    made.rest.create_message.side_effect = [refused(), broken()]
+    await made.reminders.deliver(delivery(to=things.user(external_ids=("1234", "5678"))))
+    assert made.reminders.waiting == frozenset({things.uid(9001)})
+    assert made.hub.named("failed") == []
+
+
+async def test_a_withdrawal_while_the_failure_is_being_reported_is_no_error(
+    made: Made, caplog: pytest.LogCaptureFixture
+) -> None:
+    made.rest.create_message.side_effect = forbidden()
+    reporting, let_go = asyncio.Event(), asyncio.Event()
+    real = made.hub.failed
+
+    async def slow(delivery_id: plsremind.ID, reason: str) -> None:
+        reporting.set()
+        await let_go.wait()
+        await real(delivery_id, reason)
+
+    with mock.patch.object(made.hub, "failed", slow):
+        first = asyncio.create_task(made.reminders.deliver(delivery()))
+        await asyncio.wait_for(reporting.wait(), 2)
+        made.reminders.withdraw(things.uid(9001))
+        let_go.set()
+        await first
+    assert made.reminders.waiting == frozenset()
+    assert "could not be handled" not in caplog.text
+
+
+async def test_a_reminder_whose_item_cannot_be_read_is_not_sent_as_gone(made: Made) -> None:
+    made.hub.people.clear()
+    await made.reminders.deliver(delivery())
+    made.rest.create_message.assert_not_called()
+    assert made.hub.named("delivered") == []
+    assert made.reminders.waiting == frozenset({things.uid(9001)})
+
+
+async def test_closing_does_not_wait_out_the_grace_for_a_try_that_failed(made: Made) -> None:
+    waiting, go = held(made)
+    sending, let_go = asyncio.Event(), asyncio.Event()
+    made.rest.create_message.side_effect = broken()
+    await waiting.deliver(delivery())
+
+    async def stuck(*_: object, **__: object) -> mock.Mock:
+        sending.set()
+        await let_go.wait()
+        raise broken()
+
+    made.rest.create_message.side_effect = stuck
+    go.set()
+    await asyncio.wait_for(sending.wait(), 2)
+    with mock.patch.object(reminders_module, "CLOSE_GRACE", 2.0):
+        closing = asyncio.create_task(waiting.close())
+        await asyncio.sleep(0)
+        let_go.set()
+        started = asyncio.get_running_loop().time()
+        await asyncio.wait_for(closing, 3)
+    assert asyncio.get_running_loop().time() - started < 1.0

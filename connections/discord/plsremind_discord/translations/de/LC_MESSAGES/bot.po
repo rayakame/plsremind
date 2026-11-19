@@ -90,6 +90,9 @@ msgstr "Diese Nachricht ist veraltet."
 msgid "delivery.closed_dms"
 msgstr "Discord hat die Direktnachricht nicht angenommen. Prüfe, ob du Nachrichten vom Bot erlaubst und die App noch installiert ist."
 
+msgid "delivery.refused"
+msgstr "Discord hat die Erinnerung nicht angenommen."
+
 msgid "delivery.no_account"
 msgstr "Es ist kein Discord-Konto verknüpft."
 

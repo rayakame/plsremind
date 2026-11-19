@@ -12,6 +12,7 @@ import aiohttp
 import hikari
 import plsremind
 import risa
+from risa import ui
 
 from plsremind_discord import texts as texts_
 from plsremind_discord.clock import Clock
@@ -32,6 +33,12 @@ _LOGGER: typing.Final = logging.getLogger(__name__)
 class _Outcome(enum.Enum):
     SETTLED = enum.auto()
     PASSING = enum.auto()
+
+
+class _Sending(typing.NamedTuple):
+    sent: list[Sent]
+    passing: bool
+    refused: bool
 
 
 class Reminders:
@@ -58,6 +65,7 @@ class Reminders:
         self._busy: set[plsremind.ID] = set()
         self._withdrawn: set[plsremind.ID] = set()
         self._refused: dict[plsremind.ID, str] = {}
+        self._sent: set[plsremind.ID] = set()
         self._tries: dict[plsremind.ID, asyncio.Task[None]] = {}
         self._closing = False
 
@@ -77,7 +85,7 @@ class Reminders:
             self._tries[delivery.id] = asyncio.create_task(self._again(delivery), name=f"reminder-{delivery.id}")
 
     def withdraw(self, delivery_id: plsremind.ID) -> None:
-        self._refused.pop(delivery_id, None)
+        self._forget(delivery_id)
         if delivery_id in self._busy:
             # A try that is under way finishes, so that a message that went out is recorded.
             self._withdrawn.add(delivery_id)
@@ -103,9 +111,11 @@ class Reminders:
             self._closing = False
             self._withdrawn.clear()
             self._refused.clear()
+            self._sent.clear()
 
     async def _again(self, delivery: plsremind.Delivery) -> None:
-        over = delivery.reminder.scheduled_for + LIFETIME
+        # The hub keeps a delivery open for a day from when it made it, which can be long after it was due.
+        over = self._clock.now() + LIFETIME
         waits = itertools.chain(RETRY_AFTER, itertools.repeat(RETRY_EVERY))
         try:
             while True:
@@ -118,10 +128,13 @@ class Reminders:
         finally:
             if self._tries.get(delivery.id) is asyncio.current_task():
                 del self._tries[delivery.id]
-                self._refused.pop(delivery.id, None)
+                self._forget(delivery.id)
+
+    def _forget(self, delivery_id: plsremind.ID) -> None:
+        self._refused.pop(delivery_id, None)
+        self._sent.discard(delivery_id)
 
     async def _try(self, delivery: plsremind.Delivery, *, first: bool) -> _Outcome:
-        """One try. A delivery that was withdrawn meanwhile needs no other."""
         self._busy.add(delivery.id)
         try:
             outcome = await self._attempt(delivery, first=first)
@@ -133,13 +146,15 @@ class Reminders:
             self._busy.discard(delivery.id)
         if delivery.id in self._withdrawn:
             self._withdrawn.discard(delivery.id)
+            self._forget(delivery.id)
             return _Outcome.SETTLED
         return outcome
 
     async def _attempt(self, delivery: plsremind.Delivery, *, first: bool) -> _Outcome:
         if delivery.id in self._refused:
             return await self._report(delivery.id, self._refused[delivery.id])
-        if await self._store.knows_delivery(delivery.id):
+        # Remembered here too, for when the store could not take it.
+        if delivery.id in self._sent or await self._store.knows_delivery(delivery.id):
             return await self._confirm(delivery.id)
         locale = texts_.locale_for(delivery.user, None)
         accounts = self._accounts(delivery, first=first)
@@ -147,25 +162,41 @@ class Reminders:
             return await self._report(delivery.id, self._texts("delivery.no_account", locale))
         view = ReminderView(user=common.pack(delivery.user.id), item=common.pack(delivery.item.id))
         rendered = await self._views.build(view)
+        if view.shown is None or view.shown.item is None:
+            # The user or the item is out of reach this moment; if it stays so, the hub withdraws the delivery.
+            _LOGGER.info("delivery %s waits until its item can be read", delivery.id)
+            return _Outcome.PASSING
+        return await self._conclude(delivery, await self._send(delivery, rendered, accounts), locale)
+
+    async def _conclude(self, delivery: plsremind.Delivery, sending: _Sending, locale: hikari.Locale) -> _Outcome:
+        if sending.sent:
+            self._sent.add(delivery.id)
+            await self._record(delivery, sending.sent)
+            return await self._confirm(delivery.id)
+        if sending.passing:
+            return _Outcome.PASSING
+        reason = "delivery.refused" if sending.refused else "delivery.closed_dms"
+        return await self._report(delivery.id, self._texts(reason, locale))
+
+    async def _send(self, delivery: plsremind.Delivery, rendered: ui.Rendered, accounts: list[int]) -> _Sending:
         sent: list[Sent] = []
-        passing = False
+        passing = refused = False
         for account in accounts:
             try:
                 channel = await self._rest.create_dm_channel(account)
                 message = await rendered.send_to(self._rest, channel)
             except hikari.ForbiddenError, hikari.NotFoundError:
                 continue
+            except hikari.ClientHTTPResponseError:
+                _LOGGER.exception("Discord refused delivery %s for good", delivery.id)
+                refused = True
+                continue
             except (hikari.HTTPError, aiohttp.ClientError, TimeoutError) as trouble:
                 _LOGGER.warning("delivery %s did not get through to Discord: %s", delivery.id, trouble)
                 passing = True
                 continue
             sent.append(Sent(message_id=int(message.id), channel_id=int(channel.id), account_id=account))
-        if sent:
-            await self._record(delivery, sent)
-            return await self._confirm(delivery.id)
-        if passing:
-            return _Outcome.PASSING
-        return await self._report(delivery.id, self._texts("delivery.closed_dms", locale))
+        return _Sending(sent, passing=passing, refused=refused)
 
     def _accounts(self, delivery: plsremind.Delivery, *, first: bool) -> list[int]:
         if first:
@@ -194,6 +225,7 @@ class Reminders:
         except plsremind.PlsremindError as error:
             _LOGGER.warning("delivery %s was sent but could not be confirmed yet: %s", delivery_id, error)
             return _Outcome.PASSING
+        self._sent.discard(delivery_id)
         return _Outcome.SETTLED
 
     async def _report(self, delivery_id: plsremind.ID, reason: str) -> _Outcome:
@@ -204,5 +236,5 @@ class Reminders:
         except plsremind.PlsremindError as error:
             _LOGGER.warning("the failure of delivery %s could not be reported yet: %s", delivery_id, error)
             return _Outcome.PASSING
-        del self._refused[delivery_id]
+        self._refused.pop(delivery_id, None)
         return _Outcome.SETTLED

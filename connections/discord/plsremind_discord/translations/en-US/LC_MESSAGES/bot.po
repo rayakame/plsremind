@@ -90,6 +90,9 @@ msgstr "This message is out of date."
 msgid "delivery.closed_dms"
 msgstr "Discord did not accept the direct message. Check that you allow messages from the bot and that the app is still installed."
 
+msgid "delivery.refused"
+msgstr "Discord did not accept the reminder."
+
 msgid "delivery.no_account"
 msgstr "No Discord account is linked."
 
