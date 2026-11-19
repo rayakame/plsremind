@@ -165,6 +165,23 @@ def test_the_fullest_page_stays_within_what_discord_allows() -> None:
     assert discord.count(drawn(*items)) <= 40
 
 
+def test_the_fullest_page_stays_within_what_discord_allows_of_text() -> None:
+    lists = (things.a_list(things.INBOX, things.WORST),)
+    items = [
+        things.item(
+            number,
+            title=things.WORST,
+            due_at=NOW + (number - 4) * HOUR,
+            priority=plsremind.Priority.HIGH,
+            subitems=3,
+        )
+        for number in range(1, 10)
+    ]
+    view = OverviewView(user=common.pack(MIA))
+    view.shown = listed(*items, lists=lists)
+    assert len(discord.written(view.render())) <= 4000
+
+
 async def test_the_overview_reads_everything_open_and_fits_into_the_message() -> None:
     hub = FakeHub()
     items = [things.item(number) for number in range(1, 10)]

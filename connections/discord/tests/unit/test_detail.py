@@ -114,9 +114,32 @@ def test_a_long_note_is_cut() -> None:
     assert "n" * 600 not in text
 
 
+def test_a_note_of_many_lines_is_cut_as_a_whole() -> None:
+    text = discord.written(opened(things.item(1, note="\n".join(["line"] * 400))).render())
+    quoted = [line for line in text.splitlines() if line.startswith(">")]
+    assert quoted[-1] == "> …"
+    assert len("\n".join(quoted)) <= 620
+    assert quoted[0] == "> line"
+
+
 def test_the_fullest_detail_view_stays_within_what_discord_allows() -> None:
     item = things.item(1, note="x", due_at=NOW + HOUR, subitems=12)
     assert discord.count(opened(item, upcoming=NOW).render()) <= 40
+
+
+def test_the_fullest_detail_view_stays_within_what_discord_allows_of_text() -> None:
+    item = things.item(
+        1,
+        title=things.WORST,
+        note="\n".join([things.WORST] * 20),
+        due_at=NOW + HOUR,
+        priority=plsremind.Priority.HIGH,
+        subitems=12,
+    )
+    steps = tuple(msgspec.structs.replace(step, title=things.WORST) for step in item.subitems)
+    view = opened(msgspec.structs.replace(item, subitems=steps), upcoming=NOW)
+    view.shown = discord.shown(view.shown.item if view.shown else None, list_name=things.WORST)
+    assert len(discord.written(view.render())) <= 4000
 
 
 async def test_loading_reads_the_item_and_its_next_reminder() -> None:

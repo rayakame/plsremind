@@ -21,13 +21,14 @@ UPCOMING: typing.Final = 0xE0A526
 OVERDUE: typing.Final = 0xDA373C
 DONE: typing.Final = 0x248046
 TITLE_SHOWN: typing.Final = 300
+LIST_SHOWN: typing.Final = 100
 CUSTOM: typing.Final = "custom"
 SNOOZE: typing.Final = ("15m", "1h", "evening", "morning", CUSTOM)
 _EVENING: typing.Final = datetime.time(20, 0)
 _MORNING: typing.Final = datetime.time(8, 0)
 _UTC: typing.Final = zoneinfo.ZoneInfo("UTC")
 _LINK: typing.Final = re.compile(r"https://(?:(?:ptb|canary)\.)?discord\.com/channels/(?:@me|\d+)/\d+/\d+")
-_MARKDOWN: typing.Final = re.compile(r"([\\*_~`|#\[\]<>])")
+_MARKDOWN: typing.Final = frozenset("\\*_~`|#[]<>")
 GONE: typing.Final = "reminder.gone"
 _PAST: typing.Final = "error.time_past"
 _REFUSALS: typing.Final = {"reminder_limit": "error.reminder_limit", "item_done": "reminder.item_done"}
@@ -142,10 +143,19 @@ def state_of(item: plsremind.Item | None, now: datetime.datetime) -> State:
 
 
 def plain(text: str, limit: int) -> str:
+    """One line of at most `limit` characters in which nothing is markdown."""
     line = " ".join(text.split())
-    if len(line) > limit:
-        line = line[: limit - 1] + "…"
-    return _MARKDOWN.sub(r"\\\1", line)
+    kept: list[str] = []
+    room = limit
+    for index, char in enumerate(line):
+        piece = f"\\{char}" if char in _MARKDOWN else char
+        # Escaping lengthens the text, and Discord counts what it is sent.
+        if len(piece) > (room if index == len(line) - 1 else room - 1):
+            kept.append("…")
+            break
+        kept.append(piece)
+        room -= len(piece)
+    return "".join(kept)
 
 
 def message_link(note: str) -> str | None:
@@ -163,7 +173,7 @@ def card(view: Shown, item: plsremind.Item) -> str:
     title = plain(item.title, TITLE_SHOWN)
     if item.status is plsremind.ItemStatus.DONE:
         finished = texts_.stamp(item.completed_at or view.now, "R")
-        return f"-# {say('reminder.done', locale, when=finished)}\n## ~~{title}~~\n{view.list_name}"
+        return f"-# {say('reminder.done', locale, when=finished)}\n## ~~{title}~~\n{plain(view.list_name, LIST_SHOWN)}"
     return f"-# {_heading(view, item)}\n## {title}\n{' · '.join(_facts(view, item))}"
 
 
@@ -185,7 +195,7 @@ def _facts(view: Shown, item: plsremind.Item) -> list[str]:
     elif item.due_at is not None:
         facts.append(f"**{texts_.stamp(item.due_at, 'F')}**")
     if view.list_name:
-        facts.append(plain(view.list_name, TITLE_SHOWN))
+        facts.append(plain(view.list_name, LIST_SHOWN))
     if item.priority in {plsremind.Priority.LOW, plsremind.Priority.HIGH}:
         facts.append(view.texts(f"priority.{item.priority.value}", view.locale))
     return facts
@@ -269,7 +279,7 @@ def confirmation(
     """The text, the link and the link's label of a confirmation only the user sees."""
     where = hub.list_name(item.list_id)
     if where:
-        text += f"\n-# {plain(where, TITLE_SHOWN)}"
+        text += f"\n-# {plain(where, LIST_SHOWN)}"
     return text, f"{config.public_url}/items/{item.id}", texts("button.dashboard", locale)
 
 

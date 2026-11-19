@@ -38,6 +38,12 @@ def test_both_languages_hold_the_same_keys() -> None:
     assert tables()[EN]
 
 
+def test_commands_and_options_go_by_the_same_name_in_every_language() -> None:
+    names = sorted(key for key in tables()[EN] if key.startswith(("command.", "option.")) and key.endswith(".name"))
+    assert len(names) >= 10
+    assert {key: tables()[DE][key] for key in names} == {key: tables()[EN][key] for key in names}
+
+
 def test_a_text_asks_for_the_same_parts_in_both_languages() -> None:
     for key, english in tables()[EN].items():
         assert placeholders(tables()[DE][key]) == placeholders(english), key

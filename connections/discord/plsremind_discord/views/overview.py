@@ -183,7 +183,7 @@ class OverviewView(common.Owned):
             facts.append(moment if item.due_at is not None else say("overview.reminder", locale, when=moment))
         name = next((one.name for one in view.lists if one.id == item.list_id), "")
         if name:
-            facts.append(common.plain(name, common.TITLE_SHOWN))
+            facts.append(common.plain(name, common.LIST_SHOWN))
         if item.priority is plsremind.Priority.HIGH:
             facts.append(say("priority.high", locale))
         if item.subitems:

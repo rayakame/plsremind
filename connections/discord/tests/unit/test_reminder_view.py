@@ -133,6 +133,31 @@ def test_a_title_is_shown_on_one_line_cut_and_without_its_markdown() -> None:
     assert common.plain("a **b** _c_\n# d", 100) == r"a \*\*b\*\* \_c\_ \# d"
     assert common.plain("<@1> @everyone [x](y)", 100) == r"\<@1\> @everyone \[x\](y)"
     assert common.plain("x" * 301, 300) == "x" * 299 + "…"
+    assert common.plain("x" * 300, 300) == "x" * 300
+
+
+def test_a_shortened_text_keeps_its_limit_however_much_of_it_is_escaped() -> None:
+    assert common.plain("*" * 500, 300) == "\\*" * 149 + "…"
+    assert common.plain("*" * 150, 300) == "\\*" * 150
+    assert common.plain("ab*", 4) == "ab\\*"
+    assert common.plain("ab*c", 4) == "ab…"
+    assert len(common.plain(things.WORST, 300)) <= 300
+
+
+def test_the_list_of_a_done_item_is_escaped_like_any_other() -> None:
+    view = ReminderView(user=common.pack(MIA), item=common.pack(things.uid(1001)))
+    view.shown = seen(things.item(done=True), list_name="**Work**")
+    assert "\\*\\*Work\\*\\*" in discord.written(view.render())
+
+
+@pytest.mark.parametrize("done", [False, True])
+def test_the_fullest_reminder_stays_within_what_discord_allows_of_text(*, done: bool) -> None:
+    item = things.item(title=things.WORST, due_at=NOW + HOUR, priority=plsremind.Priority.HIGH, done=done)
+    view = ReminderView(user=common.pack(MIA), item=common.pack(item.id))
+    view.shown = seen(item, list_name=things.WORST)
+    assert len(discord.written(view.render())) <= 1000
+    text, _, _ = common.snoozed(seen(item, list_name=things.WORST), NOW + HOUR)
+    assert len(text) <= 1000
 
 
 def test_an_item_ahead_shows_when_it_is_due_and_what_can_be_done() -> None:

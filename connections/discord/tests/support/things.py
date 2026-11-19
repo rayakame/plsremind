@@ -132,3 +132,7 @@ def scheduled(at: datetime.datetime) -> plsremind.ScheduledReminder:
     return plsremind.ScheduledReminder(
         kind=plsremind.ReminderKind.BEFORE, offset=None, reminder_id=None, scheduled_for=at, fire_at=at
     )
+
+
+# Every character of it has to be escaped, which doubles what it takes up.
+WORST: typing.Final = "*_~`|#[]<>\\" * 60

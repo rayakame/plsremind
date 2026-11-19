@@ -22,6 +22,8 @@ from plsremind_discord.views import overview
 
 SUBITEMS: typing.Final = 8
 NOTE_SHOWN: typing.Final = 600
+STEP_SHOWN: typing.Final = 150
+_LEAST: typing.Final = 8
 
 
 @risa.register(name="detail", hooks=[common.owned])
@@ -165,10 +167,7 @@ class DetailView(common.Owned):
             when = texts_.stamp(self.upcoming, "F")
             text += f"\n{view.texts('detail.next_reminder', view.locale, when=when)}"
         if item.note.strip():
-            note = item.note.strip()
-            if len(note) > NOTE_SHOWN:
-                note = note[: NOTE_SHOWN - 1] + "…"
-            text += "\n" + "\n".join(f"> {common.plain(line, NOTE_SHOWN)}" for line in note.splitlines())
+            text += f"\n{_quoted(item.note)}"
         return text
 
     def _steps(self, view: common.Shown, item: plsremind.Item) -> list[ui.ContainerChild]:
@@ -181,7 +180,7 @@ class DetailView(common.Owned):
             ui.TextDisplay(f"-# {say('detail.steps', locale, done=ticked, all=len(item.subitems))}"),
         ]
         for step in item.subitems[:SUBITEMS]:
-            title = common.plain(step.title, common.TITLE_SHOWN)
+            title = common.plain(step.title, STEP_SHOWN)
             toggle = ui.Button(
                 risa.bind(self.tick, common.arg(step.id)),
                 label=say("button.untick" if step.done else "button.tick", locale),
@@ -212,3 +211,17 @@ class DetailView(common.Owned):
             ui.Button(self.delete, label=say("button.delete", locale), style=hikari.ButtonStyle.DANGER),
             dashboard,
         )
+
+
+def _quoted(note: str) -> str:
+    """The note as a quote that takes up about `NOTE_SHOWN` characters at most."""
+    lines: list[str] = []
+    room = NOTE_SHOWN + 2
+    rest = note.strip().splitlines()
+    while rest and room > _LEAST:
+        line = f"> {common.plain(rest.pop(0), room - 2)}"
+        lines.append(line)
+        room -= len(line) + 1
+    if rest:
+        lines.append("> …")
+    return "\n".join(lines)

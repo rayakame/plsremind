@@ -223,7 +223,7 @@ msgid "command.done.description"
 msgstr "Erledige eine Aufgabe"
 
 msgid "command.remind_me.name"
-msgstr "Erinnere mich"
+msgstr "Remind me"
 
 msgid "option.when.name"
 msgstr "when"
