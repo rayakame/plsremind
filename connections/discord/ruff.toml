@@ -29,6 +29,7 @@ ignore = [
     "F401", # imported but unused
     "F403", # unable to detect undefined names
 ]
+"plsremind_discord/hub.py" = ["PLR0904"] # one method for each thing the bot asks of the hub
 "plsremind_discord/db/**" = [
     "E501",    # generated: SQL is kept on one line
     "PLR0913", # generated: one parameter per column
@@ -48,6 +49,7 @@ ignore = [
     "PLR0914", # a test that walks a whole view holds a lot
     "PLW0108", # a lambda reads what it waits for when it is called
     "S404",    # the hub under test is a subprocess
+    "PLR0904", # a stand-in has every method of what it stands in for
     "INP001",
 ]
 

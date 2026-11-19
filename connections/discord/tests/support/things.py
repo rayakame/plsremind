@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import datetime
+import pathlib
 import typing
 import zoneinfo
 
@@ -10,6 +11,7 @@ BERLIN: typing.Final = zoneinfo.ZoneInfo("Europe/Berlin")
 # A Thursday.
 NOW: typing.Final = datetime.datetime(2026, 11, 19, 14, 30, tzinfo=BERLIN)
 CREATED: typing.Final = datetime.datetime(2026, 11, 1, 9, 0, tzinfo=datetime.UTC)
+DATABASE: typing.Final = pathlib.Path("discord.db")
 
 
 def uid(number: int) -> plsremind.ID:
