@@ -1,0 +1,61 @@
+msgid ""
+msgstr ""
+"Content-Type: text/plain; charset=UTF-8\n"
+"Language: en-US\n"
+
+msgid "reminder.upcoming"
+msgstr "Due {when}"
+
+msgid "reminder.overdue"
+msgstr "Overdue, was due {when}"
+
+msgid "reminder.plain"
+msgstr "Reminder"
+
+msgid "reminder.done"
+msgstr "Done {when}"
+
+msgid "reminder.gone"
+msgstr "This item no longer exists."
+
+msgid "reminder.snoozed"
+msgstr "Snoozed"
+
+msgid "reminder.snoozed_until"
+msgstr "I will remind you again {when}."
+
+msgid "priority.low"
+msgstr "Low priority"
+
+msgid "priority.high"
+msgstr "High priority"
+
+msgid "button.done"
+msgstr "Done"
+
+msgid "button.undo"
+msgstr "Undo"
+
+msgid "button.dashboard"
+msgstr "Dashboard"
+
+msgid "button.message"
+msgstr "To the message"
+
+msgid "snooze.placeholder"
+msgstr "Remind me later"
+
+msgid "snooze.15m"
+msgstr "In 15 minutes"
+
+msgid "snooze.1h"
+msgstr "In 1 hour"
+
+msgid "snooze.evening"
+msgstr "This evening (20:00)"
+
+msgid "snooze.morning"
+msgstr "Tomorrow morning (08:00)"
+
+msgid "snooze.custom"
+msgstr "Another time ..."

@@ -1,0 +1,61 @@
+msgid ""
+msgstr ""
+"Content-Type: text/plain; charset=UTF-8\n"
+"Language: de\n"
+
+msgid "reminder.upcoming"
+msgstr "Fällig {when}"
+
+msgid "reminder.overdue"
+msgstr "Überfällig, fällig war {when}"
+
+msgid "reminder.plain"
+msgstr "Erinnerung"
+
+msgid "reminder.done"
+msgstr "Erledigt {when}"
+
+msgid "reminder.gone"
+msgstr "Diese Aufgabe gibt es nicht mehr."
+
+msgid "reminder.snoozed"
+msgstr "Verschoben"
+
+msgid "reminder.snoozed_until"
+msgstr "Ich erinnere dich wieder {when}."
+
+msgid "priority.low"
+msgstr "Niedrige Priorität"
+
+msgid "priority.high"
+msgstr "Hohe Priorität"
+
+msgid "button.done"
+msgstr "Erledigt"
+
+msgid "button.undo"
+msgstr "Rückgängig"
+
+msgid "button.dashboard"
+msgstr "Dashboard"
+
+msgid "button.message"
+msgstr "Zur Nachricht"
+
+msgid "snooze.placeholder"
+msgstr "Später erinnern"
+
+msgid "snooze.15m"
+msgstr "In 15 Minuten"
+
+msgid "snooze.1h"
+msgstr "In 1 Stunde"
+
+msgid "snooze.evening"
+msgstr "Heute Abend (20:00)"
+
+msgid "snooze.morning"
+msgstr "Morgen früh (08:00)"
+
+msgid "snooze.custom"
+msgstr "Eigene Zeit ..."
