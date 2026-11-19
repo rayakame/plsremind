@@ -51,8 +51,8 @@ type Event struct {
 	Seq       int64
 	Type      string
 	Payload   []byte
-	ActorKind string
-	ActorID   uuid.UUID
+	ActorKind *string
+	ActorID   *uuid.UUID
 	CreatedAt time.Time
 	Nonce     *string
 }

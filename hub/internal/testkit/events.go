@@ -20,7 +20,7 @@ type Event struct {
 func (e *Env) Events(t *testing.T, userID string) []Event {
 	t.Helper()
 	rows, err := e.Pool.Query(context.Background(),
-		"SELECT seq, type, payload::text, actor_kind, actor_id::text FROM events WHERE user_id = $1 ORDER BY seq", userID)
+		"SELECT seq, type, payload::text, COALESCE(actor_kind, ''), COALESCE(actor_id::text, '') FROM events WHERE user_id = $1 ORDER BY seq", userID)
 	require.NoError(t, err)
 	defer rows.Close()
 	var events []Event

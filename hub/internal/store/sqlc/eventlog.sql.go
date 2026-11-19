@@ -22,8 +22,8 @@ type InsertEventParams struct {
 	Seq       int64
 	Type      string
 	Payload   []byte
-	ActorKind string
-	ActorID   uuid.UUID
+	ActorKind *string
+	ActorID   *uuid.UUID
 	Nonce     *string
 	CreatedAt time.Time
 }
