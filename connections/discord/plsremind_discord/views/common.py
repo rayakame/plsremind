@@ -48,7 +48,15 @@ class Shown(msgspec.Struct, frozen=True, kw_only=True):
 
 
 class Owned(risa.View):
+    """A view that belongs to one user of the hub."""
+
     user: bytes
+
+    @classmethod
+    @typing.override
+    async def on_outdated(cls, ctx: risa.ComponentContext, texts: texts_.Texts = risa.INJECTED) -> None:
+        locale = texts_.locale_for(None, str(ctx.interaction.locale))
+        await ctx.respond(texts("error.outdated", locale), ephemeral=True)
 
 
 class NotYoursError(Exception):

@@ -90,8 +90,3 @@ class ReminderView(common.Owned):
         # Nothing is left to click, so the message is done with and no longer followed.
         await ctx.edit(common.notice_layout(*common.snoozed(view, until)))
         await store.forget_message(int(ctx.message.id))
-
-    @classmethod
-    async def on_outdated(cls, ctx: risa.ComponentContext, texts: texts_.Texts = risa.INJECTED) -> None:
-        locale = texts_.locale_for(None, str(ctx.interaction.locale))
-        await ctx.respond(texts("error.outdated", locale), ephemeral=True)

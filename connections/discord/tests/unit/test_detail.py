@@ -305,3 +305,10 @@ def test_the_edit_modal_leaves_out_a_note_too_long_for_it() -> None:
     assert len(long) == 2
     fields = [call.args[0] for call in rest.build_modal_action_row.return_value.add_text_input.call_args_list]
     assert fields == [modals.TITLE, modals.DUE, modals.NOTE, modals.TITLE, modals.DUE]
+
+
+@pytest.mark.parametrize("view", [DetailView, OverviewView])
+async def test_a_click_on_an_ephemeral_view_whose_state_cannot_be_read_is_answered(view: type[common.Owned]) -> None:
+    ctx = discord.click(locale="en-US")
+    await view.on_outdated(ctx, discord.say())
+    ctx.respond.assert_awaited_once_with("This message is out of date.", ephemeral=True)
