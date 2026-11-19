@@ -21,12 +21,13 @@ type spentItem struct {
 	reminders []uuid.UUID
 }
 
-// sweepSpent drops every manual reminder whose time has passed and that is no longer
-// scheduled: those that were just handled, and those that never could go out because
-// their item was done at the time. It runs outside fireBatch, which holds schedule
-// rows while announcing a change takes the user's row; requests lock the other way round.
+// sweepRounds caps one run, so that a large backlog does not hold up the reminders that are due.
+const sweepRounds = 5
+
+// sweepSpent drops manual reminders whose time has passed and that are no longer scheduled.
+// Not in fireBatch: that holds schedule rows before the user's row, the reverse of a request.
 func sweepSpent(ctx context.Context, d *core.Deps) error {
-	for {
+	for range sweepRounds {
 		var spent []sqlc.ListSpentManualRemindersRow
 		err := store.Tx(ctx, d.Pool, func(q *sqlc.Queries) error {
 			var err error
@@ -48,6 +49,7 @@ func sweepSpent(ctx context.Context, d *core.Deps) error {
 			return nil
 		}
 	}
+	return nil
 }
 
 func bySpentItem(rows []sqlc.ListSpentManualRemindersRow) []*spentItem {

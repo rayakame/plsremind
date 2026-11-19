@@ -27,10 +27,7 @@ func RunOnce(ctx context.Context, d *core.Deps) error {
 			break
 		}
 	}
-	if err := sweepSpent(ctx, d); err != nil {
-		return err
-	}
-	return store.Tx(ctx, d.Pool, func(q *sqlc.Queries) error {
+	err := store.Tx(ctx, d.Pool, func(q *sqlc.Queries) error {
 		now := d.Now()
 		expired, err := q.ExpireDeliveries(ctx, &now)
 		if err != nil {
@@ -46,6 +43,10 @@ func RunOnce(ctx context.Context, d *core.Deps) error {
 		}
 		return announceNew(ctx, q, released)
 	})
+	if err != nil {
+		return err
+	}
+	return sweepSpent(ctx, d)
 }
 
 // fireBatch handles one batch of due rows in one transaction. The row locks

@@ -5,8 +5,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
+	"github.com/rayakame/plsremind/hub/internal/delivery"
 	"github.com/rayakame/plsremind/hub/internal/testkit"
 )
 
@@ -165,4 +167,52 @@ func TestASecondRunAnnouncesNothingMore(t *testing.T) {
 		}
 	}
 	require.Equal(t, []int{1, 1}, []int{byHub, byUser}, "each removal is announced once, by whoever made it")
+}
+
+func TestAHugeBacklogIsWorkedOffOverSeveralRuns(t *testing.T) {
+	e := testkit.New(t)
+	ctx := context.Background()
+	mia := e.User(t, "mia")
+	_, err := e.Pool.Exec(ctx,
+		`INSERT INTO manual_reminders (id, item_id, remind_at, created_at)
+		 SELECT gen_random_uuid(), $1, $2, $2 FROM generate_series(1, 1100)`, newItem(t, mia), e.Clock.Now().Add(-time.Hour))
+	require.NoError(t, err)
+	left := func() (n int) {
+		require.NoError(t, e.Pool.QueryRow(ctx, "SELECT count(*) FROM manual_reminders").Scan(&n))
+		return n
+	}
+
+	e.Fire(t)
+	require.Equal(t, 100, left(), "one run takes a thousand at most, so that firing is not held up")
+	e.Fire(t)
+	require.Zero(t, left())
+}
+
+func TestTroubleWhileSweepingDoesNotKeepDeliveriesFromExpiring(t *testing.T) {
+	e := testkit.New(t)
+	ctx := context.Background()
+	mia, _ := testkit.Reminded(t, e, "mia")
+	testkit.DueSoon(t, e, mia)
+	require.Equal(t, []string{"due pending"}, statuses(e.Deliveries(t, mia.UserID)))
+	e.Clock.Advance(25 * time.Hour)
+	_, err := e.Pool.Exec(ctx, "ALTER TABLE manual_reminders RENAME TO manual_reminders_away")
+	require.NoError(t, err)
+
+	require.Error(t, delivery.RunOnce(ctx, e.Deps))
+
+	require.Equal(t, []string{"due expired"}, statuses(e.Deliveries(t, mia.UserID)))
+}
+
+func TestDroppingForAnItemOrAUserThatIsGoneIsNoError(t *testing.T) {
+	e := testkit.New(t)
+	ctx := context.Background()
+	mia := e.User(t, "mia")
+	userID := uuid.MustParse(mia.UserID)
+
+	n, err := delivery.DropSpent(ctx, e.Deps, userID, uuid.New(), uuid.New())
+	require.NoError(t, err)
+	require.Zero(t, n)
+	n, err = delivery.DropSpent(ctx, e.Deps, uuid.New(), uuid.New(), uuid.New())
+	require.NoError(t, err)
+	require.Zero(t, n)
 }
