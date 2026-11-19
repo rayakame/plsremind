@@ -91,9 +91,9 @@ async def test_the_listeners_hand_events_to_the_parts_that_deal_with_them() -> N
     client = mock.Mock(spec=plsremind.Client)
     reminders, sync = mock.AsyncMock(), mock.AsyncMock()
     reminders.withdraw = mock.Mock()
-    up = asyncio.Event()
-    up.set()
-    bot.listen(typing.cast("plsremind.Client", client), reminders=reminders, sync=sync, up=up)
+    gate = bot.Gate()
+    gate.open()
+    bot.listen(typing.cast("plsremind.Client", client), reminders=reminders, sync=sync, gate=gate)
     heard = {call.args[0]: call.args[1] for call in client.subscribe.call_args_list}
 
     delivery = things.delivery()
@@ -122,8 +122,8 @@ async def test_what_the_hub_reports_waits_until_discord_is_there() -> None:
     client = mock.Mock(spec=plsremind.Client)
     reminders, sync = mock.AsyncMock(), mock.AsyncMock()
     reminders.withdraw = mock.Mock()
-    up = asyncio.Event()
-    bot.listen(typing.cast("plsremind.Client", client), reminders=reminders, sync=sync, up=up)
+    gate = bot.Gate()
+    bot.listen(typing.cast("plsremind.Client", client), reminders=reminders, sync=sync, gate=gate)
     heard = {call.args[0]: call.args[1] for call in client.subscribe.call_args_list}
     delivery = things.delivery()
     changed = plsremind.ItemUpdateEvent(user_id=things.MIA, actor=None, nonce=None, item=things.item(1))
@@ -141,11 +141,29 @@ async def test_what_the_hub_reports_waits_until_discord_is_there() -> None:
     sync.item_changed.assert_not_called()
     sync.user_ready.assert_not_called()
 
-    up.set()
+    gate.open()
     await asyncio.gather(*waiting)
     reminders.deliver.assert_awaited_once_with(delivery)
     sync.item_changed.assert_awaited_once_with(changed)
     sync.user_ready.assert_awaited_once()
+
+
+async def test_on_the_way_out_what_waits_for_discord_is_let_go_unheard() -> None:
+    client = mock.Mock(spec=plsremind.Client)
+    reminders, sync = mock.AsyncMock(), mock.AsyncMock()
+    gate = bot.Gate()
+    bot.listen(typing.cast("plsremind.Client", client), reminders=reminders, sync=sync, gate=gate)
+    heard = {call.args[0]: call.args[1] for call in client.subscribe.call_args_list}
+    delivery = things.delivery()
+    waiting = asyncio.create_task(
+        heard[plsremind.DeliveryCreateEvent](plsremind.DeliveryCreateEvent(user_id=things.MIA, delivery=delivery))
+    )
+    await asyncio.sleep(0)
+    gate.shut()
+    await asyncio.wait_for(waiting, 1)
+    reminders.deliver.assert_not_called()
+    await heard[plsremind.UserGoneEvent](plsremind.UserGoneEvent(user_id=things.MIA))
+    sync.user_gone.assert_not_called()
 
 
 @pytest.mark.parametrize(

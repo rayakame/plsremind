@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 import collections.abc
 import datetime
 import pathlib
@@ -82,10 +81,10 @@ async def running(kit: kit_.Kit, tmp_path: pathlib.Path) -> collections.abc.Asyn
         return
 
     sync = Sync(hub=hub, views=redraws, store=store, sleep=at_once)
-    up = asyncio.Event()
-    bot_module.listen(hub.client, reminders=reminders, sync=sync, up=up)
+    gate = bot_module.Gate()
+    bot_module.listen(hub.client, reminders=reminders, sync=sync, gate=gate)
     await hub.start()
-    up.set()
+    gate.open()
     try:
         yield Running(hub, mia, connection, rest, store, redraws, sync)
     finally:

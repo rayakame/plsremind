@@ -42,7 +42,7 @@ class Parts(typing.NamedTuple):
     views: risa.Client
     reminders: Reminders
     sync: Sync
-    up: asyncio.Event
+    gate: Gate
 
 
 async def build(config: Config, store: Store, hub: hub_.Hub) -> Parts:
@@ -77,20 +77,41 @@ async def build(config: Config, store: Store, hub: hub_.Hub) -> Parts:
     sync = Sync(hub=hub, views=views, store=store)
     modals = Modals(hub=hub, views=views, store=store, texts=texts, clock=clock, config=config)
     discord.subscribe(hikari.ModalInteractionCreateEvent, modals.submitted)
-    up = asyncio.Event()
-    listen(hub.client, reminders=reminders, sync=sync, up=up)
-    return Parts(discord, commands, views, reminders, sync, up)
+    gate = Gate()
+    listen(hub.client, reminders=reminders, sync=sync, gate=gate)
+    return Parts(discord, commands, views, reminders, sync, gate)
 
 
-def listen(client: plsremind.Client, *, reminders: Reminders, sync: Sync, up: asyncio.Event) -> None:
-    """Hand what the hub reports to the parts that deal with it, once `up` says Discord can be reached."""
+class Gate:
+    """Holds what the hub reports until Discord can be reached, and lets it go unheard on the way out."""
+
+    def __init__(self) -> None:
+        self._decided = asyncio.Event()
+        self._open = False
+
+    def open(self) -> None:
+        self._open = True
+        self._decided.set()
+
+    def shut(self) -> None:
+        self._open = False
+        self._decided.set()
+
+    async def passes(self) -> bool:
+        await self._decided.wait()
+        return self._open
+
+
+def listen(client: plsremind.Client, *, reminders: Reminders, sync: Sync, gate: Gate) -> None:
+    """Hand what the hub reports to the parts that deal with it, once the gate lets it through."""
 
     def once_up[E: plsremind.Event](
         deal: collections.abc.Callable[[E], collections.abc.Awaitable[None]],
     ) -> collections.abc.Callable[[E], collections.abc.Coroutine[typing.Any, typing.Any, None]]:
         async def waited(event: E) -> None:
-            await up.wait()
-            await deal(event)
+            # What is dropped on the way out comes again: the hub sends what is open at the next login.
+            if await gate.passes():
+                await deal(event)
 
         return waited
 
@@ -174,7 +195,7 @@ async def _serve(config: Config, store: Store) -> int:
         await hub.start()
         await parts.discord.start(check_for_updates=False)
         await parts.commands.start()
-        parts.up.set()
+        parts.gate.open()
         purging = asyncio.create_task(purge(store), name="purge")
         _LOGGER.info("the bot is running")
         reason = await stopped
@@ -192,6 +213,7 @@ async def _serve(config: Config, store: Store) -> int:
         if purging is not None:
             purging.cancel()
         # The hub goes quiet first, so that nothing new comes in while the rest is put away.
+        parts.gate.shut()
         await hub.close()
         await parts.reminders.close()
         await parts.sync.close()

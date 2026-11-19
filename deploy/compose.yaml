@@ -39,6 +39,8 @@ services:
       context: ..
       dockerfile: connections/discord/Dockerfile
     restart: unless-stopped
+    # A message on its way to Discord gets up to ten seconds to be sent and recorded.
+    stop_grace_period: 20s
     depends_on:
       - hub
     environment:
