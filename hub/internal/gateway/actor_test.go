@@ -3,6 +3,7 @@ package gateway_test
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
@@ -38,4 +39,26 @@ func TestAnEventOfTheHubItselfCarriesNoActor(t *testing.T) {
 	log := e.Events(t, mia.UserID)
 	require.Empty(t, log[len(log)-1].ActorKind)
 	require.Empty(t, log[len(log)-1].ActorID)
+}
+
+func TestAGatewayClientSeesASpentReminderGo(t *testing.T) {
+	e := testkit.New(t)
+	mia := e.User(t, "mia")
+	id := mia.Do(t, "POST", "/users/@me/items", J{"title": "x"}).Get("id").String()
+	gw := e.Gateway(t, personalToken(t, mia), "items")
+	gw.Expect(t, "user.sync")
+	rem := mia.Do(t, "POST", "/users/@me/items/"+id+"/reminders", J{"in": "1h"}).Get("id").String()
+	gw.Expect(t, "reminder.created")
+	gw.Expect(t, "item.updated")
+
+	e.Clock.Advance(time.Hour)
+	e.Fire(t)
+
+	gone := gw.Expect(t, "reminder.deleted")
+	require.Equal(t, rem, gone.Get("data.id").String())
+	require.Equal(t, gjson.Null, gjson.Parse(gone.D.Raw).Get("actor").Type)
+	whole := gw.Expect(t, "item.updated")
+	require.Zero(t, whole.Get("data.reminders.#").Int())
+	require.Equal(t, gjson.Null, gjson.Parse(whole.D.Raw).Get("actor").Type)
+	gw.Cache(t).RequireMatchesREST(t, mia, "/users/@me", mia.UserID)
 }

@@ -59,6 +59,25 @@ func (q *Queries) DeleteManualReminder(ctx context.Context, arg DeleteManualRemi
 	return result.RowsAffected(), nil
 }
 
+const deleteSpentManualReminder = `-- name: DeleteSpentManualReminder :execrows
+DELETE FROM manual_reminders m
+WHERE m.id = $1 AND m.remind_at <= $2
+  AND NOT EXISTS (SELECT 1 FROM scheduled_reminders s WHERE s.manual_id = m.id)
+`
+
+type DeleteSpentManualReminderParams struct {
+	ID  uuid.UUID
+	Now time.Time
+}
+
+func (q *Queries) DeleteSpentManualReminder(ctx context.Context, arg DeleteSpentManualReminderParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteSpentManualReminder, arg.ID, arg.Now)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const listManualReminders = `-- name: ListManualReminders :many
 SELECT id, item_id, remind_at, created_at FROM manual_reminders WHERE item_id = $1 ORDER BY remind_at, id
 `
@@ -107,6 +126,46 @@ func (q *Queries) ListManualRemindersForItems(ctx context.Context, itemIds []uui
 			&i.RemindAt,
 			&i.CreatedAt,
 		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listSpentManualReminders = `-- name: ListSpentManualReminders :many
+SELECT m.id, m.item_id, i.user_id
+FROM manual_reminders m JOIN items i ON i.id = m.item_id
+WHERE m.remind_at <= $1
+  AND NOT EXISTS (SELECT 1 FROM scheduled_reminders s WHERE s.manual_id = m.id)
+ORDER BY m.remind_at, m.id
+LIMIT $2
+`
+
+type ListSpentManualRemindersParams struct {
+	Now   time.Time
+	Batch int32
+}
+
+type ListSpentManualRemindersRow struct {
+	ID     uuid.UUID
+	ItemID uuid.UUID
+	UserID uuid.UUID
+}
+
+func (q *Queries) ListSpentManualReminders(ctx context.Context, arg ListSpentManualRemindersParams) ([]ListSpentManualRemindersRow, error) {
+	rows, err := q.db.Query(ctx, listSpentManualReminders, arg.Now, arg.Batch)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListSpentManualRemindersRow
+	for rows.Next() {
+		var i ListSpentManualRemindersRow
+		if err := rows.Scan(&i.ID, &i.ItemID, &i.UserID); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

@@ -27,6 +27,9 @@ func RunOnce(ctx context.Context, d *core.Deps) error {
 			break
 		}
 	}
+	if err := sweepSpent(ctx, d); err != nil {
+		return err
+	}
 	return store.Tx(ctx, d.Pool, func(q *sqlc.Queries) error {
 		now := d.Now()
 		expired, err := q.ExpireDeliveries(ctx, &now)

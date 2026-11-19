@@ -1,6 +1,7 @@
 package todo
 
 import (
+	"context"
 	"net/http"
 	"time"
 
@@ -18,13 +19,13 @@ import (
 
 const maxRemindersPerItem = 20
 
-// announceItem logs the item with its new set of reminders, for clients that keep items in memory.
-func announceItem(c fiber.Ctx, q *sqlc.Queries, now time.Time, userID, itemID uuid.UUID, actor events.Actor) error {
-	whole, err := LoadItem(c.Context(), q, userID, itemID)
+// AnnounceItem logs the item with its new set of reminders, for clients that keep items in memory.
+func AnnounceItem(ctx context.Context, q *sqlc.Queries, now time.Time, userID, itemID uuid.UUID, actor events.Actor) error {
+	whole, err := LoadItem(ctx, q, userID, itemID)
 	if err != nil {
 		return err
 	}
-	return events.Append(c.Context(), q, now, userID, actor, "item.updated", whole)
+	return events.Append(ctx, q, now, userID, actor, "item.updated", whole)
 }
 
 func registerReminders(user fiber.Router, d *core.Deps) {
@@ -129,7 +130,7 @@ func createReminder(d *core.Deps) fiber.Handler {
 			if err := events.Append(c.Context(), q, now, userID, auth.Actor(c), "reminder.created", created); err != nil {
 				return err
 			}
-			return announceItem(c, q, now, userID, itemID, auth.Actor(c))
+			return AnnounceItem(c.Context(), q, now, userID, itemID, auth.Actor(c))
 		})
 		if err != nil {
 			return err
@@ -167,7 +168,7 @@ func removeReminder(d *core.Deps) fiber.Handler {
 			if err := events.Append(c.Context(), q, now, userID, auth.Actor(c), "reminder.deleted", events.Deleted{ID: id, ItemID: &itemID}); err != nil {
 				return err
 			}
-			return announceItem(c, q, now, userID, itemID, auth.Actor(c))
+			return AnnounceItem(c.Context(), q, now, userID, itemID, auth.Actor(c))
 		})
 		if err != nil {
 			return err
