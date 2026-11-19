@@ -59,3 +59,30 @@ msgstr "Tomorrow morning (08:00)"
 
 msgid "snooze.custom"
 msgstr "Another time ..."
+
+msgid "reminder.upcoming_day"
+msgstr "Due on {day}"
+
+msgid "reminder.overdue_day"
+msgstr "Overdue, was due on {day}"
+
+msgid "reminder.item_done"
+msgstr "This item is already done."
+
+msgid "modal.time.title"
+msgstr "Remind me later"
+
+msgid "modal.time.label"
+msgstr "When?"
+
+msgid "modal.time.placeholder"
+msgstr "tomorrow 9, in 2h, fri 18:00"
+
+msgid "error.time_past"
+msgstr "That time has already passed."
+
+msgid "error.reminder_limit"
+msgstr "This item already has 20 reminders ahead. Remove one in the dashboard."
+
+msgid "error.outdated"
+msgstr "This message is out of date."

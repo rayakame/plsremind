@@ -59,3 +59,30 @@ msgstr "Morgen früh (08:00)"
 
 msgid "snooze.custom"
 msgstr "Eigene Zeit ..."
+
+msgid "reminder.upcoming_day"
+msgstr "Fällig am {day}"
+
+msgid "reminder.overdue_day"
+msgstr "Überfällig, fällig war am {day}"
+
+msgid "reminder.item_done"
+msgstr "Diese Aufgabe ist schon erledigt."
+
+msgid "modal.time.title"
+msgstr "Später erinnern"
+
+msgid "modal.time.label"
+msgstr "Wann?"
+
+msgid "modal.time.placeholder"
+msgstr "morgen 9, in 2h, fr 18:00"
+
+msgid "error.time_past"
+msgstr "Diese Zeit ist schon vorbei."
+
+msgid "error.reminder_limit"
+msgstr "Diese Aufgabe hat schon 20 anstehende Erinnerungen. Entferne eine im Dashboard."
+
+msgid "error.outdated"
+msgstr "Diese Nachricht ist veraltet."

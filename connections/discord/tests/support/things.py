@@ -80,6 +80,9 @@ def item(
     updated_at: datetime.datetime = CREATED,
 ) -> plsremind.Item:
     item_id = uid(1000 + number)
+    if due_date is not None:
+        # The hub puts an all-day deadline at the last instant of its day in the user's zone.
+        due_at = datetime.datetime.combine(due_date, datetime.time(23, 59, 59), tzinfo=BERLIN)
     return plsremind.Item(
         id=item_id,
         list_id=list_id,
