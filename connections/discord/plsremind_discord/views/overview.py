@@ -96,13 +96,15 @@ class OverviewView(common.Owned):
             public_url=config.public_url,
             texts=texts,
         )
+        # Items may have gone since the page was drawn; paging goes on from the last page there is.
+        self.page = min(self.page, _pages(self._every()) - 1)
 
     def render(self) -> ui.Layout:
         view = self._seen()
         say, locale = view.texts, view.locale
         only = common.unpack(self.only) if self.only is not None else None
-        every = lines((item for item in view.items if only is None or item.list_id == only), view.now, view.zone)
-        pages = max(1, -(-len(every) // ROWS))
+        every = self._every()
+        pages = _pages(every)
         page = min(self.page, pages - 1)
         overdue = sum(1 for line in every if line.group == "overdue")
         parts: list[ui.ContainerChild] = [
@@ -167,6 +169,11 @@ class OverviewView(common.Owned):
         self.page += 1
         await ctx.rerender()
 
+    def _every(self) -> list[Line]:
+        view = self._seen()
+        only = common.unpack(self.only) if self.only is not None else None
+        return lines((item for item in view.items if only is None or item.list_id == only), view.now, view.zone)
+
     def _seen(self) -> Listed:
         if self.shown is None:
             msg = "The view was drawn before it was loaded."
@@ -208,3 +215,7 @@ class OverviewView(common.Owned):
 
 _TITLE: typing.Final = 80
 _LABEL: typing.Final = 100
+
+
+def _pages(every: list[Line]) -> int:
+    return max(1, -(-len(every) // ROWS))

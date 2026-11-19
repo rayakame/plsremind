@@ -21,9 +21,9 @@ from plsremind_discord.commands import every
 from plsremind_discord.commands import message
 from plsremind_discord.commands import remind
 from plsremind_discord.commands import todos
+from plsremind_discord.views.common import Notice
 from plsremind_discord.views.detail import DetailView
 from plsremind_discord.views.overview import OverviewView
-from plsremind_discord.views.reminder import Notice
 from tests.support import discord
 from tests.support import things
 from tests.support.fake_hub import FakeHub

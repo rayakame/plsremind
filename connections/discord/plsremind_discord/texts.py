@@ -46,3 +46,8 @@ def stamp(at: datetime.datetime, style: Style) -> str:
 
 def day(date: datetime.date, locale: hikari.Locale) -> str:
     return date.strftime("%d.%m.%Y") if locale is hikari.Locale.DE else date.isoformat()
+
+
+def units(text: str) -> int:
+    """The length of `text` in UTF-16 code units, the larger of the two ways Discord may count it."""
+    return len(text.encode("utf-16-le")) // 2

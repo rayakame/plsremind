@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import datetime
 import re
 import typing
@@ -12,6 +13,7 @@ import plsremind
 import risa
 from risa import ui
 
+from plsremind_discord import patience
 from plsremind_discord import texts as texts_
 from plsremind_discord.clock import Clock
 from plsremind_discord.config import Config
@@ -29,6 +31,7 @@ _MORNING: typing.Final = datetime.time(8, 0)
 _UTC: typing.Final = zoneinfo.ZoneInfo("UTC")
 _LINK: typing.Final = re.compile(r"https://(?:(?:ptb|canary)\.)?discord\.com/channels/(?:@me|\d+)/\d+/\d+")
 _MARKDOWN: typing.Final = frozenset("\\*_~`|#[]<>")
+_URL: typing.Final = re.compile(r"https?://[^\s<>]+")
 GONE: typing.Final = "reminder.gone"
 _PAST: typing.Final = "error.time_past"
 _REFUSALS: typing.Final = {"reminder_limit": "error.reminder_limit", "item_done": "reminder.item_done"}
@@ -55,9 +58,23 @@ class Owned(risa.View):
 
     @classmethod
     @typing.override
-    async def on_outdated(cls, ctx: risa.ComponentContext, texts: texts_.Texts = risa.INJECTED) -> None:
+    async def on_outdated(
+        cls, ctx: risa.ComponentContext, texts: texts_.Texts = risa.INJECTED, views: risa.Client = risa.INJECTED
+    ) -> None:
         locale = texts_.locale_for(None, str(ctx.interaction.locale))
-        await ctx.respond(texts("error.outdated", locale), ephemeral=True)
+        await tell(ctx, views, texts("error.outdated", locale))
+
+
+@risa.register(name="notice")
+class Notice(risa.View):
+    """A message that only says something, for what a view turns into when it ends."""
+
+    text: str
+    link: str = ""
+    label: str = ""
+
+    def render(self) -> ui.Layout:
+        return notice_layout(self.text, self.link, self.label)
 
 
 class NotYoursError(Exception):
@@ -69,9 +86,10 @@ class StartingError(Exception):
 
 
 class RefusedError(Exception):
-    def __init__(self, key: str) -> None:
+    def __init__(self, key: str, *, item: plsremind.ID | None = None) -> None:
         super().__init__(key)
         self.key: typing.Final = key
+        self.item: typing.Final = item
 
 
 @risa.hook(risa.ExecutionSteps.CHECKS)
@@ -117,10 +135,15 @@ async def shown(
     user: bytes,
     item: bytes,
     speaks: str | None = None,
+    bounded: bool = False,
 ) -> Shown:
+    """What a view shows of an item. `bounded` gives up in time for a click that cannot ask Discord to wait."""
     user_id = unpack(user)
     profile = hub.profile(user_id)
-    found = await hub.item(user_id, unpack(item)) if profile is not None else None
+    found = None
+    if profile is not None:
+        reading = hub.item(user_id, unpack(item))
+        found = await (asyncio.wait_for(reading, patience.PATIENCE) if bounded else reading)
     return Shown(
         item=found,
         list_name=(hub.list_name(found.list_id) or "") if found is not None else "",
@@ -143,24 +166,28 @@ def state_of(item: plsremind.Item | None, now: datetime.datetime) -> State:
 
 
 def plain(text: str, limit: int) -> str:
-    """One line of at most `limit` characters in which nothing is markdown."""
+    """One line of at most `limit` characters in which nothing but a link is markdown."""
     line = " ".join(text.split())
+    # An escaped link would lead somewhere else, and Discord formats nothing inside one.
+    linked = {index for found in _URL.finditer(line) for index in range(found.start(), found.end())}
     kept: list[str] = []
     room = limit
     for index, char in enumerate(line):
-        piece = f"\\{char}" if char in _MARKDOWN else char
+        piece = f"\\{char}" if char in _MARKDOWN and index not in linked else char
+        size = texts_.units(piece)
         # Escaping lengthens the text, and Discord counts what it is sent.
-        if len(piece) > (room if index == len(line) - 1 else room - 1):
+        if size > (room if index == len(line) - 1 else room - 1):
             kept.append("…")
             break
         kept.append(piece)
-        room -= len(piece)
+        room -= size
     return "".join(kept)
 
 
 def message_link(note: str) -> str | None:
-    found = _LINK.search(note)
-    return found.group(0) if found is not None else None
+    # The message command puts its link last, after whatever the user wrote.
+    found = _LINK.findall(note)
+    return found[-1] if found else None
 
 
 def item_url(view: Shown, item: plsremind.Item) -> str:
@@ -250,7 +277,7 @@ async def remind_at(
     except plsremind.ConflictError as error:
         if error.code not in _REFUSALS:
             raise
-        raise RefusedError(_REFUSALS[error.code]) from None
+        raise RefusedError(_REFUSALS[error.code], item=item) from None
 
 
 async def remind_later(hub: Hub, view: Shown, user: bytes, choice: str, *, origin: int | None) -> datetime.datetime:
@@ -281,6 +308,19 @@ def confirmation(
     if where:
         text += f"\n-# {plain(where, LIST_SHOWN)}"
     return text, f"{config.public_url}/items/{item.id}", texts("button.dashboard", locale)
+
+
+def refusal(texts: texts_.Texts, locale: hikari.Locale, public_url: str, refused: RefusedError) -> tuple[str, str, str]:
+    """The text, the link and the link's label of why the hub refused, with the way to the item if there is one."""
+    if refused.item is None:
+        return texts(refused.key, locale), "", ""
+    return texts(refused.key, locale), f"{public_url}/items/{refused.item}", texts("button.dashboard", locale)
+
+
+async def tell(ctx: risa.ComponentContext, views: risa.Client, text: str, link: str = "", label: str = "") -> None:
+    """Say something only the one who clicked sees."""
+    rendered = await views.build(Notice(text=text, link=link, label=label))
+    await ctx.respond(**rendered, ephemeral=True)
 
 
 def notice_layout(text: str, link: str, label: str) -> ui.Layout:

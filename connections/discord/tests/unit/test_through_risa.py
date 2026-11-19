@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import asyncio
 import collections.abc
 import datetime
 import pathlib
 import typing
+from unittest import mock
 
 import hikari
 import msgspec
@@ -12,14 +14,15 @@ import pytest
 import risa
 
 from plsremind_discord import bot
+from plsremind_discord import patience
 from plsremind_discord.commands import common as commands_
 from plsremind_discord.store import Sent
 from plsremind_discord.store import Store
 from plsremind_discord.sync import Sync
 from plsremind_discord.views import common
+from plsremind_discord.views.common import Notice
 from plsremind_discord.views.detail import DetailView
 from plsremind_discord.views.overview import OverviewView
-from plsremind_discord.views.reminder import Notice
 from plsremind_discord.views.reminder import ReminderView
 from tests.support import discord
 from tests.support import things
@@ -223,3 +226,66 @@ async def test_a_message_that_shows_something_else_by_now_is_forgotten_instead_o
 
     rest.edit_message.assert_not_called()
     assert await store.messages_for_item(ITEM.id) == []
+
+
+def notice_of(sent: mock.Mock) -> tuple[bool, str]:
+    """Whether the last follow-up was sent as components only the user sees, and what it says."""
+    call = sent.await_args
+    assert not call.kwargs.get("content"), "every message is a container"
+    flags = call.kwargs.get("flags")
+    payloads = wire.sent({"components": call.kwargs["components"]})
+    return bool(flags and flags & hikari.MessageFlag.EPHEMERAL), wire.texts(payloads)
+
+
+async def test_a_refused_snooze_redraws_and_then_says_why_with_the_way_to_the_dashboard(made: Made) -> None:
+    made.hub.fail["remind"] = plsremind.ConflictError(409, "reminder_limit", "no")
+    payloads = await drawn(made, reminder())
+    rest = await wire.click(made.views, payloads, wire.custom_id(payloads, kind=3), values=("1h",))
+
+    names = [call[0] for call in rest.mock_calls if call[0] in {"edit_interaction_response", "execute_webhook"}]
+    assert names == ["edit_interaction_response", "execute_webhook"]
+    hidden, said = notice_of(rest.execute_webhook)
+    assert hidden is True
+    assert "20 anstehende Erinnerungen" in said
+    assert f"https://todo.example.com/items/{ITEM.id}" in said
+
+
+async def test_a_refused_snooze_in_the_detail_view_has_the_way_to_the_dashboard_too(made: Made) -> None:
+    made.hub.fail["remind"] = plsremind.ConflictError(409, "reminder_limit", "no")
+    detail = await drawn(made, DetailView(user=common.pack(MIA), item=common.pack(ITEM.id)))
+    rest = await wire.click(made.views, detail, wire.custom_id(detail, kind=3), values=("1h",))
+    hidden, said = notice_of(rest.execute_webhook)
+    assert hidden is True
+    assert f"https://todo.example.com/items/{ITEM.id}" in said
+
+
+async def test_the_time_modal_of_a_reminder_follows_the_click_when_the_hub_names_no_language(made: Made) -> None:
+    made.hub.knows(things.user(locale=None), ITEM, OTHER)
+    payloads = await drawn(made, reminder())
+    assert "Erledigt" not in wire.texts(payloads), "the message itself speaks the hub's default"
+    rest = await wire.click(made.views, payloads, wire.custom_id(payloads, kind=3), values=("custom",))
+    assert rest.create_modal_response.await_args.kwargs["title"] == "Später erinnern"
+
+
+async def test_a_click_that_opens_a_modal_is_answered_in_time_when_the_item_takes_long_to_read(
+    made: Made, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    payloads = await drawn(made, reminder())
+    discord.slow(monkeypatch, made.hub, "item")
+    monkeypatch.setattr(patience, "PATIENCE", 0.05)
+    rest = await asyncio.wait_for(
+        wire.click(made.views, payloads, wire.custom_id(payloads, kind=3), values=("custom",)), 1
+    )
+    rest.create_modal_response.assert_not_called()
+    kind, hidden, said = wire.answered(rest)
+    assert (kind, hidden) == (hikari.ResponseType.MESSAGE_CREATE, True)
+    assert "Das hat nicht geklappt" in wire.texts(said)
+
+
+async def test_back_after_items_vanished_goes_back_from_the_last_page_there_is(made: Made) -> None:
+    made.hub.knows(things.user(), *[things.item(number) for number in range(1, 11)])
+    overview = await drawn(made, OverviewView(user=common.pack(MIA), page=4))
+    rest = await wire.click(made.views, overview, wire.custom_id(overview, label="Zurück"))
+    shown = wire.texts(wire.answered(rest)[2])
+    assert "item 1" in shown
+    assert "item 9" not in shown

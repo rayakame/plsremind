@@ -26,9 +26,9 @@ from plsremind_discord.store import Store
 from plsremind_discord.submits import Modals
 from plsremind_discord.sync import Sync
 from plsremind_discord.views import common
+from plsremind_discord.views.common import Notice
 from plsremind_discord.views.detail import DetailView
 from plsremind_discord.views.overview import OverviewView
-from plsremind_discord.views.reminder import Notice
 from plsremind_discord.views.reminder import ReminderView
 
 PURGE_EVERY: typing.Final = 3600.0

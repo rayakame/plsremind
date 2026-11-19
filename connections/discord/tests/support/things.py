@@ -136,3 +136,5 @@ def scheduled(at: datetime.datetime) -> plsremind.ScheduledReminder:
 
 # Every character of it has to be escaped, which doubles what it takes up.
 WORST: typing.Final = "*_~`|#[]<>\\" * 60
+# Outside the basic plane: one character, but two where text is counted in UTF-16.
+WIDE: typing.Final = "\U00020000"

@@ -13,6 +13,7 @@ from risa import ui
 
 from plsremind_discord import modals
 from plsremind_discord import patience
+from plsremind_discord import texts
 from plsremind_discord.views import common
 from plsremind_discord.views.detail import DetailView
 from plsremind_discord.views.overview import OverviewView
@@ -139,7 +140,24 @@ def test_the_fullest_detail_view_stays_within_what_discord_allows_of_text() -> N
     steps = tuple(msgspec.structs.replace(step, title=things.WORST) for step in item.subitems)
     view = opened(msgspec.structs.replace(item, subitems=steps), upcoming=NOW)
     view.shown = discord.shown(view.shown.item if view.shown else None, list_name=things.WORST)
-    assert len(discord.written(view.render())) <= 4000
+    assert texts.units(discord.written(view.render())) <= 4000
+
+
+def test_the_fullest_detail_view_stays_within_what_discord_allows_of_wide_text() -> None:
+    wide = things.WIDE * 150
+    item = things.item(1, title=wide * 4, note="\n".join([wide] * 20), due_at=NOW + HOUR, subitems=12)
+    steps = tuple(msgspec.structs.replace(step, title=wide) for step in item.subitems)
+    view = opened(msgspec.structs.replace(item, subitems=steps), upcoming=NOW)
+    view.shown = discord.shown(view.shown.item if view.shown else None, list_name=wide)
+    assert texts.units(discord.written(view.render())) <= 4000
+
+
+def test_a_title_of_wide_characters_still_fits_into_the_edit_modal() -> None:
+    rest = mock.Mock(spec=hikari.api.RESTClient)
+    modals.edit_modal(rest, discord.say(), DE, things.item(1, title=things.WIDE * 300, note=things.WIDE * 2500), BERLIN)
+    fields = rest.build_modal_action_row.return_value.add_text_input.call_args_list
+    assert [call.args[0] for call in fields] == [modals.TITLE, modals.DUE]
+    assert fields[0].kwargs["max_length"] >= 600
 
 
 async def test_loading_reads_the_item_and_its_next_reminder() -> None:
@@ -234,14 +252,14 @@ async def test_a_step_that_was_removed_elsewhere_disappears() -> None:
 async def test_a_fixed_snooze_shows_the_new_reminder() -> None:
     hub, ctx = FakeHub(), discord.click("1h")
     view = known(hub, things.item(1))
-    await DetailView.snooze.func(view, ctx, hub)
+    await DetailView.snooze.func(view, ctx, hub, discord.views(hub, common.Notice))
     ctx.acknowledge.assert_awaited_once()
     assert hub.named("remind")[0]["at"] == NOW + HOUR
     assert view.upcoming == NOW + HOUR
     ctx.rerender.assert_awaited_once()
 
     view.upcoming = NOW + HOUR / 4
-    await DetailView.snooze.func(view, discord.click("1h"), hub)
+    await DetailView.snooze.func(view, discord.click("1h"), hub, discord.views(hub, common.Notice))
     assert view.upcoming == NOW + HOUR / 4
 
 
@@ -249,7 +267,7 @@ async def test_a_custom_snooze_opens_the_modal_with_the_way_back() -> None:
     hub, ctx = FakeHub(), discord.click("custom")
     item = things.item(1)
     view = known(hub, item)
-    await DetailView.snooze.func(view, ctx, hub)
+    await DetailView.snooze.func(view, ctx, hub, discord.views(hub, common.Notice))
     _, custom_id = ctx.interaction.create_modal_response.await_args.args
     assert custom_id == modals.snooze_id(item.id, detail=(things.WORK, 2))
     ctx.acknowledge.assert_not_called()
@@ -263,9 +281,12 @@ async def test_a_refused_snooze_redraws_first_and_then_says_why() -> None:
     order = mock.Mock()
     order.attach_mock(ctx.rerender, "rerender")
     order.attach_mock(ctx.respond, "respond")
-    await DetailView.snooze.func(view, ctx, hub)
+    await DetailView.snooze.func(view, ctx, hub, discord.views(hub, common.Notice))
     assert [call[0] for call in order.mock_calls] == ["rerender", "respond"]
-    assert ctx.respond.await_args.kwargs == {"ephemeral": True}
+    hidden, said = discord.replied(ctx)
+    assert hidden is True
+    assert "20 anstehende Erinnerungen" in said
+    assert f"https://todo.example.com/items/{things.uid(1001)}" in said
     assert view.upcoming is None
 
 
@@ -349,5 +370,5 @@ def test_the_edit_modal_leaves_out_a_note_too_long_for_it() -> None:
 @pytest.mark.parametrize("view", [DetailView, OverviewView])
 async def test_a_click_on_an_ephemeral_view_whose_state_cannot_be_read_is_answered(view: type[common.Owned]) -> None:
     ctx = discord.click(locale="en-US")
-    await view.on_outdated(ctx, discord.say())
-    ctx.respond.assert_awaited_once_with("This message is out of date.", ephemeral=True)
+    await view.on_outdated(ctx, discord.say(), discord.views(FakeHub(), common.Notice))
+    assert discord.replied(ctx) == (True, "This message is out of date.")

@@ -7,16 +7,18 @@ import typing
 from unittest import mock
 
 import hikari
+import msgspec
 import plsremind
 import pytest
 import risa
 from risa import ui
 
 from plsremind_discord import modals
+from plsremind_discord import texts
 from plsremind_discord.store import Sent
 from plsremind_discord.store import Store
 from plsremind_discord.views import common
-from plsremind_discord.views.reminder import Notice
+from plsremind_discord.views.common import Notice
 from plsremind_discord.views.reminder import ReminderView
 from tests.support import discord
 from tests.support import things
@@ -136,6 +138,27 @@ def test_a_title_is_shown_on_one_line_cut_and_without_its_markdown() -> None:
     assert common.plain("x" * 300, 300) == "x" * 300
 
 
+def test_a_link_is_left_as_it_is_so_that_it_still_leads_there() -> None:
+    assert common.plain("https://example.com/a_b#frag", 300) == "https://example.com/a_b#frag"
+    assert common.plain("see https://x.example/a_b and *this*", 100) == r"see https://x.example/a_b and \*this\*"
+    assert common.plain("<https://x.example/a>", 100) == r"\<https://x.example/a\>"
+
+
+def test_a_shortened_text_counts_as_discord_may_count() -> None:
+    wide = common.plain(things.WIDE * 200, 300)
+    assert texts.units(wide) <= 300
+    assert wide.endswith("…")
+    assert common.plain(things.WIDE * 150, 300) == things.WIDE * 150
+
+
+def test_the_link_back_to_a_message_is_the_one_the_bot_put_last() -> None:
+    typed = "see https://discord.com/channels/1/2/3"
+    assert (
+        common.message_link(f"{typed}\nhttps://discord.com/channels/@me/5/6") == "https://discord.com/channels/@me/5/6"
+    )
+    assert common.message_link(typed) == "https://discord.com/channels/1/2/3"
+
+
 def test_a_shortened_text_keeps_its_limit_however_much_of_it_is_escaped() -> None:
     assert common.plain("*" * 500, 300) == "\\*" * 149 + "…"
     assert common.plain("*" * 150, 300) == "\\*" * 150
@@ -155,9 +178,12 @@ def test_the_fullest_reminder_stays_within_what_discord_allows_of_text(*, done: 
     item = things.item(title=things.WORST, due_at=NOW + HOUR, priority=plsremind.Priority.HIGH, done=done)
     view = ReminderView(user=common.pack(MIA), item=common.pack(item.id))
     view.shown = seen(item, list_name=things.WORST)
-    assert len(discord.written(view.render())) <= 1000
+    assert texts.units(discord.written(view.render())) <= 1000
     text, _, _ = common.snoozed(seen(item, list_name=things.WORST), NOW + HOUR)
-    assert len(text) <= 1000
+    assert texts.units(text) <= 1000
+    wide = msgspec.structs.replace(item, title=things.WIDE * 500)
+    view.shown = seen(wide, list_name=things.WIDE * 100)
+    assert texts.units(discord.written(view.render())) <= 1000
 
 
 def test_an_item_ahead_shows_when_it_is_due_and_what_can_be_done() -> None:
@@ -448,7 +474,7 @@ async def test_a_fixed_snooze_ends_the_message_and_stops_following_it(store: Sto
         delivery_id="d1", user_id=MIA, item_id=item.id, item_updated_at=None, messages=[Sent(MESSAGE, 7, 1234)], now=NOW
     )
 
-    await ReminderView.snooze.func(view, ctx, hub, store)
+    await ReminderView.snooze.func(view, ctx, hub, store, discord.views(hub, common.Notice))
 
     ctx.acknowledge.assert_awaited_once()
     assert hub.named("remind") == [{"user": MIA, "item": item.id, "at": NOW + HOUR, "origin": MESSAGE}]
@@ -462,7 +488,7 @@ async def test_a_fixed_snooze_ends_the_message_and_stops_following_it(store: Sto
 async def test_a_custom_snooze_opens_the_modal_and_answers_nothing_else(store: Store) -> None:
     hub, ctx = FakeHub(), click("custom")
     view = loaded(hub, things.item(1))
-    await ReminderView.snooze.func(view, ctx, hub, store)
+    await ReminderView.snooze.func(view, ctx, hub, store, discord.views(hub, common.Notice))
     title, custom_id = ctx.interaction.create_modal_response.await_args.args
     assert title == "Später erinnern"
     assert custom_id == modals.snooze_id(things.uid(1001), detail=None)
@@ -481,11 +507,12 @@ async def test_a_refused_snooze_tells_the_user_and_keeps_the_message(store: Stor
         delivery_id="d1", user_id=MIA, item_id=item.id, item_updated_at=None, messages=[Sent(MESSAGE, 7, 1234)], now=NOW
     )
 
-    await ReminderView.snooze.func(view, ctx, hub, store)
+    await ReminderView.snooze.func(view, ctx, hub, store, discord.views(hub, common.Notice))
 
-    (text,) = ctx.respond.await_args.args
-    assert text.startswith("Diese Aufgabe hat schon 20")
-    assert ctx.respond.await_args.kwargs == {"ephemeral": True}
+    hidden, said = discord.replied(ctx)
+    assert hidden is True
+    assert said.startswith("Diese Aufgabe hat schon 20")
+    assert f"https://todo.example.com/items/{item.id}" in said
     ctx.rerender.assert_awaited_once()
     ctx.edit.assert_not_called()
     assert len(await store.messages_for_item(item.id)) == 1
@@ -493,8 +520,10 @@ async def test_a_refused_snooze_tells_the_user_and_keeps_the_message(store: Stor
 
 async def test_a_click_on_a_message_whose_state_cannot_be_read_is_answered() -> None:
     ctx = click()
-    await ReminderView.on_outdated(typing.cast("risa.ComponentContext", ctx), discord.say())
-    ctx.respond.assert_awaited_once_with("Diese Nachricht ist veraltet.", ephemeral=True)
+    await ReminderView.on_outdated(
+        typing.cast("risa.ComponentContext", ctx), discord.say(), discord.views(FakeHub(), common.Notice)
+    )
+    assert discord.replied(ctx) == (True, "Diese Nachricht ist veraltet.")
 
 
 def test_drawing_before_loading_is_a_mistake_that_shows() -> None:

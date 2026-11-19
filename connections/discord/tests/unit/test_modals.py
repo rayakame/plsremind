@@ -20,9 +20,9 @@ from plsremind_discord.store import Store
 from plsremind_discord.submits import Modals
 from plsremind_discord.timeparse import Day
 from plsremind_discord.timeparse import Moment
+from plsremind_discord.views.common import Notice
 from plsremind_discord.views.detail import DetailView
 from plsremind_discord.views.overview import OverviewView
-from plsremind_discord.views.reminder import Notice
 from plsremind_discord.views.reminder import ReminderView
 from tests.support import discord
 from tests.support import things
@@ -172,6 +172,7 @@ async def test_a_refused_snooze_says_why(made: Made) -> None:
     kind, hidden, text = discord.answer(event.interaction)
     assert (kind, hidden) == (CREATE, True)
     assert "20 anstehende Erinnerungen" in text
+    assert f"https://todo.example.com/items/{ITEM.id}" in text
 
 
 async def test_snoozing_an_item_that_is_gone_says_so(made: Made) -> None:

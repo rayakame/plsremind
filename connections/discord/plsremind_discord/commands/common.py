@@ -19,7 +19,7 @@ from plsremind_discord.config import Config
 from plsremind_discord.hub import Hub
 from plsremind_discord.views import common as views_
 from plsremind_discord.views import overview
-from plsremind_discord.views.reminder import Notice
+from plsremind_discord.views.common import Notice
 
 INSTALLS: typing.Final = (
     hikari.ApplicationIntegrationType.GUILD_INSTALL,

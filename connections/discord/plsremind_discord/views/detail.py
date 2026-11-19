@@ -40,7 +40,9 @@ class DetailView(common.Owned):
         self, hub: Hub, config: Config, clock: Clock, texts: texts_.Texts, ctx: risa.ComponentContext | None
     ) -> None:
         speaks = str(ctx.interaction.locale) if ctx is not None else self.speaks
-        view = await common.shown(hub, config, clock, texts, user=self.user, item=self.item, speaks=speaks)
+        view = await common.shown(
+            hub, config, clock, texts, user=self.user, item=self.item, speaks=speaks, bounded=ctx is not None
+        )
         self.shown = view
         self.upcoming = None
         if view.item is None or view.item.status is plsremind.ItemStatus.DONE:
@@ -103,7 +105,7 @@ class DetailView(common.Owned):
         await ctx.rerender()
 
     @risa.handler(defer=risa.AutoDefer.OFF)
-    async def snooze(self, ctx: risa.ComponentContext, hub: Hub) -> None:
+    async def snooze(self, ctx: risa.ComponentContext, hub: Hub, views: risa.Client) -> None:
         view = common.seen(self.shown)
         choice = ctx.values[0]
         if choice == common.CUSTOM:
@@ -116,7 +118,7 @@ class DetailView(common.Owned):
             until = await common.remind_later(hub, view, self.user, choice, origin=int(ctx.message.id))
         except common.RefusedError as refused:
             await ctx.rerender()
-            await ctx.respond(view.texts(refused.key, view.locale), ephemeral=True)
+            await common.tell(ctx, views, *common.refusal(view.texts, view.locale, view.public_url, refused))
             return
         self.upcoming = until if self.upcoming is None else min(until, self.upcoming)
         await ctx.rerender()
@@ -214,14 +216,13 @@ class DetailView(common.Owned):
 
 
 def _quoted(note: str) -> str:
-    """The note as a quote that takes up about `NOTE_SHOWN` characters at most."""
     lines: list[str] = []
     room = NOTE_SHOWN + 2
     rest = note.strip().splitlines()
     while rest and room > _LEAST:
         line = f"> {common.plain(rest.pop(0), room - 2)}"
         lines.append(line)
-        room -= len(line) + 1
+        room -= texts_.units(line) + 1
     if rest:
         lines.append("> …")
     return "\n".join(lines)

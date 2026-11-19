@@ -9,6 +9,7 @@ import msgspec
 import plsremind
 
 from plsremind_discord.texts import Texts
+from plsremind_discord.texts import units
 
 WHEN: typing.Final = "when"
 TITLE: typing.Final = "title"
@@ -114,7 +115,8 @@ def edit_modal(
             value=item.title,
             required=True,
             min_length=1,
-            max_length=TITLE_LIMIT,
+            # Never shorter than the title, should Discord count it in UTF-16 and the hub in characters.
+            max_length=min(NOTE_LIMIT, max(TITLE_LIMIT, units(item.title))),
         ),
         rest.build_modal_action_row().add_text_input(
             DUE,
@@ -126,7 +128,7 @@ def edit_modal(
         ),
     ]
     # A text field of a modal holds 4000 characters; a longer note is left as it is.
-    if len(item.note) <= NOTE_LIMIT:
+    if units(item.note) <= NOTE_LIMIT:
         rows.append(
             rest.build_modal_action_row().add_text_input(
                 NOTE,

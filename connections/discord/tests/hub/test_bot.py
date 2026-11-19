@@ -21,7 +21,7 @@ from plsremind_discord.store import Store
 from plsremind_discord.sync import Sync
 from plsremind_discord.timeparse import Day
 from plsremind_discord.timeparse import Moment
-from plsremind_discord.views.reminder import Notice
+from plsremind_discord.views.common import Notice
 from plsremind_discord.views.reminder import ReminderView
 from tests.hub import kit as kit_
 from tests.support import discord

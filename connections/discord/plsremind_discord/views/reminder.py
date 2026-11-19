@@ -13,25 +13,17 @@ from plsremind_discord.store import Store
 from plsremind_discord.views import common
 
 
-@risa.register(name="notice")
-class Notice(risa.View):
-    """A message that only says something, for what a view turns into when it ends."""
-
-    text: str
-    link: str = ""
-    label: str = ""
-
-    def render(self) -> ui.Layout:
-        return common.notice_layout(self.text, self.link, self.label)
-
-
 @risa.register(name="reminder", hooks=[common.owned])
 class ReminderView(common.Owned):
     item: bytes
     shown: risa.Prop[common.Shown | None] = None
 
-    async def load(self, hub: Hub, config: Config, clock: Clock, texts: texts_.Texts) -> None:
-        self.shown = await common.shown(hub, config, clock, texts, user=self.user, item=self.item)
+    async def load(
+        self, hub: Hub, config: Config, clock: Clock, texts: texts_.Texts, ctx: risa.ComponentContext | None
+    ) -> None:
+        self.shown = await common.shown(
+            hub, config, clock, texts, user=self.user, item=self.item, bounded=ctx is not None
+        )
 
     def render(self) -> ui.Layout:
         view = common.seen(self.shown)
@@ -72,11 +64,13 @@ class ReminderView(common.Owned):
         await ctx.rerender()
 
     @risa.handler(defer=risa.AutoDefer.OFF)
-    async def snooze(self, ctx: risa.ComponentContext, hub: Hub, store: Store) -> None:
+    async def snooze(self, ctx: risa.ComponentContext, hub: Hub, store: Store, views: risa.Client) -> None:
         view = common.seen(self.shown)
+        # The message keeps one language; what only the one clicking sees may follow their client.
+        speaks = texts_.locale_for(hub.profile(common.unpack(self.user)), str(ctx.interaction.locale))
         choice = ctx.values[0]
         if choice == common.CUSTOM:
-            title, rows = modals.time_modal(ctx.rest, view.texts, view.locale)
+            title, rows = modals.time_modal(ctx.rest, view.texts, speaks)
             custom_id = modals.snooze_id(common.unpack(self.item), detail=None)
             await ctx.interaction.create_modal_response(title, custom_id, components=rows)
             return
@@ -84,8 +78,8 @@ class ReminderView(common.Owned):
         try:
             until = await common.remind_later(hub, view, self.user, choice, origin=int(ctx.message.id))
         except common.RefusedError as refused:
-            await ctx.respond(view.texts(refused.key, view.locale), ephemeral=True)
             await ctx.rerender()
+            await common.tell(ctx, views, *common.refusal(view.texts, speaks, view.public_url, refused))
             return
         # Nothing is left to click, so the message is done with and no longer followed.
         await ctx.edit(common.notice_layout(*common.snoozed(view, until)))

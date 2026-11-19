@@ -22,8 +22,8 @@ from plsremind_discord.hub import Hub
 from plsremind_discord.hub import Unchanged
 from plsremind_discord.store import Store
 from plsremind_discord.views import common
+from plsremind_discord.views.common import Notice
 from plsremind_discord.views.detail import DetailView
-from plsremind_discord.views.reminder import Notice
 
 _LOGGER: typing.Final = logging.getLogger(__name__)
 _UTC: typing.Final = zoneinfo.ZoneInfo("UTC")
@@ -116,7 +116,7 @@ class Modals:
             else:
                 await self._edit(interaction, reply, user, modal, values)
         except common.RefusedError as refused:
-            await reply.say(self._texts(refused.key, locale))
+            await reply.say(*common.refusal(self._texts, locale, self._config.public_url, refused))
         except timeparse.TimeError as error:
             key = "error.time_past" if error.reason == "past" else "error.time_unreadable"
             await reply.say(self._texts(key, locale))
