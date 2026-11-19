@@ -105,6 +105,51 @@ A connection is an integration for all users of the instance. Create one with
 `POST /api/v1/admin/connections` and give the returned token to the integration. The token
 is shown once; `POST /api/v1/admin/connections/{id}/token` issues a new one.
 
+## The Discord bot
+
+The bot in `connections/discord` sends reminders as direct messages and answers commands
+such as `/remind` and `/todos`. It is a connection like any other: it talks to the hub
+through the API and the gateway only, and keeps a small SQLite file of its own.
+
+1. **Create a Discord application** in the
+   [Developer Portal](https://discord.com/developers/applications). Under Installation,
+   allow both "User Install" and "Guild Install" and keep the scope `applications.commands`
+   for both. Under Bot, create a token. The bot needs no privileged intents.
+2. **Let people link their Discord account.** Configure the login provider `discord` as
+   described above with `"link_enabled": true`. The same Discord application can serve
+   for this: its client ID and secret are under OAuth2.
+3. **Create the connection** in the hub and keep the token it returns:
+
+   ```sh
+   curl -b cookies.txt -X POST -H 'Content-Type: application/json' \
+     -H 'Origin: https://todo.example.com' \
+     -d '{"name":"Discord","provider":"discord","allowed_intents":["users","lists","items","history","deliveries"]}' \
+     https://todo.example.com/api/v1/admin/connections
+   ```
+
+4. **Start the bot** next to the hub:
+
+   ```sh
+   echo "DISCORD_TOKEN=..." >> .env
+   echo "PLSREMIND_DISCORD_TOKEN=plsr_con_..." >> .env
+   docker compose --profile discord up -d
+   ```
+
+Users then add the application to their account with its install link, link their Discord
+account in the dashboard under Settings, and get their reminders as direct messages.
+
+| Variable | Required | Meaning |
+|---|---|---|
+| `DISCORD_TOKEN` | yes | The bot token of the Discord application. |
+| `PLSREMIND_TOKEN` | yes | The token of the connection. Compose reads it from `PLSREMIND_DISCORD_TOKEN`. |
+| `PLSREMIND_URL` | yes | Where the bot reaches the hub. Compose sets it to `http://hub:8080`. |
+| `PLSREMIND_PUBLIC_URL` | yes | The address of the dashboard, for the links in the bot's messages. |
+| `PLSREMIND_DISCORD_DB` | no | Where the bot keeps its SQLite file. In the image it is `/data/discord.db`, on a volume. |
+
+The file holds which reminders went out and which message shows which item. If it is lost,
+a reminder that was still waiting for its confirmation may arrive a second time, and
+older messages only catch up when someone clicks them. Nothing else depends on it.
+
 ## Behind a reverse proxy
 
 The gateway is a WebSocket at `/api/v1/gateway`. The proxy has to pass the upgrade

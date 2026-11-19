@@ -32,5 +32,24 @@ services:
       timeout: 3s
       retries: 10
 
+  # The Discord bot. It only starts with "docker compose --profile discord up".
+  discord:
+    profiles: ["discord"]
+    build:
+      context: ..
+      dockerfile: connections/discord/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      - hub
+    environment:
+      DISCORD_TOKEN: ${DISCORD_TOKEN:-}
+      PLSREMIND_TOKEN: ${PLSREMIND_DISCORD_TOKEN:-}
+      # Inside the compose network the bot reaches the hub directly, not through the public address.
+      PLSREMIND_URL: http://hub:8080
+      PLSREMIND_PUBLIC_URL: ${PLSREMIND_PUBLIC_URL:-http://localhost:${PLSREMIND_PORT:-8080}}
+    volumes:
+      - discord:/data
+
 volumes:
   db:
+  discord:

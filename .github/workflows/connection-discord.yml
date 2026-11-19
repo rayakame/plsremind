@@ -48,3 +48,17 @@ jobs:
           go-version-file: hub/go.mod
           cache-dependency-path: hub/go.sum
       - run: uv run --group nox nox -s pytest hub
+
+  image:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: .
+    steps:
+      - uses: actions/checkout@v5
+      - run: docker build -f connections/discord/Dockerfile -t plsremind-discord .
+      # Without its settings the bot has to say what is missing and stop.
+      - run: |
+          docker run --rm plsremind-discord 2> out.txt && exit 1
+          grep -q DISCORD_TOKEN out.txt
