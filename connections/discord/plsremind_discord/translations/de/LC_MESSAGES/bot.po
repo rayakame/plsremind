@@ -86,3 +86,9 @@ msgstr "Diese Aufgabe hat schon 20 anstehende Erinnerungen. Entferne eine im Das
 
 msgid "error.outdated"
 msgstr "Diese Nachricht ist veraltet."
+
+msgid "delivery.closed_dms"
+msgstr "Discord hat die Direktnachricht nicht angenommen. Prüfe, ob du Nachrichten vom Bot erlaubst und die App noch installiert ist."
+
+msgid "delivery.no_account"
+msgstr "Es ist kein Discord-Konto verknüpft."

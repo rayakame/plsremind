@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import collections.abc
 import datetime
 import functools
@@ -91,3 +92,9 @@ def labels(layout: object) -> list[str | None]:
 
 def count(layout: object) -> int:
     return sum(1 for _ in walk(layout))
+
+
+async def until(condition: collections.abc.Callable[[], bool], within: float = 2.0) -> None:
+    async with asyncio.timeout(within):
+        while not condition():  # ruff: ignore[async-busy-wait]
+            await asyncio.sleep(0)

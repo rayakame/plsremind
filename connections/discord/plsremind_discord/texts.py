@@ -33,7 +33,9 @@ class Texts:
         return text.format(**fields)
 
 
-def locale_for(user: plsremind.ConnectionUser | None, interaction_locale: str | None) -> hikari.Locale:
+def locale_for(
+    user: plsremind.ConnectionUser | plsremind.DeliveryUser | None, interaction_locale: str | None
+) -> hikari.Locale:
     wanted = (user.locale if user is not None else None) or interaction_locale or ""
     return hikari.Locale.DE if str(wanted).lower().startswith(_GERMAN) else hikari.Locale.EN_US
 
