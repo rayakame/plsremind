@@ -92,3 +92,84 @@ msgstr "Discord did not accept the direct message. Check that you allow messages
 
 msgid "delivery.no_account"
 msgstr "No Discord account is linked."
+
+msgid "overview.title"
+msgstr "Your items"
+
+msgid "overview.summary"
+msgstr "{open} open · {overdue} overdue"
+
+msgid "overview.empty"
+msgstr "Nothing open."
+
+msgid "overview.reminder"
+msgstr "Reminder {when}"
+
+msgid "overview.steps"
+msgstr "{done} of {all}"
+
+msgid "group.overdue"
+msgstr "Overdue"
+
+msgid "group.today"
+msgstr "Today"
+
+msgid "group.soon"
+msgstr "Coming up"
+
+msgid "group.none"
+msgstr "No deadline"
+
+msgid "filter.all"
+msgstr "All lists"
+
+msgid "button.open"
+msgstr "Open"
+
+msgid "button.back"
+msgstr "Back"
+
+msgid "button.next"
+msgstr "Next"
+
+msgid "button.tick"
+msgstr "Tick off"
+
+msgid "button.untick"
+msgstr "Reopen"
+
+msgid "button.edit"
+msgstr "Edit"
+
+msgid "button.delete"
+msgstr "Delete"
+
+msgid "button.really_delete"
+msgstr "Delete for good"
+
+msgid "button.cancel"
+msgstr "Cancel"
+
+msgid "button.to_overview"
+msgstr "To overview"
+
+msgid "detail.next_reminder"
+msgstr "Next reminder: {when}"
+
+msgid "detail.steps"
+msgstr "Steps · {done} of {all}"
+
+msgid "detail.more_steps"
+msgstr "+ {count} more in the dashboard"
+
+msgid "modal.edit.title"
+msgstr "Edit item"
+
+msgid "modal.edit.name"
+msgstr "Title"
+
+msgid "modal.edit.due"
+msgstr "Deadline (empty for none)"
+
+msgid "modal.edit.note"
+msgstr "Note"

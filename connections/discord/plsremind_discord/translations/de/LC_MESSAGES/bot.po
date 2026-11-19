@@ -92,3 +92,84 @@ msgstr "Discord hat die Direktnachricht nicht angenommen. Prüfe, ob du Nachrich
 
 msgid "delivery.no_account"
 msgstr "Es ist kein Discord-Konto verknüpft."
+
+msgid "overview.title"
+msgstr "Deine Aufgaben"
+
+msgid "overview.summary"
+msgstr "{open} offen · {overdue} überfällig"
+
+msgid "overview.empty"
+msgstr "Nichts offen."
+
+msgid "overview.reminder"
+msgstr "Erinnerung {when}"
+
+msgid "overview.steps"
+msgstr "{done} von {all}"
+
+msgid "group.overdue"
+msgstr "Überfällig"
+
+msgid "group.today"
+msgstr "Heute"
+
+msgid "group.soon"
+msgstr "Demnächst"
+
+msgid "group.none"
+msgstr "Ohne Frist"
+
+msgid "filter.all"
+msgstr "Alle Listen"
+
+msgid "button.open"
+msgstr "Öffnen"
+
+msgid "button.back"
+msgstr "Zurück"
+
+msgid "button.next"
+msgstr "Weiter"
+
+msgid "button.tick"
+msgstr "Abhaken"
+
+msgid "button.untick"
+msgstr "Offen"
+
+msgid "button.edit"
+msgstr "Bearbeiten"
+
+msgid "button.delete"
+msgstr "Löschen"
+
+msgid "button.really_delete"
+msgstr "Wirklich löschen"
+
+msgid "button.cancel"
+msgstr "Abbrechen"
+
+msgid "button.to_overview"
+msgstr "Zur Übersicht"
+
+msgid "detail.next_reminder"
+msgstr "Nächste Erinnerung: {when}"
+
+msgid "detail.steps"
+msgstr "Unterpunkte · {done} von {all}"
+
+msgid "detail.more_steps"
+msgstr "+ {count} weitere im Dashboard"
+
+msgid "modal.edit.title"
+msgstr "Aufgabe bearbeiten"
+
+msgid "modal.edit.name"
+msgstr "Titel"
+
+msgid "modal.edit.due"
+msgstr "Frist (leer für keine)"
+
+msgid "modal.edit.note"
+msgstr "Notiz"

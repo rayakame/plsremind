@@ -118,3 +118,20 @@ def shown(
         public_url=CONFIG.public_url,
         texts=say(),
     )
+
+
+def click(*values: str, message: int = 555, locale: str = "de") -> mock.Mock:
+    """A click as a handler sees it."""
+    ctx = mock.Mock(spec=risa.ComponentContext)
+    ctx.message.id = hikari.Snowflake(message)
+    ctx.values = list(values)
+    ctx.rest = mock.Mock(spec=hikari.api.RESTClient)
+    ctx.interaction = mock.Mock(spec=hikari.ComponentInteraction)
+    ctx.interaction.locale = locale
+    return ctx
+
+
+def bound(button: ui.Button) -> int:
+    """The one whole number a button carries to its handler."""
+    (frame,) = button.binding.frames
+    return int.from_bytes(frame.data, "little")
