@@ -154,13 +154,16 @@ async def test_closing_closes_the_client(made: Made) -> None:
 
 
 async def test_an_item_of_the_user_comes_from_the_cache(made: Made) -> None:
+    assert made.hub.cached(MIA, ITEM.id) is None
     made.client.cache.get_item.return_value = ITEM
+    assert made.hub.cached(MIA, ITEM.id) == ITEM
     assert await made.hub.item(MIA, ITEM.id) == ITEM
     made.client.rest.get_item.assert_not_called()
 
 
 async def test_a_cached_item_of_someone_else_is_asked_for_at_the_hub(made: Made) -> None:
     made.client.cache.get_item.return_value = things.item(1, list_id=things.WORK)
+    assert made.hub.cached(MIA, ITEM.id) is None
     made.client.rest.get_item.side_effect = plsremind.NotFoundError(404, "not_found", "no")
     assert await made.hub.item(MIA, ITEM.id) is None
     made.client.rest.get_item.assert_awaited_once_with(ITEM.id, user=MIA)

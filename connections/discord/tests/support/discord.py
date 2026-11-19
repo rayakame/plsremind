@@ -8,6 +8,7 @@ import typing
 from unittest import mock
 
 import hikari
+import plsremind
 import risa
 from risa import ui
 
@@ -16,6 +17,7 @@ from plsremind_discord.clock import Clock
 from plsremind_discord.config import Config
 from plsremind_discord.hub import Hub
 from plsremind_discord.store import Store
+from plsremind_discord.views import common
 from tests.support import things
 
 CONFIG: typing.Final = Config(
@@ -98,3 +100,21 @@ async def until(condition: collections.abc.Callable[[], bool], within: float = 2
     async with asyncio.timeout(within):
         while not condition():  # ruff: ignore[async-busy-wait]
             await asyncio.sleep(0)
+
+
+def shown(
+    item: plsremind.Item | None,
+    *,
+    now: datetime.datetime = things.NOW,
+    list_name: str = "Inbox",
+    locale: hikari.Locale = hikari.Locale.DE,
+) -> common.Shown:
+    return common.Shown(
+        item=item,
+        list_name=list_name,
+        locale=locale,
+        zone=things.BERLIN,
+        now=now,
+        public_url=CONFIG.public_url,
+        texts=say(),
+    )

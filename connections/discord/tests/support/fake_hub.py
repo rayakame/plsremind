@@ -25,6 +25,7 @@ class FakeHub(Hub):
         self.schedules: dict[plsremind.ID, tuple[plsremind.ScheduledReminder, ...]] = {}
         self.calls: list[tuple[str, dict[str, object]]] = []
         self.fail: dict[str, BaseException] = {}
+        self.uncached: set[plsremind.ID] = set()
         self._made = 0
 
     def knows(
@@ -93,6 +94,10 @@ class FakeHub(Hub):
     @typing.override
     def open_items(self, user: plsremind.ID) -> tuple[plsremind.Item, ...]:
         return tuple(item for item in self._items(user).values() if item.status is plsremind.ItemStatus.OPEN)
+
+    @typing.override
+    def cached(self, user: plsremind.ID, item: plsremind.ID) -> plsremind.Item | None:
+        return None if item in self.uncached else self._items(user).get(item)
 
     @typing.override
     async def item(self, user: plsremind.ID, item: plsremind.ID) -> plsremind.Item | None:

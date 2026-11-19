@@ -83,10 +83,16 @@ class Hub:
     def open_items(self, user: plsremind.ID) -> tuple[plsremind.Item, ...]:
         return self.client.cache.get_items(user)
 
-    async def item(self, user: plsremind.ID, item: plsremind.ID) -> plsremind.Item | None:
-        cached = self.client.cache.get_item(item)
+    def cached(self, user: plsremind.ID, item: plsremind.ID) -> plsremind.Item | None:
+        found = self.client.cache.get_item(item)
         # The cache finds an item of any user, so the list tells whose it is.
-        if cached is not None and any(one.id == cached.list_id for one in self.client.cache.get_lists(user)):
+        if found is not None and any(one.id == found.list_id for one in self.client.cache.get_lists(user)):
+            return found
+        return None
+
+    async def item(self, user: plsremind.ID, item: plsremind.ID) -> plsremind.Item | None:
+        cached = self.cached(user, item)
+        if cached is not None:
             return cached
         try:
             return await self.client.rest.get_item(item, user=user)
