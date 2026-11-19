@@ -75,4 +75,6 @@ def generated_check(session: nox.Session) -> None:
     sync(session, "sqlc")
     session.run("sqlc", "generate")
     session.run("git", "diff", "--exit-code", "--", GENERATED, external=True)
-    session.run("git", "status", "--porcelain", "--", GENERATED, external=True)
+    untracked = session.run("git", "status", "--porcelain", "--", GENERATED, external=True, silent=True)
+    if untracked:
+        session.error(f"generated files that are not committed:\n{untracked}")
