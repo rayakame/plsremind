@@ -11,6 +11,7 @@ import plsremind
 import risa
 
 from plsremind_discord.hub import Hub
+from plsremind_discord.hub import accounts_of
 from plsremind_discord.hub import origin_of
 from plsremind_discord.store import Store
 from plsremind_discord.views.reminder import ReminderView
@@ -73,10 +74,17 @@ class Sync:
                 self._redraw_soon(row.message_id, row.channel_id)
 
     async def user_ready(self, event: plsremind.UserReadyEvent) -> None:
+        profile = self._hub.profile(event.user_id)
+        if profile is not None:
+            await self._drop_unlinked(event.user_id, accounts_of(profile.external_ids))
         for row in await self._store.messages_for_user(event.user_id):
             item = self._hub.cached(event.user_id, plsremind.ID(row.item_id))
             if item is None or item.updated_at != row.item_updated_at:
                 self._redraw_soon(row.message_id, row.channel_id)
+
+    async def user_changed(self, event: plsremind.UserUpdateEvent) -> None:
+        if isinstance(event.user, plsremind.ConnectionUser):
+            await self._drop_unlinked(event.user_id, accounts_of(event.user.external_ids))
 
     async def user_gone(self, event: plsremind.UserGoneEvent) -> None:
         await self._store.forget_user(event.user_id)
@@ -88,6 +96,12 @@ class Sync:
         for task in tasks:
             task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
+
+    async def _drop_unlinked(self, user: plsremind.ID, linked: collections.abc.Collection[int]) -> None:
+        # An account that was unlinked must not keep seeing what becomes of the user's items.
+        for row in await self._store.messages_for_user(user):
+            if row.account_id not in linked:
+                await self._store.forget_message(row.message_id)
 
     def _redraw_soon(self, message: int, channel: int) -> None:
         self._asked[message] = self._asked.get(message, 0) + 1

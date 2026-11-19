@@ -22,6 +22,7 @@ class Delivery(msgspec.Struct):
 class Message(msgspec.Struct):
     message_id: int
     channel_id: int
+    account_id: int
     user_id: str
     item_id: str
     item_updated_at: datetime.datetime | None

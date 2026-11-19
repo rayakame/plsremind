@@ -43,7 +43,7 @@ async def record(
         user_id=user,
         item_id=item,
         item_updated_at=stamp,
-        messages=[Sent(message_id=message, channel_id=7) for message in messages],
+        messages=[Sent(message_id=message, channel_id=7, account_id=1234) for message in messages],
         now=now,
     )
 

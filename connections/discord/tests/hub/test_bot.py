@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import collections.abc
 import datetime
 import pathlib
@@ -81,14 +82,16 @@ async def running(kit: kit_.Kit, tmp_path: pathlib.Path) -> collections.abc.Asyn
         return
 
     sync = Sync(hub=hub, views=redraws, store=store, sleep=at_once)
-    bot_module.listen(hub.client, reminders=reminders, sync=sync)
+    up = asyncio.Event()
+    bot_module.listen(hub.client, reminders=reminders, sync=sync, up=up)
     await hub.start()
+    up.set()
     try:
         yield Running(hub, mia, connection, rest, store, redraws, sync)
     finally:
+        await hub.close()
         await reminders.close()
         await sync.close()
-        await hub.close()
         await store.close()
 
 
@@ -182,7 +185,7 @@ async def test_done_in_discord_reaches_the_hub_and_only_other_messages_are_redra
         user_id=mia.id,
         item_id=item.id,
         item_updated_at=item.updated_at,
-        messages=[Sent(555, CHANNEL), Sent(556, CHANNEL)],
+        messages=[Sent(555, CHANNEL, 1234), Sent(556, CHANNEL, 1234)],
         now=now(),
     )
     await discord.until(lambda: running.hub.cached(mia.id, item.id) is not None, within=10)
@@ -240,7 +243,7 @@ async def test_a_change_in_the_hub_redraws_the_message(running: Running) -> None
         user_id=mia.id,
         item_id=item.id,
         item_updated_at=None,
-        messages=[Sent(555, CHANNEL)],
+        messages=[Sent(555, CHANNEL, 1234)],
         now=now(),
     )
     await mia.rest.update_item(item.id, title="Final report")
@@ -257,7 +260,7 @@ async def test_a_user_who_switches_the_connection_off_is_forgotten(running: Runn
         user_id=mia.id,
         item_id=item.id,
         item_updated_at=None,
-        messages=[Sent(555, CHANNEL)],
+        messages=[Sent(555, CHANNEL, 1234)],
         now=now(),
     )
     await mia.browser.call("PUT", f"/users/@me/connections/{running.connection}", {"enabled": False})

@@ -21,6 +21,7 @@ _MESSAGES_KEPT: typing.Final = datetime.timedelta(days=30)
 class Sent(msgspec.Struct, frozen=True):
     message_id: int
     channel_id: int
+    account_id: int
 
 
 class Store:
@@ -64,6 +65,7 @@ class Store:
                     self._db,
                     message_id=sent.message_id,
                     channel_id=sent.channel_id,
+                    account_id=sent.account_id,
                     user_id=user_id,
                     item_id=item_id,
                     item_updated_at=_utc(item_updated_at),

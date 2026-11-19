@@ -8,8 +8,8 @@ SELECT delivery_id FROM deliveries WHERE delivery_id = ?;
 DELETE FROM deliveries WHERE sent_at < ?;
 
 -- name: AddMessage :exec
-INSERT INTO messages (message_id, channel_id, user_id, item_id, item_updated_at, sent_at)
-VALUES (?, ?, ?, ?, ?, ?);
+INSERT INTO messages (message_id, channel_id, account_id, user_id, item_id, item_updated_at, sent_at)
+VALUES (?, ?, ?, ?, ?, ?, ?);
 
 -- name: MessagesForItem :many
 SELECT * FROM messages WHERE item_id = ? ORDER BY message_id;

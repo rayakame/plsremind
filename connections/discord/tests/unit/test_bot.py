@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import asyncio
 import collections.abc
+import logging
 import os
 import pathlib
 import signal
+import sqlite3
 import typing
 from unittest import mock
 
@@ -76,6 +78,7 @@ async def test_the_bot_is_put_together_without_intents_and_with_everything_it_li
         plsremind.ItemDeleteEvent,
         plsremind.ListUpdateEvent,
         plsremind.UserReadyEvent,
+        plsremind.UserUpdateEvent,
         plsremind.UserGoneEvent,
     }
     view = OverviewView(user=common.pack(things.MIA))
@@ -88,7 +91,9 @@ async def test_the_listeners_hand_events_to_the_parts_that_deal_with_them() -> N
     client = mock.Mock(spec=plsremind.Client)
     reminders, sync = mock.AsyncMock(), mock.AsyncMock()
     reminders.withdraw = mock.Mock()
-    bot.listen(typing.cast("plsremind.Client", client), reminders=reminders, sync=sync)
+    up = asyncio.Event()
+    up.set()
+    bot.listen(typing.cast("plsremind.Client", client), reminders=reminders, sync=sync, up=up)
     heard = {call.args[0]: call.args[1] for call in client.subscribe.call_args_list}
 
     delivery = things.delivery()
@@ -108,6 +113,39 @@ async def test_the_listeners_hand_events_to_the_parts_that_deal_with_them() -> N
     ready = plsremind.UserReadyEvent(user_id=things.MIA)
     await heard[plsremind.UserReadyEvent](ready)
     sync.user_ready.assert_awaited_once_with(ready)
+    moved = plsremind.UserUpdateEvent(user_id=things.MIA, actor=None, nonce=None, user=things.user())
+    await heard[plsremind.UserUpdateEvent](moved)
+    sync.user_changed.assert_awaited_once_with(moved)
+
+
+async def test_what_the_hub_reports_waits_until_discord_is_there() -> None:
+    client = mock.Mock(spec=plsremind.Client)
+    reminders, sync = mock.AsyncMock(), mock.AsyncMock()
+    reminders.withdraw = mock.Mock()
+    up = asyncio.Event()
+    bot.listen(typing.cast("plsremind.Client", client), reminders=reminders, sync=sync, up=up)
+    heard = {call.args[0]: call.args[1] for call in client.subscribe.call_args_list}
+    delivery = things.delivery()
+    changed = plsremind.ItemUpdateEvent(user_id=things.MIA, actor=None, nonce=None, item=things.item(1))
+
+    waiting = [
+        asyncio.create_task(
+            heard[plsremind.DeliveryCreateEvent](plsremind.DeliveryCreateEvent(user_id=things.MIA, delivery=delivery))
+        ),
+        asyncio.create_task(heard[plsremind.ItemUpdateEvent](changed)),
+        asyncio.create_task(heard[plsremind.UserReadyEvent](plsremind.UserReadyEvent(user_id=things.MIA))),
+    ]
+    for _ in range(5):
+        await asyncio.sleep(0)
+    reminders.deliver.assert_not_called()
+    sync.item_changed.assert_not_called()
+    sync.user_ready.assert_not_called()
+
+    up.set()
+    await asyncio.gather(*waiting)
+    reminders.deliver.assert_awaited_once_with(delivery)
+    sync.item_changed.assert_awaited_once_with(changed)
+    sync.user_ready.assert_awaited_once()
 
 
 @pytest.mark.parametrize(
@@ -127,11 +165,38 @@ async def test_a_click_that_fails_is_answered_in_private(failure: Exception, sai
     assert said in "\n".join(discord.payload_texts(built))
 
 
-async def test_a_click_that_fails_for_a_reason_nobody_foresaw_is_left_to_be_logged() -> None:
+async def test_a_click_that_fails_for_a_reason_nobody_foresaw_is_answered_and_logged(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
     ctx = discord.click()
     pipeline = risa.ExecutionPipeline([risa.Failure(RuntimeError("boom"), risa.FailureStage.HANDLER)])
-    assert await bot.click_failed(pipeline, typing.cast("risa.ComponentContext", ctx), tools(a_hub())) is False
-    ctx.respond.assert_not_called()
+    assert await bot.click_failed(pipeline, typing.cast("risa.ComponentContext", ctx), tools(a_hub())) is True
+    sent = ctx.respond.await_args.kwargs
+    assert sent["ephemeral"] is True
+    built = [builder.build()[0] for builder in sent["components"]]
+    assert "Das hat nicht geklappt" in "\n".join(discord.payload_texts(built))
+    assert "a click failed" in caplog.text
+    assert "boom" in caplog.text
+
+
+async def test_a_click_while_the_bot_is_starting_says_so_instead_of_blaming_the_account() -> None:
+    hub = a_hub()
+    hub.ready.clear()
+    ctx = discord.click()
+    pipeline = risa.ExecutionPipeline([risa.Failure(common.StartingError(), risa.FailureStage.HOOK)])
+    assert await bot.click_failed(pipeline, typing.cast("risa.ComponentContext", ctx), tools(hub)) is True
+    built = [builder.build()[0] for builder in ctx.respond.await_args.kwargs["components"]]
+    said = "\n".join(discord.payload_texts(built))
+    assert "Der Bot startet gerade" in said
+    assert "nicht mit plsremind verbunden" not in said
+
+
+async def test_a_click_that_can_no_longer_be_answered_is_only_logged(caplog: pytest.LogCaptureFixture) -> None:
+    ctx = discord.click()
+    ctx.respond.side_effect = hikari.HikariError("the token ran out")
+    pipeline = risa.ExecutionPipeline([risa.Failure(plsremind.NetworkError("no route"), risa.FailureStage.HANDLER)])
+    assert await bot.click_failed(pipeline, typing.cast("risa.ComponentContext", ctx), tools(a_hub())) is True
+    assert "could not be told" in caplog.text
 
 
 def failed(ctx: mock.Mock) -> lightbulb.exceptions.ExecutionPipelineFailedException:
@@ -160,33 +225,78 @@ class Running(typing.NamedTuple):
     discord_started: mock.AsyncMock
     discord_closed: mock.AsyncMock
     commands_stopped: mock.AsyncMock
+    order: list[str]
 
 
 @pytest.fixture
-def running(tmp_path: pathlib.Path) -> collections.abc.Iterator[tuple[Running, bot.Config]]:
+def running(
+    tmp_path: pathlib.Path, caplog: pytest.LogCaptureFixture
+) -> collections.abc.Iterator[tuple[Running, bot.Config]]:
+    caplog.set_level(logging.DEBUG)
     hub = a_hub()
+    hub.ready.clear()
+    order: list[str] = []
+
+    def step(name: str, result: object = None) -> collections.abc.Callable[..., object]:
+        def stepped(*_: object, **__: object) -> object:
+            order.append(name)
+            return result
+
+        return stepped
+
     config = msgspec.structs.replace(discord.CONFIG, discord_token=TOKEN, database=tmp_path / "discord.db")
     with (
         mock.patch.object(bot.hub_, "connect", return_value=hub),
-        mock.patch.object(hikari.GatewayBot, "start", mock.AsyncMock()) as started,
-        mock.patch.object(hikari.GatewayBot, "close", mock.AsyncMock()) as closed,
-        mock.patch.object(lightbulb.Client, "start", mock.AsyncMock()),
+        mock.patch.object(FakeHub, "start", mock.AsyncMock(wraps=hub.start, side_effect=step("hub", mock.DEFAULT))),
+        mock.patch.object(
+            FakeHub, "close", mock.AsyncMock(wraps=hub.close, side_effect=step("hub closed", mock.DEFAULT))
+        ),
+        mock.patch.object(bot.Reminders, "close", mock.AsyncMock(side_effect=step("reminders closed"))),
+        mock.patch.object(bot.Sync, "close", mock.AsyncMock(side_effect=step("sync closed"))),
+        mock.patch.object(hikari.GatewayBot, "start", mock.AsyncMock(side_effect=step("discord"))) as started,
+        mock.patch.object(hikari.GatewayBot, "close", mock.AsyncMock(side_effect=step("discord closed"))) as closed,
+        mock.patch.object(lightbulb.Client, "start", mock.AsyncMock(side_effect=step("commands"))),
         mock.patch.object(lightbulb.Client, "stop", mock.AsyncMock()) as stopped,
     ):
-        yield Running(hub, started, closed, stopped), config
+        yield Running(hub, started, closed, stopped, order), config
 
 
-async def test_the_bot_runs_until_it_is_told_to_stop(running: tuple[Running, bot.Config]) -> None:
+async def test_the_bot_runs_until_it_is_told_to_stop(
+    running: tuple[Running, bot.Config], caplog: pytest.LogCaptureFixture
+) -> None:
     parts, config = running
     serving = asyncio.create_task(bot.main(config))
-    await discord.until(lambda: parts.discord_started.await_count == 1 and parts.hub.ready.is_set())
-    await asyncio.sleep(0)
+    await discord.until(lambda: "the bot is running" in caplog.text)
     os.kill(os.getpid(), signal.SIGTERM)
     assert await asyncio.wait_for(serving, 5) == 0
     parts.discord_started.assert_awaited_once_with(check_for_updates=False)
     parts.discord_closed.assert_awaited_once()
     parts.commands_stopped.assert_awaited_once()
     assert not parts.hub.ready.is_set()
+    assert config.discord_token not in caplog.text
+    assert config.hub_token not in caplog.text
+
+
+async def test_the_hub_is_asked_first_so_that_a_refusal_costs_no_discord_session(
+    running: tuple[Running, bot.Config], caplog: pytest.LogCaptureFixture
+) -> None:
+    parts, config = running
+    serving = asyncio.create_task(bot.main(config))
+    await discord.until(lambda: "the bot is running" in caplog.text)
+    assert parts.order == ["hub", "discord", "commands"]
+    os.kill(os.getpid(), signal.SIGTERM)
+    await asyncio.wait_for(serving, 5)
+
+
+async def test_on_the_way_out_the_hub_goes_quiet_before_anything_else_is_closed(
+    running: tuple[Running, bot.Config], caplog: pytest.LogCaptureFixture
+) -> None:
+    parts, config = running
+    serving = asyncio.create_task(bot.main(config))
+    await discord.until(lambda: "the bot is running" in caplog.text)
+    os.kill(os.getpid(), signal.SIGTERM)
+    await asyncio.wait_for(serving, 5)
+    assert parts.order[3:] == ["hub closed", "reminders closed", "sync closed", "discord closed"]
 
 
 async def test_a_hub_that_refuses_the_bot_ends_it_with_a_reason(
@@ -196,7 +306,27 @@ async def test_a_hub_that_refuses_the_bot_ends_it_with_a_reason(
     with mock.patch.object(FakeHub, "start", mock.AsyncMock(side_effect=bot.hub_.HubError("not a discord connection"))):
         assert await bot.main(config) == 1
     assert "stopping: HubError: not a discord connection" in caplog.text
-    parts.discord_closed.assert_awaited_once()
+    parts.discord_started.assert_not_called()
+
+
+async def test_a_hub_that_cannot_be_reached_ends_the_bot_before_discord_is_touched(
+    running: tuple[Running, bot.Config], caplog: pytest.LogCaptureFixture
+) -> None:
+    parts, config = running
+    with mock.patch.object(FakeHub, "start", mock.AsyncMock(side_effect=plsremind.GatewayError("connection refused"))):
+        assert await bot.main(config) == 1
+    assert "stopping: GatewayError" in caplog.text
+    parts.discord_started.assert_not_called()
+
+
+async def test_trouble_from_discord_at_the_start_ends_the_bot_with_a_reason(
+    running: tuple[Running, bot.Config], caplog: pytest.LogCaptureFixture
+) -> None:
+    parts, config = running
+    parts.discord_started.side_effect = RuntimeError("no session starts left")
+    assert await bot.main(config) == 1
+    assert "no session starts left" in caplog.text
+    assert parts.order == ["hub", "hub closed", "reminders closed", "sync closed", "discord closed"]
 
 
 async def test_being_turned_away_later_ends_the_bot_too(
@@ -205,10 +335,28 @@ async def test_being_turned_away_later_ends_the_bot_too(
     parts, config = running
     client = typing.cast("mock.Mock", parts.hub.client)
     serving = asyncio.create_task(bot.main(config))
-    await discord.until(lambda: parts.discord_started.await_count == 1 and parts.hub.ready.is_set())
+    await discord.until(lambda: "the bot is running" in caplog.text)
     heard = {call.args[0]: call.args[1] for call in client.subscribe.call_args_list}
     await heard[plsremind.ClosedEvent](plsremind.ClosedEvent(error=plsremind.GatewayError("token revoked", 4004)))
     assert await asyncio.wait_for(serving, 5) == 1
     assert "the hub turned the bot away" in caplog.text
-    assert "discord-secret" not in caplog.text
-    assert "plsr_con_secret" not in caplog.text
+    assert config.discord_token not in caplog.text
+    assert config.hub_token not in caplog.text
+
+
+async def test_old_rows_keep_being_cleared_after_one_round_failed(caplog: pytest.LogCaptureFixture) -> None:
+    store = mock.Mock(spec=Store)
+    store.purge = mock.AsyncMock(side_effect=[sqlite3.OperationalError(), None, None])
+    slept: list[float] = []
+
+    async def sleep(seconds: float) -> None:
+        slept.append(seconds)
+        if len(slept) == 3:
+            raise asyncio.CancelledError
+        await asyncio.sleep(0)
+
+    with pytest.raises(asyncio.CancelledError):
+        await bot.purge(typing.cast("Store", store), sleep)
+    assert store.purge.await_count == 3
+    assert slept == [bot.PURGE_EVERY] * 3
+    assert "old rows could not be cleared" in caplog.text

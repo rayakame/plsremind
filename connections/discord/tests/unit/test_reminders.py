@@ -14,6 +14,7 @@ import hikari
 import plsremind
 import pytest
 
+from plsremind_discord import reminders as reminders_module
 from plsremind_discord.reminders import Reminders
 from plsremind_discord.store import Store
 from plsremind_discord.views.reminder import ReminderView
@@ -220,18 +221,81 @@ def held(made: Made) -> Held:
     return Held(reminders, go)
 
 
-async def test_the_same_delivery_arriving_again_starts_no_second_try(made: Made) -> None:
-    made.rest.create_message.side_effect = broken()
+async def test_the_same_delivery_arriving_during_a_try_starts_no_second_one(made: Made) -> None:
+    sending, let_go = asyncio.Event(), asyncio.Event()
+
+    async def stuck(*_: object, **__: object) -> mock.Mock:
+        sending.set()
+        await let_go.wait()
+        return mock.Mock(id=hikari.Snowflake(100))
+
+    made.rest.create_message.side_effect = stuck
+    first = asyncio.create_task(made.reminders.deliver(delivery()))
+    await asyncio.wait_for(sending.wait(), 2)
+    await made.reminders.deliver(delivery())
+    await made.reminders.deliver(delivery())
+    let_go.set()
+    await first
+    assert made.rest.create_message.await_count == 1
+    assert len(made.hub.named("delivered")) == 1
+
+
+async def test_a_delivery_the_hub_sends_again_is_tried_at_once_instead_of_waiting_on(made: Made) -> None:
     waiting = held(made).reminders
     try:
+        made.rest.create_message.side_effect = broken()
+        await waiting.deliver(delivery())
+        assert waiting.waiting == frozenset({things.uid(9001)})
+
+        made.rest.create_message.side_effect = None
+        made.rest.create_message.return_value = mock.Mock(id=hikari.Snowflake(300))
+        await waiting.deliver(delivery())
+        assert waiting.waiting == frozenset()
+        assert len(made.hub.named("delivered")) == 1
+        assert made.rest.create_message.await_count == 2
+    finally:
+        await waiting.close()
+
+
+async def test_a_delivery_sent_again_that_still_fails_keeps_exactly_one_wait(made: Made) -> None:
+    waiting = held(made).reminders
+    try:
+        made.rest.create_message.side_effect = broken()
         await waiting.deliver(delivery())
         await waiting.deliver(delivery())
         await waiting.deliver(delivery())
         assert waiting.waiting == frozenset({things.uid(9001)})
-        assert made.rest.create_message.await_count == 1
+        assert made.rest.create_message.await_count == 3
+        chains = [task for task in asyncio.all_tasks() if task.get_name() == f"reminder-{things.uid(9001)}"]
+        await asyncio.sleep(0)
+        assert len([task for task in chains if not task.done()]) == 1
     finally:
         await waiting.close()
     assert waiting.waiting == frozenset()
+
+
+async def test_a_delivery_sent_again_while_a_later_try_is_under_way_is_left_to_it(made: Made) -> None:
+    waiting, go = held(made)
+    sending, let_go = asyncio.Event(), asyncio.Event()
+    try:
+        made.rest.create_message.side_effect = broken()
+        await waiting.deliver(delivery())
+
+        async def stuck(*_: object, **__: object) -> mock.Mock:
+            sending.set()
+            await let_go.wait()
+            return mock.Mock(id=hikari.Snowflake(300))
+
+        made.rest.create_message.side_effect = stuck
+        go.set()
+        await asyncio.wait_for(sending.wait(), 2)
+        await waiting.deliver(delivery())
+        let_go.set()
+        await discord.until(lambda: not waiting.waiting)
+    finally:
+        await waiting.close()
+    assert made.rest.create_message.await_count == 2, "one failed try and the one that was under way"
+    assert len(made.hub.named("delivered")) == 1
 
 
 async def test_tries_end_a_day_after_the_reminder_was_due(made: Made) -> None:
@@ -277,6 +341,54 @@ async def test_a_delivery_withdrawn_during_its_first_try_is_not_tried_again(made
     assert made.reminders.waiting == frozenset()
     assert made.slept == []
     assert made.rest.create_message.await_count == 1
+
+
+async def later_try_under_way(made: Made) -> tuple[Held, asyncio.Event]:
+    """A delivery whose second try is stuck inside Discord until the returned event is set."""
+    waiting = held(made)
+    sending, let_go = asyncio.Event(), asyncio.Event()
+    made.rest.create_message.side_effect = broken()
+    await waiting.reminders.deliver(delivery())
+
+    async def stuck(*_: object, **__: object) -> mock.Mock:
+        sending.set()
+        await let_go.wait()
+        return mock.Mock(id=hikari.Snowflake(300))
+
+    made.rest.create_message.side_effect = stuck
+    waiting.go.set()
+    await asyncio.wait_for(sending.wait(), 2)
+    return waiting, let_go
+
+
+async def test_a_delivery_withdrawn_during_a_later_try_lets_it_finish_and_record(made: Made) -> None:
+    waiting, let_go = await later_try_under_way(made)
+    try:
+        waiting.reminders.withdraw(things.uid(9001))
+        let_go.set()
+        await discord.until(lambda: not waiting.reminders.waiting)
+    finally:
+        await waiting.reminders.close()
+    assert [row.message_id for row in await made.store.messages_for_item(ITEM.id)] == [300]
+    assert made.rest.create_message.await_count == 2
+
+
+async def test_closing_lets_a_try_that_is_under_way_record_its_message(made: Made) -> None:
+    waiting, let_go = await later_try_under_way(made)
+    closing = asyncio.create_task(waiting.reminders.close())
+    await asyncio.sleep(0)
+    let_go.set()
+    await asyncio.wait_for(closing, 2)
+    assert [row.message_id for row in await made.store.messages_for_item(ITEM.id)] == [300]
+    assert waiting.reminders.waiting == frozenset()
+
+
+async def test_closing_does_not_wait_forever_for_a_try_that_hangs(made: Made) -> None:
+    waiting, _ = await later_try_under_way(made)
+    with mock.patch.object(reminders_module, "CLOSE_GRACE", 0.01):
+        await asyncio.wait_for(waiting.reminders.close(), 2)
+    assert waiting.reminders.waiting == frozenset()
+    assert await made.store.messages_for_item(ITEM.id) == []
 
 
 async def test_trouble_nobody_foresaw_is_tried_again_like_any_other(

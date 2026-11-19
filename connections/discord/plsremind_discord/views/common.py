@@ -63,6 +63,10 @@ class NotYoursError(Exception):
     pass
 
 
+class StartingError(Exception):
+    pass
+
+
 class RefusedError(Exception):
     def __init__(self, key: str) -> None:
         super().__init__(key)
@@ -73,6 +77,8 @@ class RefusedError(Exception):
 async def owned(  # ruff: ignore[unused-async]
     _pipeline: risa.ExecutionPipeline, ctx: risa.ComponentContext, view: Owned, hub: Hub
 ) -> None:
+    if not hub.ready.is_set():
+        raise StartingError
     # risa's own check for this refuses every click on a message the bot sent by itself.
     if hub.user_of(int(ctx.user.id)) != unpack(view.user):
         raise NotYoursError

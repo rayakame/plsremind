@@ -6,6 +6,7 @@ import contextlib
 import datetime
 import pathlib
 import typing
+from unittest import mock
 
 import hikari
 import msgspec
@@ -89,14 +90,16 @@ async def made(tmp_path: pathlib.Path) -> collections.abc.AsyncIterator[Made]:
         await store.close()
 
 
-async def sent(made: Made, message: int, item: plsremind.Item = ITEM, user: plsremind.ID = MIA) -> None:
+async def sent(
+    made: Made, message: int, item: plsremind.Item = ITEM, user: plsremind.ID = MIA, *, account: int = 1234
+) -> None:
     made.views.items[message] = item.id
     await made.store.record(
         delivery_id=f"d{message}",
         user_id=user,
         item_id=item.id,
         item_updated_at=item.updated_at,
-        messages=[Sent(message, CHANNEL)],
+        messages=[Sent(message, CHANNEL, account)],
         now=things.NOW,
     )
 
@@ -292,3 +295,50 @@ async def test_closing_drops_what_was_still_waiting(made: Made) -> None:
     await asyncio.wait_for(made.views.entered.wait(), 2)
     await made.sync.close()
     assert made.sync.pending == frozenset()
+
+
+def moved(user: plsremind.ConnectionUser) -> plsremind.UserUpdateEvent:
+    return plsremind.UserUpdateEvent(user_id=user.id, actor=None, nonce=None, user=user)
+
+
+async def test_an_account_that_was_unlinked_loses_its_messages(made: Made) -> None:
+    both = things.user(external_ids=("1234", "5678"))
+    made.hub.knows(both, ITEM, OTHER)
+    await sent(made, 100, account=1234)
+    await sent(made, 101, account=5678)
+
+    await made.sync.user_changed(moved(both))
+    assert [row.message_id for row in await made.store.messages_for_user(MIA)] == [100, 101]
+
+    one = things.user(external_ids=("1234",))
+    made.hub.knows(one, ITEM, OTHER)
+    await made.sync.user_changed(moved(one))
+    assert [row.message_id for row in await made.store.messages_for_user(MIA)] == [100]
+
+    await made.sync.item_changed(updated(renamed(ITEM), ITEM))
+    await settled(made)
+    assert made.views.redrawn == [100]
+
+
+async def test_a_new_session_drops_the_messages_of_accounts_unlinked_meanwhile(made: Made) -> None:
+    await sent(made, 100, account=1234)
+    await sent(made, 101, account=5678)
+    made.hub.their_items[MIA][ITEM.id] = renamed(ITEM)
+
+    await made.sync.user_ready(plsremind.UserReadyEvent(user_id=MIA))
+    await settled(made)
+
+    assert [row.message_id for row in await made.store.messages_for_user(MIA)] == [100]
+    assert made.views.redrawn == [100]
+
+
+async def test_a_user_whose_profile_is_not_known_keeps_every_message(made: Made) -> None:
+    await sent(made, 100, account=1234)
+    made.hub.people.clear()
+
+    await made.sync.user_ready(plsremind.UserReadyEvent(user_id=MIA))
+    personal = typing.cast("plsremind.User", mock.Mock(spec=plsremind.User))
+    await made.sync.user_changed(plsremind.UserUpdateEvent(user_id=MIA, actor=None, nonce=None, user=personal))
+    await settled(made)
+
+    assert [row.message_id for row in await made.store.messages_for_user(MIA)] == [100]

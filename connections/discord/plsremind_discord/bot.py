@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import collections.abc
 import contextlib
 import logging
 import os
@@ -41,6 +42,7 @@ class Parts(typing.NamedTuple):
     views: risa.Client
     reminders: Reminders
     sync: Sync
+    up: asyncio.Event
 
 
 async def build(config: Config, store: Store, hub: hub_.Hub) -> Parts:
@@ -75,12 +77,22 @@ async def build(config: Config, store: Store, hub: hub_.Hub) -> Parts:
     sync = Sync(hub=hub, views=views, store=store)
     modals = Modals(hub=hub, views=views, store=store, texts=texts, clock=clock, config=config)
     discord.subscribe(hikari.ModalInteractionCreateEvent, modals.submitted)
-    listen(hub.client, reminders=reminders, sync=sync)
-    return Parts(discord, commands, views, reminders, sync)
+    up = asyncio.Event()
+    listen(hub.client, reminders=reminders, sync=sync, up=up)
+    return Parts(discord, commands, views, reminders, sync, up)
 
 
-def listen(client: plsremind.Client, *, reminders: Reminders, sync: Sync) -> None:
-    """Hand what the hub reports to the parts that deal with it."""
+def listen(client: plsremind.Client, *, reminders: Reminders, sync: Sync, up: asyncio.Event) -> None:
+    """Hand what the hub reports to the parts that deal with it, once `up` says Discord can be reached."""
+
+    def once_up[E: plsremind.Event](
+        deal: collections.abc.Callable[[E], collections.abc.Awaitable[None]],
+    ) -> collections.abc.Callable[[E], collections.abc.Coroutine[typing.Any, typing.Any, None]]:
+        async def waited(event: E) -> None:
+            await up.wait()
+            await deal(event)
+
+        return waited
 
     async def due(event: plsremind.DeliveryCreateEvent) -> None:
         await reminders.deliver(event.delivery)
@@ -88,13 +100,14 @@ def listen(client: plsremind.Client, *, reminders: Reminders, sync: Sync) -> Non
     async def withdrawn(event: plsremind.DeliveryCloseEvent) -> None:  # ruff: ignore[unused-async]
         reminders.withdraw(event.delivery_id)
 
-    client.subscribe(plsremind.DeliveryCreateEvent, due)
-    client.subscribe(plsremind.DeliveryCloseEvent, withdrawn)
-    client.subscribe(plsremind.ItemUpdateEvent, sync.item_changed)
-    client.subscribe(plsremind.ItemDeleteEvent, sync.item_changed)
-    client.subscribe(plsremind.ListUpdateEvent, sync.list_changed)
-    client.subscribe(plsremind.UserReadyEvent, sync.user_ready)
-    client.subscribe(plsremind.UserGoneEvent, sync.user_gone)
+    client.subscribe(plsremind.DeliveryCreateEvent, once_up(due))
+    client.subscribe(plsremind.DeliveryCloseEvent, once_up(withdrawn))
+    client.subscribe(plsremind.ItemUpdateEvent, once_up(sync.item_changed))
+    client.subscribe(plsremind.ItemDeleteEvent, once_up(sync.item_changed))
+    client.subscribe(plsremind.ListUpdateEvent, once_up(sync.list_changed))
+    client.subscribe(plsremind.UserReadyEvent, once_up(sync.user_ready))
+    client.subscribe(plsremind.UserUpdateEvent, once_up(sync.user_changed))
+    client.subscribe(plsremind.UserGoneEvent, once_up(sync.user_gone))
 
 
 async def click_failed(pipeline: risa.ExecutionPipeline, ctx: risa.ComponentContext, tools: commands_.Tools) -> bool:
@@ -102,14 +115,20 @@ async def click_failed(pipeline: risa.ExecutionPipeline, ctx: risa.ComponentCont
     user = tools.hub.user_of(int(ctx.user.id))
     profile = tools.hub.profile(user) if user is not None else None
     locale = texts_.locale_for(profile, str(ctx.interaction.locale))
-    if pipeline.find(common.NotYoursError) is not None:
+    link = label = ""
+    if pipeline.find(common.StartingError) is not None:
+        text = say("error.starting", locale)
+    elif pipeline.find(common.NotYoursError) is not None:
         text, link, label = common.unlinked(say, locale, tools.config)
-    elif pipeline.find(plsremind.PlsremindError) is not None:
-        text, link, label = say("error.failed", locale), "", ""
     else:
-        return False
+        for failure in pipeline.failures:
+            _LOGGER.error("a click failed at the %s", failure.stage, exc_info=failure.error)
+        text = say("error.failed", locale)
     rendered = await tools.views.build(Notice(text=text, link=link, label=label))
-    await ctx.respond(**rendered, ephemeral=True)
+    try:
+        await ctx.respond(**rendered, ephemeral=True)
+    except hikari.HikariError as error:
+        _LOGGER.warning("someone could not be told that their click failed: %s", error)
     return True
 
 
@@ -151,10 +170,12 @@ async def _serve(config: Config, store: Store) -> int:
         loop.add_signal_handler(number, stop, None)
     purging: asyncio.Task[None] | None = None
     try:
+        # The hub first: a restart loop over a hub that refuses the bot must not use up Discord's session starts.
+        await hub.start()
         await parts.discord.start(check_for_updates=False)
         await parts.commands.start()
-        await hub.start()
-        purging = asyncio.create_task(_purge(store), name="purge")
+        parts.up.set()
+        purging = asyncio.create_task(purge(store), name="purge")
         _LOGGER.info("the bot is running")
         reason = await stopped
     except (
@@ -164,14 +185,18 @@ async def _serve(config: Config, store: Store) -> int:
         lightbulb.exceptions.LightbulbException,
     ) as error:
         reason = f"{type(error).__name__}: {error}"
+    except Exception as error:
+        _LOGGER.exception("the bot ran into something nobody foresaw")
+        reason = f"{type(error).__name__}: {error}"
     finally:
         if purging is not None:
             purging.cancel()
+        # The hub goes quiet first, so that nothing new comes in while the rest is put away.
+        await hub.close()
         await parts.reminders.close()
         await parts.sync.close()
-        await hub.close()
+        await parts.commands.stop()
         with contextlib.suppress(hikari.HikariError):
-            await parts.commands.stop()
             await parts.discord.close()
     if reason is None:
         return 0
@@ -179,11 +204,17 @@ async def _serve(config: Config, store: Store) -> int:
     return 1
 
 
-async def _purge(store: Store) -> None:
+async def purge(
+    store: Store, sleep: collections.abc.Callable[[float], collections.abc.Awaitable[None]] = asyncio.sleep
+) -> None:
+    """Clear what the store no longer needs, once an hour, for as long as the bot runs."""
     clock = Clock()
     while True:
-        await store.purge(clock.now())
-        await asyncio.sleep(PURGE_EVERY)
+        try:
+            await store.purge(clock.now())
+        except Exception:
+            _LOGGER.exception("old rows could not be cleared")
+        await sleep(PURGE_EVERY)
 
 
 def run() -> None:

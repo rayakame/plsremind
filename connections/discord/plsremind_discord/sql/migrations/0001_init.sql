@@ -6,6 +6,7 @@ CREATE TABLE deliveries (
 CREATE TABLE messages (
     message_id integer PRIMARY KEY,
     channel_id integer NOT NULL,
+    account_id integer NOT NULL,
     user_id text NOT NULL,
     item_id text NOT NULL,
     item_updated_at timestamp,

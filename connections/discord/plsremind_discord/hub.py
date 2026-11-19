@@ -238,7 +238,7 @@ class Hub:
         self._forget(user)
         if not isinstance(profile, plsremind.ConnectionUser):
             return
-        accounts = tuple(int(account) for account in profile.external_ids if account.isdecimal())
+        accounts = accounts_of(profile.external_ids)
         self._accounts[user] = accounts
         for account in accounts:
             self._users[account] = user
@@ -256,6 +256,11 @@ async def _unless_closed(answer: collections.abc.Awaitable[object]) -> None:
         # The hub withdrew it meanwhile, for example because the item was completed.
         if error.code != _CLOSED:
             raise
+
+
+def accounts_of(external_ids: collections.abc.Iterable[str]) -> tuple[int, ...]:
+    """The Discord accounts among the IDs the hub holds for a user."""
+    return tuple(int(account) for account in external_ids if account.isdecimal())
 
 
 def origin_of(nonce: str | None) -> int | None:
