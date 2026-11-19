@@ -40,6 +40,7 @@ def made() -> Made:
     client.cache = mock.Mock(spec=plsremind.Cache)
     client.rest = mock.Mock(spec=plsremind.RESTClient)
     client.principal = connection()
+    client.status = plsremind.ClientStatus.CONNECTED
     client.cache.get_users.return_value = ()
     client.cache.get_item.return_value = None
     client.cache.get_lists.return_value = (things.a_list(),)
@@ -180,67 +181,137 @@ async def test_other_failures_of_a_fetch_come_out(made: Made) -> None:
         await made.hub.item(MIA, ITEM.id)
 
 
-async def test_writes_name_the_user_and_carry_the_nonce(made: Made) -> None:
+def sent(call: mock.Mock) -> tuple[tuple[object, ...], dict[str, object]]:
+    """What a REST method was last called with, without the nonce."""
+    last = call.await_args
+    return last.args, {name: value for name, value in last.kwargs.items() if name != "nonce"}
+
+
+def nonce(call: mock.Mock) -> str:
+    return call.await_args.kwargs["nonce"]
+
+
+async def test_writes_name_the_user_and_say_which_message_they_came_from(made: Made) -> None:
     rest = made.client.rest
     at = things.NOW + datetime.timedelta(hours=1)
     await made.hub.schedule(MIA, ITEM.id)
     rest.get_item_schedule.assert_awaited_once_with(ITEM.id, user=MIA)
-    await made.hub.remind(MIA, ITEM.id, at, nonce="n1")
-    rest.create_reminder.assert_awaited_once_with(ITEM.id, at=at, user=MIA, nonce="n1")
-    await made.hub.set_done(MIA, ITEM.id, done=True, nonce="n2")
-    rest.update_item.assert_awaited_once_with(ITEM.id, status=plsremind.ItemStatus.DONE, user=MIA, nonce="n2")
-    rest.update_item.reset_mock()
-    await made.hub.set_done(MIA, ITEM.id, done=False)
-    rest.update_item.assert_awaited_once_with(ITEM.id, status=plsremind.ItemStatus.OPEN, user=MIA, nonce=None)
-    await made.hub.delete(MIA, ITEM.id, nonce="n3")
-    rest.delete_item.assert_awaited_once_with(ITEM.id, user=MIA, nonce="n3")
-    await made.hub.tick(MIA, ITEM.id, things.uid(5001), done=True, nonce="n4")
-    rest.update_subitem.assert_awaited_once_with(ITEM.id, things.uid(5001), done=True, user=MIA, nonce="n4")
+
+    await made.hub.remind(MIA, ITEM.id, at, origin=555)
+    assert sent(rest.create_reminder) == ((ITEM.id,), {"at": at, "user": MIA})
+    assert hub_module.origin_of(nonce(rest.create_reminder)) == 555
+
+    await made.hub.set_done(MIA, ITEM.id, done=True)
+    assert sent(rest.update_item) == ((ITEM.id,), {"status": plsremind.ItemStatus.DONE, "user": MIA})
+    assert hub_module.origin_of(nonce(rest.update_item)) is None
+    await made.hub.set_done(MIA, ITEM.id, done=False, origin=556)
+    assert sent(rest.update_item) == ((ITEM.id,), {"status": plsremind.ItemStatus.OPEN, "user": MIA})
+
+    await made.hub.delete(MIA, ITEM.id, origin=557)
+    assert sent(rest.delete_item) == ((ITEM.id,), {"user": MIA})
+    assert hub_module.origin_of(nonce(rest.delete_item)) == 557
+
+    await made.hub.tick(MIA, ITEM.id, things.uid(5001), done=True, origin=558)
+    assert sent(rest.update_subitem) == ((ITEM.id, things.uid(5001)), {"done": True, "user": MIA})
 
 
 async def test_a_new_item_sends_only_what_was_given(made: Made) -> None:
     rest = made.client.rest
     await made.hub.add(MIA, title="Laundry")
-    rest.create_item.assert_awaited_once_with(title="Laundry", user=MIA, nonce=None)
-    rest.create_item.reset_mock()
+    assert sent(rest.create_item) == ((), {"title": "Laundry", "user": MIA})
     due = things.NOW + datetime.timedelta(days=1)
     await made.hub.add(
-        MIA,
-        title="Report",
-        note="see wiki",
-        list_id=things.WORK,
-        priority=plsremind.Priority.HIGH,
-        due_at=due,
-        nonce="n",
+        MIA, title="Report", note="see wiki", list_id=things.WORK, priority=plsremind.Priority.HIGH, due_at=due
     )
-    rest.create_item.assert_awaited_once_with(
-        title="Report",
-        note="see wiki",
-        list_id=things.WORK,
-        priority=plsremind.Priority.HIGH,
-        due_at=due,
-        user=MIA,
-        nonce="n",
-    )
-    rest.create_item.reset_mock()
+    assert sent(rest.create_item)[1] == {
+        "title": "Report",
+        "note": "see wiki",
+        "list_id": things.WORK,
+        "priority": plsremind.Priority.HIGH,
+        "due_at": due,
+        "user": MIA,
+    }
     await made.hub.add(MIA, title="Party", due_date=datetime.date(2026, 12, 24))
-    rest.create_item.assert_awaited_once_with(title="Party", due_date=datetime.date(2026, 12, 24), user=MIA, nonce=None)
+    assert sent(rest.create_item)[1] == {"title": "Party", "due_date": datetime.date(2026, 12, 24), "user": MIA}
 
 
 async def test_an_edit_sends_the_deadline_the_way_it_was_meant(made: Made) -> None:
     rest = made.client.rest
     at = things.NOW + datetime.timedelta(days=1)
     await made.hub.edit(MIA, ITEM.id, title="A", due=Moment(at=at), note="n")
-    rest.update_item.assert_awaited_once_with(ITEM.id, title="A", due_at=at, note="n", user=MIA, nonce=None)
-    rest.update_item.reset_mock()
-    await made.hub.edit(MIA, ITEM.id, title="A", due=Day(date=at.date()), note=None, nonce="x")
-    rest.update_item.assert_awaited_once_with(ITEM.id, title="A", due_date=at.date(), user=MIA, nonce="x")
-    rest.update_item.reset_mock()
+    assert sent(rest.update_item) == ((ITEM.id,), {"title": "A", "due_at": at, "note": "n", "user": MIA})
+    await made.hub.edit(MIA, ITEM.id, title="A", due=Day(date=at.date()), note=None)
+    assert sent(rest.update_item)[1] == {"title": "A", "due_date": at.date(), "user": MIA}
     await made.hub.edit(MIA, ITEM.id, title="A", due=None, note="")
-    rest.update_item.assert_awaited_once_with(ITEM.id, title="A", due_at=None, note="", user=MIA, nonce=None)
-    rest.update_item.reset_mock()
+    assert sent(rest.update_item)[1] == {"title": "A", "due_at": None, "note": "", "user": MIA}
     await made.hub.edit(MIA, ITEM.id, title="A", due=hub_module.UNCHANGED, note=None)
-    rest.update_item.assert_awaited_once_with(ITEM.id, title="A", user=MIA, nonce=None)
+    assert sent(rest.update_item)[1] == {"title": "A", "user": MIA}
+
+
+async def test_a_write_waits_until_the_gateway_has_reported_it(made: Made) -> None:
+    await made.hub.set_done(MIA, ITEM.id, done=True, origin=7)
+    waited = made.client.wait_for.await_args
+    assert waited.args == (plsremind.ItemUpdateEvent,)
+    assert waited.kwargs["timeout"] == pytest.approx(hub_module.ECHO)
+    accepts = waited.kwargs["predicate"]
+    own = nonce(made.client.rest.update_item)
+    assert accepts(plsremind.ItemUpdateEvent(user_id=MIA, actor=None, nonce=own, item=ITEM))
+    assert not accepts(plsremind.ItemUpdateEvent(user_id=MIA, actor=None, nonce="7.someone-else", item=ITEM))
+    assert not accepts(plsremind.ItemUpdateEvent(user_id=MIA, actor=None, nonce=None, item=ITEM))
+
+
+async def test_each_kind_of_write_waits_for_its_own_report(made: Made) -> None:
+    waited = made.client.wait_for
+    await made.hub.add(MIA, title="x")
+    assert waited.await_args.args == (plsremind.ItemCreateEvent,)
+    await made.hub.delete(MIA, ITEM.id)
+    assert waited.await_args.args == (plsremind.ItemDeleteEvent,)
+    for write in (
+        made.hub.remind(MIA, ITEM.id, things.NOW),
+        made.hub.tick(MIA, ITEM.id, things.uid(5001), done=True),
+        made.hub.edit(MIA, ITEM.id, title="x", due=None, note=None),
+    ):
+        await write
+        assert waited.await_args.args == (plsremind.ItemUpdateEvent,)
+
+
+async def test_no_two_writes_share_a_nonce(made: Made) -> None:
+    seen: set[str] = set()
+    for _ in range(20):
+        await made.hub.set_done(MIA, ITEM.id, done=True, origin=555)
+        seen.add(nonce(made.client.rest.update_item))
+    assert len(seen) == 20
+    assert all(len(one) <= 64 and " " not in one for one in seen)
+    await made.hub.set_done(MIA, ITEM.id, done=True, origin=2**64 - 1)
+    assert len(nonce(made.client.rest.update_item)) <= 64
+
+
+async def test_a_write_does_not_wait_while_the_gateway_is_away(made: Made) -> None:
+    made.client.status = plsremind.ClientStatus.RECONNECTING
+    made.client.rest.update_item.return_value = ITEM
+    assert await made.hub.set_done(MIA, ITEM.id, done=True) == ITEM
+    made.client.wait_for.assert_not_called()
+
+
+@pytest.mark.parametrize("silence", [TimeoutError(), plsremind.GatewayError("closed")])
+async def test_a_report_that_never_comes_does_not_fail_the_write(made: Made, silence: Exception) -> None:
+    made.client.wait_for.side_effect = silence
+    made.client.rest.update_item.return_value = ITEM
+    assert await made.hub.set_done(MIA, ITEM.id, done=True) == ITEM
+
+
+async def test_a_refused_write_comes_out(made: Made) -> None:
+    made.client.rest.update_item.side_effect = plsremind.NotFoundError(404, "not_found", "no")
+    with pytest.raises(plsremind.NotFoundError):
+        await made.hub.set_done(MIA, ITEM.id, done=True)
+
+
+@pytest.mark.parametrize(
+    ("written", "origin"),
+    [("555.4f2a9c01b7de", 555), ("0.4f2a9c01b7de", None), (None, None), ("", None), ("n1", None), ("x.555", None)],
+)
+def test_the_message_a_change_came_from_is_read_back(written: str | None, origin: int | None) -> None:
+    assert hub_module.origin_of(written) == origin
 
 
 async def test_a_delivery_the_hub_closed_meanwhile_counts_as_confirmed(made: Made) -> None:

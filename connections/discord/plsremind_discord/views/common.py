@@ -207,22 +207,22 @@ def snooze_options(view: Shown) -> list[ui.SelectOption]:
     return options
 
 
-async def finish(hub: Hub, view: Shown, user: bytes, *, done: bool, nonce: str) -> Shown:
+async def finish(hub: Hub, view: Shown, user: bytes, *, done: bool, origin: int | None) -> Shown:
     item = view.item
     if item is None or (item.status is plsremind.ItemStatus.DONE) == done:
         return view
     try:
-        changed = await hub.set_done(unpack(user), item.id, done=done, nonce=nonce)
+        changed = await hub.set_done(unpack(user), item.id, done=done, origin=origin)
     except plsremind.NotFoundError:
         return msgspec.structs.replace(view, item=None)
     return msgspec.structs.replace(view, item=changed)
 
 
 async def remind_at(
-    hub: Hub, user: plsremind.ID, item: plsremind.ID, at: datetime.datetime, *, nonce: str | None
+    hub: Hub, user: plsremind.ID, item: plsremind.ID, at: datetime.datetime, *, origin: int | None
 ) -> None:
     try:
-        await hub.remind(user, item, at, nonce=nonce)
+        await hub.remind(user, item, at, origin=origin)
     except plsremind.NotFoundError:
         raise RefusedError(GONE) from None
     except plsremind.ConflictError as error:
@@ -231,13 +231,13 @@ async def remind_at(
         raise RefusedError(_REFUSALS[error.code]) from None
 
 
-async def remind_later(hub: Hub, view: Shown, user: bytes, choice: str, *, nonce: str) -> datetime.datetime:
+async def remind_later(hub: Hub, view: Shown, user: bytes, choice: str, *, origin: int | None) -> datetime.datetime:
     if view.item is None:
         raise RefusedError(GONE)
     at = snooze_at(choice, view.now, view.zone)
     if at is None or at <= view.now:
         raise RefusedError(_PAST)
-    await remind_at(hub, unpack(user), view.item.id, at, nonce=nonce)
+    await remind_at(hub, unpack(user), view.item.id, at, origin=origin)
     return at
 
 

@@ -121,7 +121,7 @@ class FakeHub(Hub):
         priority: plsremind.Priority | None = None,
         due_at: datetime.datetime | None = None,
         due_date: datetime.date | None = None,
-        nonce: str | None = None,
+        origin: int | None = None,
     ) -> plsremind.Item:
         self._called(
             "add",
@@ -132,7 +132,7 @@ class FakeHub(Hub):
             priority=priority,
             due_at=due_at,
             due_date=due_date,
-            nonce=nonce,
+            origin=origin,
         )
         self._made += 1
         made = things.item(
@@ -149,9 +149,9 @@ class FakeHub(Hub):
 
     @typing.override
     async def remind(
-        self, user: plsremind.ID, item: plsremind.ID, at: datetime.datetime, *, nonce: str | None = None
+        self, user: plsremind.ID, item: plsremind.ID, at: datetime.datetime, *, origin: int | None = None
     ) -> plsremind.ManualReminder:
-        self._called("remind", user=user, item=item, at=at, nonce=nonce)
+        self._called("remind", user=user, item=item, at=at, origin=origin)
         before = self._items(user)[item]
         made = things.reminder(len(before.reminders) + 1, item, at)
         self._items(user)[item] = msgspec.structs.replace(before, reminders=(*before.reminders, made))
@@ -159,9 +159,9 @@ class FakeHub(Hub):
 
     @typing.override
     async def set_done(
-        self, user: plsremind.ID, item: plsremind.ID, *, done: bool, nonce: str | None = None
+        self, user: plsremind.ID, item: plsremind.ID, *, done: bool, origin: int | None = None
     ) -> plsremind.Item:
-        self._called("set_done", user=user, item=item, done=done, nonce=nonce)
+        self._called("set_done", user=user, item=item, done=done, origin=origin)
         changed = msgspec.structs.replace(
             self._items(user)[item],
             status=plsremind.ItemStatus.DONE if done else plsremind.ItemStatus.OPEN,
@@ -179,9 +179,9 @@ class FakeHub(Hub):
         title: str,
         due: Moment | Day | Unchanged | None,
         note: str | None,
-        nonce: str | None = None,
+        origin: int | None = None,
     ) -> plsremind.Item:
-        self._called("edit", user=user, item=item, title=title, due=due, note=note, nonce=nonce)
+        self._called("edit", user=user, item=item, title=title, due=due, note=note, origin=origin)
         before = self._items(user)[item]
         changed = msgspec.structs.replace(before, title=title, note=before.note if note is None else note)
         if not isinstance(due, Unchanged):
@@ -195,15 +195,15 @@ class FakeHub(Hub):
         return changed
 
     @typing.override
-    async def delete(self, user: plsremind.ID, item: plsremind.ID, *, nonce: str | None = None) -> None:
-        self._called("delete", user=user, item=item, nonce=nonce)
+    async def delete(self, user: plsremind.ID, item: plsremind.ID, *, origin: int | None = None) -> None:
+        self._called("delete", user=user, item=item, origin=origin)
         self._items(user).pop(item, None)
 
     @typing.override
     async def tick(
-        self, user: plsremind.ID, item: plsremind.ID, subitem: plsremind.ID, *, done: bool, nonce: str | None = None
+        self, user: plsremind.ID, item: plsremind.ID, subitem: plsremind.ID, *, done: bool, origin: int | None = None
     ) -> plsremind.Subitem:
-        self._called("tick", user=user, item=item, subitem=subitem, done=done, nonce=nonce)
+        self._called("tick", user=user, item=item, subitem=subitem, done=done, origin=origin)
         before = self._items(user)[item]
         steps = tuple(msgspec.structs.replace(one, done=done) if one.id == subitem else one for one in before.subitems)
         self._items(user)[item] = msgspec.structs.replace(before, subitems=steps)

@@ -144,7 +144,7 @@ async def test_a_custom_snooze_from_the_dm_ends_the_message(made: Made) -> None:
     event = discord.submitted(modals.snooze_id(ITEM.id, detail=None), {modals.WHEN: "in 3h"})
     await made.modals.submitted(event)
     (reminded,) = made.hub.named("remind")
-    assert (reminded["at"], reminded["nonce"]) == (NOW + datetime.timedelta(hours=3), "555")
+    assert (reminded["at"], reminded["origin"]) == (NOW + datetime.timedelta(hours=3), 555)
     kind, hidden, text = discord.answer(event.interaction)
     assert (kind, hidden) == (UPDATE, False)
     assert "Verschoben" in text
@@ -193,7 +193,7 @@ async def test_an_edit_sends_what_was_typed(made: Made, typed: str, due: object)
     )
     await made.modals.submitted(event)
     (edited,) = made.hub.named("edit")
-    assert (edited["title"], edited["due"], edited["note"], edited["nonce"]) == ("Final report", due, "new note", "555")
+    assert (edited["title"], edited["due"], edited["note"], edited["origin"]) == ("Final report", due, "new note", 555)
     kind, hidden, text = discord.answer(event.interaction)
     assert (kind, hidden) == (UPDATE, False)
     assert "## Final report" in text
@@ -266,5 +266,5 @@ def test_the_longest_way_back_fits_into_an_id() -> None:
 async def test_a_snooze_modal_without_its_message_still_sets_the_reminder(made: Made) -> None:
     event = discord.submitted(modals.snooze_id(ITEM.id, detail=None), {modals.WHEN: "in 3h"}, message=None)
     await made.modals.submitted(event)
-    assert made.hub.named("remind")[0]["nonce"] is None
+    assert made.hub.named("remind")[0]["origin"] is None
     assert discord.answer(event.interaction)[0] == UPDATE

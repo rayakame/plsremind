@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import asyncio
 import collections.abc
+import contextlib
 import datetime
 import enum
+import secrets
 import typing
 
 import plsremind
@@ -21,6 +23,7 @@ INTENTS: typing.Final = (
 )
 _PROVIDER: typing.Final = "discord"
 _CLOSED: typing.Final = "delivery_closed"
+ECHO: typing.Final = 2.0
 
 
 class HubError(Exception):
@@ -120,22 +123,35 @@ class Hub:
         priority: plsremind.Priority | None = None,
         due_at: datetime.datetime | None = None,
         due_date: datetime.date | None = None,
-        nonce: str | None = None,
+        origin: int | None = None,
     ) -> plsremind.Item:
         given = {"note": note or None, "list_id": list_id, "priority": priority, "due_at": due_at, "due_date": due_date}
         fields: dict[str, typing.Any] = {name: value for name, value in given.items() if value is not None}
-        return await self.client.rest.create_item(title=title, **fields, user=user, nonce=nonce)
+        rest = self.client.rest
+        return await self._written(
+            plsremind.ItemCreateEvent,
+            lambda nonce: rest.create_item(title=title, **fields, user=user, nonce=nonce),
+            origin,
+        )
 
     async def remind(
-        self, user: plsremind.ID, item: plsremind.ID, at: datetime.datetime, *, nonce: str | None = None
+        self, user: plsremind.ID, item: plsremind.ID, at: datetime.datetime, *, origin: int | None = None
     ) -> plsremind.ManualReminder:
-        return await self.client.rest.create_reminder(item, at=at, user=user, nonce=nonce)
+        rest = self.client.rest
+        return await self._written(
+            plsremind.ItemUpdateEvent, lambda nonce: rest.create_reminder(item, at=at, user=user, nonce=nonce), origin
+        )
 
     async def set_done(
-        self, user: plsremind.ID, item: plsremind.ID, *, done: bool, nonce: str | None = None
+        self, user: plsremind.ID, item: plsremind.ID, *, done: bool, origin: int | None = None
     ) -> plsremind.Item:
         status = plsremind.ItemStatus.DONE if done else plsremind.ItemStatus.OPEN
-        return await self.client.rest.update_item(item, status=status, user=user, nonce=nonce)
+        rest = self.client.rest
+        return await self._written(
+            plsremind.ItemUpdateEvent,
+            lambda nonce: rest.update_item(item, status=status, user=user, nonce=nonce),
+            origin,
+        )
 
     async def edit(
         self,
@@ -145,7 +161,7 @@ class Hub:
         title: str,
         due: Moment | Day | Unchanged | None,
         note: str | None,
-        nonce: str | None = None,
+        origin: int | None = None,
     ) -> plsremind.Item:
         fields: dict[str, typing.Any] = {"title": title}
         # Only one of the two is sent: the hub clears the other, and clears both for a null.
@@ -155,15 +171,26 @@ class Hub:
             fields["due_at"] = due.at if due is not None else None
         if note is not None:
             fields["note"] = note
-        return await self.client.rest.update_item(item, **fields, user=user, nonce=nonce)
+        rest = self.client.rest
+        return await self._written(
+            plsremind.ItemUpdateEvent, lambda nonce: rest.update_item(item, **fields, user=user, nonce=nonce), origin
+        )
 
-    async def delete(self, user: plsremind.ID, item: plsremind.ID, *, nonce: str | None = None) -> None:
-        await self.client.rest.delete_item(item, user=user, nonce=nonce)
+    async def delete(self, user: plsremind.ID, item: plsremind.ID, *, origin: int | None = None) -> None:
+        rest = self.client.rest
+        await self._written(
+            plsremind.ItemDeleteEvent, lambda nonce: rest.delete_item(item, user=user, nonce=nonce), origin
+        )
 
     async def tick(
-        self, user: plsremind.ID, item: plsremind.ID, subitem: plsremind.ID, *, done: bool, nonce: str | None = None
+        self, user: plsremind.ID, item: plsremind.ID, subitem: plsremind.ID, *, done: bool, origin: int | None = None
     ) -> plsremind.Subitem:
-        return await self.client.rest.update_subitem(item, subitem, done=done, user=user, nonce=nonce)
+        rest = self.client.rest
+        return await self._written(
+            plsremind.ItemUpdateEvent,
+            lambda nonce: rest.update_subitem(item, subitem, done=done, user=user, nonce=nonce),
+            origin,
+        )
 
     async def delivered(self, delivery: plsremind.ID) -> None:
         status = plsremind.DeliveryStatus.DELIVERED
@@ -172,6 +199,31 @@ class Hub:
     async def failed(self, delivery: plsremind.ID, reason: str) -> None:
         status = plsremind.DeliveryStatus.FAILED
         await _unless_closed(self.client.rest.acknowledge_delivery(delivery, status=status, reason=reason))
+
+    async def _written[T](
+        self,
+        echo: type[plsremind.ChangeEvent],
+        write: collections.abc.Callable[[str], collections.abc.Awaitable[T]],
+        origin: int | None,
+    ) -> T:
+        """Make a write and wait until the gateway has reported it, so that the cache holds it."""
+        nonce = f"{origin or 0}.{secrets.token_hex(6)}"
+        if self.client.status is not plsremind.ClientStatus.CONNECTED:
+            return await write(nonce)
+        heard = asyncio.create_task(self._heard(echo, nonce))
+        # One turn of the loop, so that the wait is in place before the request goes out.
+        await asyncio.sleep(0)
+        try:
+            result = await write(nonce)
+        except BaseException:
+            heard.cancel()
+            raise
+        await heard
+        return result
+
+    async def _heard(self, echo: type[plsremind.ChangeEvent], nonce: str) -> None:
+        with contextlib.suppress(TimeoutError, plsremind.GatewayError):
+            await self.client.wait_for(echo, timeout=ECHO, predicate=lambda event: event.nonce == nonce)
 
     async def _on_ready(self, event: plsremind.UserReadyEvent) -> None:
         self.user_ready(event)
@@ -204,6 +256,12 @@ async def _unless_closed(answer: collections.abc.Awaitable[object]) -> None:
         # The hub withdrew it meanwhile, for example because the item was completed.
         if error.code != _CLOSED:
             raise
+
+
+def origin_of(nonce: str | None) -> int | None:
+    """The message a change came from, if the bot made it for a click on one."""
+    head = (nonce or "").partition(".")[0]
+    return int(head) if head.isdecimal() and head != "0" else None
 
 
 def connect(config: Config) -> Hub:

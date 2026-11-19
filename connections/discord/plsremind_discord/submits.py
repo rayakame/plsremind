@@ -112,7 +112,7 @@ class Modals:
         typed = timeparse.parse(values.get(modals.WHEN, ""), now=view.now, zone=view.zone)
         at = timeparse.moment(typed, now=view.now, zone=view.zone)
         message = interaction.message
-        await common.remind_at(self._hub, user, modal.item, at, nonce=_nonce(message))
+        await common.remind_at(self._hub, user, modal.item, at, origin=_origin(message))
         if modal.detail is not None:
             await self._detail(interaction, user, modal.item, modal.detail)
             return
@@ -142,7 +142,7 @@ class Modals:
                     title=values.get(modals.TITLE, "").strip(),
                     due=due,
                     note=values.get(modals.NOTE),
-                    nonce=_nonce(interaction.message),
+                    origin=_origin(interaction.message),
                 )
         await self._detail(interaction, user, modal.item, modal.back)
 
@@ -176,5 +176,5 @@ class Modals:
         return profile.timezone if profile is not None else _UTC
 
 
-def _nonce(message: hikari.Message | None) -> str | None:
-    return str(message.id) if message is not None else None
+def _origin(message: hikari.Message | None) -> int | None:
+    return int(message.id) if message is not None else None

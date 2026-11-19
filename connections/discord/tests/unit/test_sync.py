@@ -176,9 +176,17 @@ async def test_a_change_to_an_item_the_cache_did_not_hold_redraws(made: Made) ->
 async def test_the_message_that_was_clicked_is_skipped_and_the_others_are_not(made: Made) -> None:
     await sent(made, 100)
     await sent(made, 101)
-    await made.sync.item_changed(updated(renamed(ITEM), ITEM, nonce="100"))
+    await made.sync.item_changed(updated(renamed(ITEM), ITEM, nonce="100.4f2a9c01b7de"))
     await settled(made)
     assert made.views.redrawn == [101]
+
+
+async def test_a_change_from_a_message_the_bot_does_not_hold_redraws_everything(made: Made) -> None:
+    await sent(made, 100)
+    await sent(made, 101)
+    await made.sync.item_changed(updated(renamed(ITEM), ITEM, nonce="999.4f2a9c01b7de"))
+    await settled(made)
+    assert sorted(made.views.redrawn) == [100, 101]
 
 
 async def test_a_deleted_item_redraws_its_messages(made: Made) -> None:

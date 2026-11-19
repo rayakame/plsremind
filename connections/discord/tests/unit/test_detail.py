@@ -159,7 +159,7 @@ async def test_done_and_undo_from_the_detail_view() -> None:
     view = known(hub, things.item(1))
     view.upcoming = NOW + HOUR
     await DetailView.done.func(view, ctx, hub)
-    assert hub.named("set_done")[0]["nonce"] == "555"
+    assert hub.named("set_done")[0]["origin"] == 555
     assert view.upcoming is None
     assert discord.labels(view.render())[0] == "Rückgängig"
     await DetailView.undo.func(view, ctx, hub)
@@ -173,7 +173,7 @@ async def test_a_step_is_ticked_and_shown_ticked() -> None:
     view = known(hub, item)
     await DetailView.tick.func(view, ctx, common.arg(item.subitems[1].id), hub)
     assert hub.named("tick") == [
-        {"user": MIA, "item": item.id, "subitem": item.subitems[1].id, "done": True, "nonce": "555"}
+        {"user": MIA, "item": item.id, "subitem": item.subitems[1].id, "done": True, "origin": 555}
     ]
     assert "~~step 2~~" in discord.written(view.render())
     await DetailView.tick.func(view, ctx, common.arg(item.subitems[1].id), hub)
@@ -256,7 +256,7 @@ async def test_deleting_asks_first() -> None:
     assert hub.calls == []
 
     await DetailView.really_delete.func(view, ctx, hub)
-    assert hub.named("delete") == [{"user": MIA, "item": item.id, "nonce": "555"}]
+    assert hub.named("delete") == [{"user": MIA, "item": item.id, "origin": 555}]
     (back,) = ctx.replace.await_args.args
     assert isinstance(back, OverviewView)
     assert (back.user, back.only, back.page, back.speaks) == (common.pack(MIA), common.pack(things.WORK), 2, "de")

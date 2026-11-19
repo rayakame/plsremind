@@ -193,7 +193,7 @@ async def test_todos_answers_with_the_overview_in_private(hub: FakeHub) -> None:
 async def test_done_completes_and_shows_the_item_with_a_way_back(hub: FakeHub) -> None:
     ctx = discord.command()
     await done.done(ctx, the(hub), item=things.uid(1002))
-    assert hub.named("set_done") == [{"user": MIA, "item": things.uid(1002), "done": True, "nonce": None}]
+    assert hub.named("set_done") == [{"user": MIA, "item": things.uid(1002), "done": True, "origin": None}]
     hidden, text = discord.replied(ctx)
     assert hidden is True
     assert "~~Call Ben~~" in text

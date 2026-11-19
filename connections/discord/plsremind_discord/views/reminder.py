@@ -62,13 +62,13 @@ class ReminderView(common.Owned):
     @risa.handler
     async def done(self, ctx: risa.ComponentContext, hub: Hub) -> None:
         view = common.seen(self.shown)
-        self.shown = await common.finish(hub, view, self.user, done=True, nonce=str(ctx.message.id))
+        self.shown = await common.finish(hub, view, self.user, done=True, origin=int(ctx.message.id))
         await ctx.rerender()
 
     @risa.handler
     async def undo(self, ctx: risa.ComponentContext, hub: Hub) -> None:
         view = common.seen(self.shown)
-        self.shown = await common.finish(hub, view, self.user, done=False, nonce=str(ctx.message.id))
+        self.shown = await common.finish(hub, view, self.user, done=False, origin=int(ctx.message.id))
         await ctx.rerender()
 
     @risa.handler(defer=risa.AutoDefer.OFF)
@@ -82,7 +82,7 @@ class ReminderView(common.Owned):
             return
         await ctx.acknowledge()
         try:
-            until = await common.remind_later(hub, view, self.user, choice, nonce=str(ctx.message.id))
+            until = await common.remind_later(hub, view, self.user, choice, origin=int(ctx.message.id))
         except common.RefusedError as refused:
             await ctx.respond(view.texts(refused.key, view.locale), ephemeral=True)
             await ctx.rerender()

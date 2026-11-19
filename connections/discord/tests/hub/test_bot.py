@@ -187,7 +187,7 @@ async def test_done_in_discord_reaches_the_hub_and_only_other_messages_are_redra
     )
     await discord.until(lambda: running.hub.cached(mia.id, item.id) is not None, within=10)
 
-    changed = await running.hub.set_done(mia.id, item.id, done=True, nonce="555")
+    changed = await running.hub.set_done(mia.id, item.id, done=True, origin=555)
 
     assert changed.status is plsremind.ItemStatus.DONE
     assert (await mia.rest.get_item(item.id)).status is plsremind.ItemStatus.DONE
@@ -195,6 +195,41 @@ async def test_done_in_discord_reaches_the_hub_and_only_other_messages_are_redra
     await discord.until(lambda: not running.sync.pending, within=10)
     assert running.redraws.messages == [556]
     assert running.hub.cached(mia.id, item.id) is not None, "a completed item stays readable through the history"
+
+
+async def test_what_the_bot_wrote_is_what_it_reads_next(running: Running) -> None:
+    mia, hub = running.mia, running.hub
+    made = await hub.add(mia.id, title="Report")
+    assert hub.cached(mia.id, made.id) is not None
+    assert made.id in [item.id for item in hub.open_items(mia.id)]
+
+    await hub.edit(mia.id, made.id, title="Final report", due=None, note="n")
+    seen = hub.cached(mia.id, made.id)
+    assert seen is not None
+    assert (seen.title, seen.note) == ("Final report", "n")
+
+    await hub.remind(mia.id, made.id, now() + datetime.timedelta(hours=1))
+    seen = hub.cached(mia.id, made.id)
+    assert seen is not None
+    assert len(seen.reminders) == 1
+
+    step = await mia.rest.create_subitem(made.id, title="first")
+    await discord.until(lambda: bool((hub.cached(mia.id, made.id) or made).subitems), within=10)
+    await hub.tick(mia.id, made.id, step.id, done=True)
+    seen = hub.cached(mia.id, made.id)
+    assert seen is not None
+    assert seen.subitems[0].done is True
+
+    await hub.set_done(mia.id, made.id, done=True)
+    seen = hub.cached(mia.id, made.id)
+    assert seen is not None
+    assert seen.status is plsremind.ItemStatus.DONE
+    assert made.id not in [item.id for item in hub.open_items(mia.id)]
+
+    await hub.set_done(mia.id, made.id, done=False)
+    await hub.delete(mia.id, made.id)
+    assert hub.cached(mia.id, made.id) is None
+    assert made.id not in [item.id for item in hub.open_items(mia.id)]
 
 
 async def test_a_change_in_the_hub_redraws_the_message(running: Running) -> None:

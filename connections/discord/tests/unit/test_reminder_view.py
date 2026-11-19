@@ -205,23 +205,23 @@ async def test_finishing_writes_once_and_shows_the_result() -> None:
     hub = FakeHub()
     item = things.item(1)
     hub.knows(things.user(), item)
-    after = await common.finish(hub, seen(item), common.pack(MIA), done=True, nonce="77")
+    after = await common.finish(hub, seen(item), common.pack(MIA), done=True, origin=77)
     assert after.item is not None
     assert after.item.status is plsremind.ItemStatus.DONE
-    assert hub.named("set_done") == [{"user": MIA, "item": item.id, "done": True, "nonce": "77"}]
+    assert hub.named("set_done") == [{"user": MIA, "item": item.id, "done": True, "origin": 77}]
 
-    again = await common.finish(hub, after, common.pack(MIA), done=True, nonce="78")
+    again = await common.finish(hub, after, common.pack(MIA), done=True, origin=78)
     assert again is after
     assert len(hub.named("set_done")) == 1
 
-    reopened = await common.finish(hub, after, common.pack(MIA), done=False, nonce="79")
+    reopened = await common.finish(hub, after, common.pack(MIA), done=False, origin=79)
     assert reopened.item is not None
     assert reopened.item.status is plsremind.ItemStatus.OPEN
 
 
 async def test_finishing_an_item_that_is_gone_writes_nothing() -> None:
     hub = FakeHub()
-    assert (await common.finish(hub, seen(None), common.pack(MIA), done=True, nonce="1")).item is None
+    assert (await common.finish(hub, seen(None), common.pack(MIA), done=True, origin=1)).item is None
     assert hub.calls == []
 
 
@@ -230,16 +230,16 @@ async def test_an_item_deleted_while_it_is_finished_shows_as_gone() -> None:
     item = things.item(1)
     hub.knows(things.user(), item)
     hub.fail["set_done"] = plsremind.NotFoundError(404, "not_found", "no")
-    assert (await common.finish(hub, seen(item), common.pack(MIA), done=True, nonce="1")).item is None
+    assert (await common.finish(hub, seen(item), common.pack(MIA), done=True, origin=1)).item is None
 
 
 async def test_snoozing_sets_a_reminder_at_the_chosen_time() -> None:
     hub = FakeHub()
     item = things.item(1)
     hub.knows(things.user(), item)
-    at = await common.remind_later(hub, seen(item), common.pack(MIA), "1h", nonce="55")
+    at = await common.remind_later(hub, seen(item), common.pack(MIA), "1h", origin=55)
     assert at == NOW + HOUR
-    assert hub.named("remind") == [{"user": MIA, "item": item.id, "at": NOW + HOUR, "nonce": "55"}]
+    assert hub.named("remind") == [{"user": MIA, "item": item.id, "at": NOW + HOUR, "origin": 55}]
 
 
 @pytest.mark.parametrize(
@@ -256,7 +256,7 @@ async def test_a_refused_snooze_says_why(failure: plsremind.APIError, key: str) 
     hub.knows(things.user(), item)
     hub.fail["remind"] = failure
     with pytest.raises(common.RefusedError) as caught:
-        await common.remind_later(hub, seen(item), common.pack(MIA), "15m", nonce="1")
+        await common.remind_later(hub, seen(item), common.pack(MIA), "15m", origin=1)
     assert caught.value.key == key
 
 
@@ -266,10 +266,10 @@ async def test_a_snooze_to_a_time_that_has_passed_is_refused_before_the_hub_is_a
     hub.knows(things.user(), item)
     late = seen(item, now=NOW.replace(hour=21))
     with pytest.raises(common.RefusedError) as caught:
-        await common.remind_later(hub, late, common.pack(MIA), "evening", nonce="1")
+        await common.remind_later(hub, late, common.pack(MIA), "evening", origin=1)
     assert caught.value.key == "error.time_past"
     with pytest.raises(common.RefusedError):
-        await common.remind_later(hub, seen(None), common.pack(MIA), "15m", nonce="1")
+        await common.remind_later(hub, seen(None), common.pack(MIA), "15m", origin=1)
     assert hub.calls == []
 
 
@@ -279,7 +279,7 @@ async def test_any_other_refusal_of_the_hub_comes_out() -> None:
     hub.knows(things.user(), item)
     hub.fail["remind"] = plsremind.ConflictError(409, "something_else", "no")
     with pytest.raises(plsremind.ConflictError):
-        await common.remind_later(hub, seen(item), common.pack(MIA), "15m", nonce="1")
+        await common.remind_later(hub, seen(item), common.pack(MIA), "15m", origin=1)
 
 
 async def test_only_the_user_in_the_state_may_click() -> None:
@@ -373,7 +373,7 @@ async def test_a_click_on_done_completes_the_item_and_redraws() -> None:
     hub, ctx = FakeHub(), click()
     view = loaded(hub, things.item(1))
     await ReminderView.done.func(view, ctx, hub)
-    assert hub.named("set_done") == [{"user": MIA, "item": things.uid(1001), "done": True, "nonce": str(MESSAGE)}]
+    assert hub.named("set_done") == [{"user": MIA, "item": things.uid(1001), "done": True, "origin": MESSAGE}]
     assert discord.labels(view.render()) == ["Rückgängig", "Dashboard"]
     ctx.rerender.assert_awaited_once()
 
@@ -393,7 +393,7 @@ async def test_a_fixed_snooze_ends_the_message_and_stops_following_it(store: Sto
     await ReminderView.snooze.func(view, ctx, hub, store)
 
     ctx.acknowledge.assert_awaited_once()
-    assert hub.named("remind") == [{"user": MIA, "item": item.id, "at": NOW + HOUR, "nonce": str(MESSAGE)}]
+    assert hub.named("remind") == [{"user": MIA, "item": item.id, "at": NOW + HOUR, "origin": MESSAGE}]
     (layout,) = ctx.edit.await_args.args
     assert "Verschoben" in discord.written(layout)
     assert discord.nodes(layout, ui.Button) == []

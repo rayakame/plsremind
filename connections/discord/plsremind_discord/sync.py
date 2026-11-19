@@ -11,6 +11,7 @@ import plsremind
 import risa
 
 from plsremind_discord.hub import Hub
+from plsremind_discord.hub import origin_of
 from plsremind_discord.store import Store
 from plsremind_discord.views.reminder import ReminderView
 
@@ -60,7 +61,7 @@ class Sync:
             item_id = event.item_id
         for row in await self._store.messages_for_item(item_id):
             # The click that made this change has redrawn its own message already.
-            if event.nonce != str(row.message_id):
+            if origin_of(event.nonce) != row.message_id:
                 self._redraw_soon(row.message_id, row.channel_id)
 
     async def list_changed(self, event: plsremind.ListUpdateEvent) -> None:
