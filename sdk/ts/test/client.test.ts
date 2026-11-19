@@ -273,6 +273,22 @@ test("a drop between two sync parts is finished by the resume", async () => {
   ).toEqual(["a", "b"]);
 });
 
+test("a user the new session no longer names is reported gone before the client is ready again", async () => {
+  const { client, socket, fake } = await connected();
+  const seen: string[] = [];
+  client.on("user.gone", (event) => seen.push(`gone ${event.userId}`));
+  client.on("ready", (event) => seen.push(`ready ${event.users.join()}`));
+  socket.drop();
+  await vi.advanceTimersByTimeAsync(1000);
+  const second = await fake.opened();
+  second.hello();
+  second.op(9, false);
+  ready(second, { session: "s2", users: [] });
+  await settle();
+  expect(seen).toEqual(["gone u1", "ready "]);
+  expect(client.cache.user("u1")).toBeUndefined();
+});
+
 test("an invalid session between two sync parts starts over and keeps the old state readable", async () => {
   const { client, socket, fake } = await connected();
   socket.drop();

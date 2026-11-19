@@ -239,7 +239,10 @@ class UserSyncEvent(UserEvent, frozen=True, kw_only=True):
 
 
 class UserGoneEvent(UserEvent, frozen=True, kw_only=True):
-    """A connection lost a user: they switched it off, were disabled or deleted."""
+    """A connection lost a user: they switched it off, were disabled or deleted.
+
+    It also comes for a user a new session no longer covers.
+    """
 
 
 class UserReadyEvent(UserEvent, frozen=True, kw_only=True):

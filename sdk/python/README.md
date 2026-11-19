@@ -137,6 +137,8 @@ event.
   its own, started in the order of the events and not waited for, so a slow listener
   holds up neither the connection nor other listeners.
 - An event nobody listens to, and the cache does not need, is never decoded.
+- A `UserGoneEvent` also comes for a user the cache held whom a new session no longer
+  names, for example one who switched a connection off while it could not resume.
 - If a change arrives that this version cannot read, the client logs it and starts the
   session over, so the cache cannot quietly differ from the hub. If it cannot read the
   hub's login answer or a user's state at all, it gives up with a `ClosedEvent`.

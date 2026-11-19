@@ -455,20 +455,24 @@ class Client:
         # Without this a program that only waits for the end would leave its sessions open.
         self._releasing = asyncio.create_task(self._release(), name="plsremind-release")
 
-    def _on_dispatch(self, name: str, payload: msgspec.Raw) -> None:  # ruff: ignore[too-many-return-statements]
+    def _on_ready(self, payload: msgspec.Raw) -> None:
+        try:
+            ready = wire.decode_ready(payload)
+        except msgspec.MsgspecError as cause:
+            self._abort("The hub's READY could not be read.", cause)
+            return
+        self._principal = ready.principal
+        self._rest.own_user = ready.principal.user_id
+        self._granted = ready.intents
+        self._ready = ready
+        self._waiting = set(ready.users)
+        for user in self._store.begin(ready.principal, ready.users, ready.intents):
+            self._emit(events.UserGoneEvent(user_id=user))
+        self._arrived(None)
+
+    def _on_dispatch(self, name: str, payload: msgspec.Raw) -> None:
         if name == "READY":
-            try:
-                ready = wire.decode_ready(payload)
-            except msgspec.MsgspecError as cause:
-                self._abort("The hub's READY could not be read.", cause)
-                return
-            self._principal = ready.principal
-            self._rest.own_user = ready.principal.user_id
-            self._granted = ready.intents
-            self._ready = ready
-            self._waiting = set(ready.users)
-            self._store.begin(ready.principal, ready.users, ready.intents)
-            self._arrived(None)
+            self._on_ready(payload)
             return
         if name == "RESUMED":
             self._emit(events.ResumedEvent())

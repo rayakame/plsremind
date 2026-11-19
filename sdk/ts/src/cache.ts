@@ -198,15 +198,15 @@ export class CacheStore {
     },
   };
 
-  /** Starts a new session: users it no longer names go, the others stay readable. */
-  begin(users: readonly string[], intents: readonly Intent[], self: string | undefined): void {
+  /** Starts a new session: users it no longer names go and are returned, the others stay readable. */
+  begin(users: readonly string[], intents: readonly Intent[], self: string | undefined): string[] {
     this.#self = self;
     this.#history = intents.includes("history");
     this.#pending.clear();
     const named = new Set(users);
-    for (const id of [...this.#users.keys()]) {
-      if (!named.has(id)) this.#notify(this.#drop(id));
-    }
+    const dropped = [...this.#users.keys()].filter((id) => !named.has(id));
+    for (const id of dropped) this.#notify(this.#drop(id));
+    return dropped;
   }
 
   apply(name: string, wire: unknown): Applied {

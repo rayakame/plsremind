@@ -94,6 +94,7 @@ export interface UserSyncEvent {
   readonly historyCursor?: string | null;
 }
 
+/** A connection lost a user, or a new session no longer covers them. */
 export interface UserGoneEvent {
   readonly userId: string;
 }
