@@ -197,3 +197,99 @@ msgstr "Der Hub hat das nicht angenommen."
 
 msgid "button.settings"
 msgstr "Einstellungen"
+
+msgid "command.remind.name"
+msgstr "remind"
+
+msgid "command.remind.description"
+msgstr "Erinnere mich zu einem Zeitpunkt an etwas"
+
+msgid "command.deadline.name"
+msgstr "deadline"
+
+msgid "command.deadline.description"
+msgstr "Lege eine Aufgabe mit Frist an"
+
+msgid "command.todos.name"
+msgstr "todos"
+
+msgid "command.todos.description"
+msgstr "Zeige, was offen ist"
+
+msgid "command.done.name"
+msgstr "done"
+
+msgid "command.done.description"
+msgstr "Erledige eine Aufgabe"
+
+msgid "command.remind_me.name"
+msgstr "Erinnere mich"
+
+msgid "option.when.name"
+msgstr "when"
+
+msgid "option.when.description"
+msgstr "Wann, zum Beispiel: morgen 9, in 2h, fr 18:00"
+
+msgid "option.due.name"
+msgstr "due"
+
+msgid "option.due.description"
+msgstr "Die Frist, zum Beispiel: fr 18:00 oder 24.12."
+
+msgid "option.what.name"
+msgstr "what"
+
+msgid "option.what.description"
+msgstr "Worum es geht"
+
+msgid "option.note.name"
+msgstr "note"
+
+msgid "option.note.description"
+msgstr "Eine Notiz dazu"
+
+msgid "option.priority.name"
+msgstr "priority"
+
+msgid "option.priority.description"
+msgstr "Wie wichtig es ist"
+
+msgid "option.list.name"
+msgstr "list"
+
+msgid "option.list.description"
+msgstr "Die Liste, in die es gehört"
+
+msgid "option.public_ack.name"
+msgstr "public_ack"
+
+msgid "option.public_ack.description"
+msgstr "Zeige die Bestätigung allen im Kanal"
+
+msgid "option.item.name"
+msgstr "item"
+
+msgid "option.item.description"
+msgstr "Die Aufgabe"
+
+msgid "choice.priority.low"
+msgstr "Niedrig"
+
+msgid "choice.priority.normal"
+msgstr "Normal"
+
+msgid "choice.priority.high"
+msgstr "Hoch"
+
+msgid "ack.deadline"
+msgstr "Frist gesetzt für {when}: **{title}**"
+
+msgid "error.unknown_list"
+msgstr "Diese Liste kenne ich nicht. Wähle eine aus den Vorschlägen."
+
+msgid "error.unknown_item"
+msgstr "Diese Aufgabe kenne ich nicht. Wähle eine aus den Vorschlägen."
+
+msgid "modal.message.fallback"
+msgstr "Nachricht von {name}"

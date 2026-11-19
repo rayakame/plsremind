@@ -197,3 +197,99 @@ msgstr "The hub did not accept that."
 
 msgid "button.settings"
 msgstr "Settings"
+
+msgid "command.remind.name"
+msgstr "remind"
+
+msgid "command.remind.description"
+msgstr "Remind me of something at a time"
+
+msgid "command.deadline.name"
+msgstr "deadline"
+
+msgid "command.deadline.description"
+msgstr "Add an item with a deadline"
+
+msgid "command.todos.name"
+msgstr "todos"
+
+msgid "command.todos.description"
+msgstr "Show what is open"
+
+msgid "command.done.name"
+msgstr "done"
+
+msgid "command.done.description"
+msgstr "Complete an item"
+
+msgid "command.remind_me.name"
+msgstr "Remind me"
+
+msgid "option.when.name"
+msgstr "when"
+
+msgid "option.when.description"
+msgstr "When, for example: tomorrow 9, in 2h, fri 18:00"
+
+msgid "option.due.name"
+msgstr "due"
+
+msgid "option.due.description"
+msgstr "The deadline, for example: fri 18:00 or 24.12."
+
+msgid "option.what.name"
+msgstr "what"
+
+msgid "option.what.description"
+msgstr "What it is about"
+
+msgid "option.note.name"
+msgstr "note"
+
+msgid "option.note.description"
+msgstr "A note to keep with it"
+
+msgid "option.priority.name"
+msgstr "priority"
+
+msgid "option.priority.description"
+msgstr "How important it is"
+
+msgid "option.list.name"
+msgstr "list"
+
+msgid "option.list.description"
+msgstr "The list it belongs to"
+
+msgid "option.public_ack.name"
+msgstr "public_ack"
+
+msgid "option.public_ack.description"
+msgstr "Show the confirmation to everyone in the channel"
+
+msgid "option.item.name"
+msgstr "item"
+
+msgid "option.item.description"
+msgstr "The item"
+
+msgid "choice.priority.low"
+msgstr "Low"
+
+msgid "choice.priority.normal"
+msgstr "Normal"
+
+msgid "choice.priority.high"
+msgstr "High"
+
+msgid "ack.deadline"
+msgstr "Deadline set for {when}: **{title}**"
+
+msgid "error.unknown_list"
+msgstr "I do not know that list. Pick one from the suggestions."
+
+msgid "error.unknown_item"
+msgstr "I do not know that item. Pick one from the suggestions."
+
+msgid "modal.message.fallback"
+msgstr "Message from {name}"

@@ -8,6 +8,7 @@ import typing
 from unittest import mock
 
 import hikari
+import lightbulb
 import plsremind
 import risa
 from risa import ui
@@ -169,3 +170,20 @@ def answer(responder: mock.Mock) -> tuple[object, bool, str]:
     built = [builder.build()[0] for builder in call.kwargs.get("components", [])]
     hidden = call.kwargs.get("flags") == hikari.MessageFlag.EPHEMERAL
     return call.args[0], hidden, "\n".join(payload_texts(built))
+
+
+def command(*, user: int = 1234, locale: str = "de", guild: int | None = 9, channel: int = 8) -> mock.Mock:
+    """A command as its code sees it."""
+    ctx = mock.Mock(spec=lightbulb.Context)
+    ctx.user.id = hikari.Snowflake(user)
+    ctx.interaction.locale = locale
+    ctx.guild_id = hikari.Snowflake(guild) if guild is not None else None
+    ctx.channel_id = hikari.Snowflake(channel)
+    return ctx
+
+
+def replied(ctx: mock.Mock) -> tuple[bool, str]:
+    """Whether only the user sees the reply, and what it says."""
+    call = ctx.respond.await_args
+    built = [builder.build()[0] for builder in call.kwargs.get("components", [])]
+    return call.kwargs["ephemeral"], "\n".join(payload_texts(built))
