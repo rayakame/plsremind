@@ -14,6 +14,7 @@ _LONGEST: typing.Final = datetime.timedelta(days=3660)
 _FURTHEST: typing.Final = datetime.timedelta(days=36525)
 _ONE_DAY: typing.Final = datetime.timedelta(days=1)
 _NOON: typing.Final = 12
+_DIGITS: typing.Final = 6
 _WEEK: typing.Final = 7
 _MINUTE, _HOUR = 60, 3600
 _SECONDS: typing.Final = {
@@ -103,6 +104,8 @@ def _span(words: str) -> tuple[int, int] | None:
         return None
     days = seconds = 0
     for count, unit in _PART.findall(match.group(1)):
+        if len(count) > _DIGITS:
+            raise TimeError(_UNREADABLE)
         if unit in _DAYS:
             days += int(count) * _DAYS[unit]
         elif unit in _SECONDS:

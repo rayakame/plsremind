@@ -378,6 +378,7 @@ async def test_every_command_is_announced_in_both_languages_for_both_kinds_of_in
     assert [option.name for option in deadlines.options] == ["due", "what", "note", "priority", "list", "public_ack"]
     assert [choice.value for choice in deadlines.options[3].choices or ()] == ["low", "normal", "high"]
     assert deadlines.options[4].autocomplete is True
+    assert built.options[0].max_length == deadlines.options[0].max_length == modals.WHEN_LIMIT
     assert (await message.RemindMe.as_command_builder(EN, provider)).name == "Remind me"
 
 

@@ -16,7 +16,7 @@ DUE: typing.Final = "due"
 NOTE: typing.Final = "note"
 TITLE_LIMIT: typing.Final = 500
 NOTE_LIMIT: typing.Final = 4000
-_SHORT: typing.Final = 100
+WHEN_LIMIT: typing.Final = 100
 _DM: typing.Final = "@me"
 
 
@@ -85,7 +85,7 @@ def time_modal(
         texts("modal.time.label", locale),
         placeholder=texts("modal.time.placeholder", locale),
         required=True,
-        max_length=_SHORT,
+        max_length=WHEN_LIMIT,
     )
     return texts("modal.time.title", locale), [row]
 
@@ -122,7 +122,7 @@ def edit_modal(
             value=due_text(item, zone) or hikari.UNDEFINED,
             placeholder=texts("modal.time.placeholder", locale),
             required=False,
-            max_length=_SHORT,
+            max_length=WHEN_LIMIT,
         ),
     ]
     # A text field of a modal holds 4000 characters; a longer note is left as it is.
@@ -152,7 +152,7 @@ def message_modal(
             texts("modal.time.label", locale),
             placeholder=texts("modal.time.placeholder", locale),
             required=True,
-            max_length=_SHORT,
+            max_length=WHEN_LIMIT,
         ),
         rest.build_modal_action_row().add_text_input(
             NOTE,

@@ -3,6 +3,7 @@ from __future__ import annotations
 import lightbulb
 import plsremind
 
+from plsremind_discord import modals
 from plsremind_discord import texts as texts_
 from plsremind_discord import timeparse
 from plsremind_discord.commands import common
@@ -61,7 +62,7 @@ class Deadline(
     integration_types=common.INSTALLS,
     contexts=common.CONTEXTS,
 ):
-    due = lightbulb.string("option.due.name", "option.due.description", localize=True)
+    due = lightbulb.string("option.due.name", "option.due.description", localize=True, max_length=modals.WHEN_LIMIT)
     what = lightbulb.string("option.what.name", "option.what.description", localize=True, max_length=500)
     note = lightbulb.string("option.note.name", "option.note.description", localize=True, default=None, max_length=6000)
     priority = lightbulb.string(

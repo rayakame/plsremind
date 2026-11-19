@@ -4,6 +4,7 @@ import lightbulb
 import plsremind
 
 from plsremind_discord import actions
+from plsremind_discord import modals
 from plsremind_discord import texts as texts_
 from plsremind_discord import timeparse
 from plsremind_discord.commands import common
@@ -42,7 +43,7 @@ class Remind(
     integration_types=common.INSTALLS,
     contexts=common.CONTEXTS,
 ):
-    when = lightbulb.string("option.when.name", "option.when.description", localize=True)
+    when = lightbulb.string("option.when.name", "option.when.description", localize=True, max_length=modals.WHEN_LIMIT)
     what = lightbulb.string("option.what.name", "option.what.description", localize=True, max_length=500)
     note = lightbulb.string("option.note.name", "option.note.description", localize=True, default=None, max_length=6000)
     public_ack = lightbulb.boolean(

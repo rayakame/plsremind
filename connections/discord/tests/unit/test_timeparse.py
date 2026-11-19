@@ -226,6 +226,14 @@ def test_a_date_decades_ahead_is_still_a_date() -> None:
     assert timeparse.parse("01.01.2100", now=NOW, zone=BERLIN) == on(2100, 1, 1)
 
 
+@pytest.mark.parametrize("digits", [20, 310, 4301])
+def test_a_number_too_long_to_reckon_with_is_refused(digits: int) -> None:
+    for text in (f"{'9' * digits}m", f"{'9' * digits}d", f"in {'9' * digits} stunden", f"{'9' * digits}:00"):
+        with pytest.raises(TimeError) as caught:
+            timeparse.parse(text, now=NOW, zone=BERLIN)
+        assert caught.value.reason == "unreadable"
+
+
 def test_a_span_too_long_to_reckon_with_is_refused() -> None:
     with pytest.raises(TimeError) as caught:
         timeparse.parse("99999999999w", now=NOW, zone=BERLIN)
