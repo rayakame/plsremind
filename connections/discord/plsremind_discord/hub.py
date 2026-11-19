@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import collections.abc
-import contextlib
 import datetime
 import enum
 import secrets
@@ -206,24 +205,23 @@ class Hub:
         write: collections.abc.Callable[[str], collections.abc.Awaitable[T]],
         origin: int | None,
     ) -> T:
-        """Make a write and wait until the gateway has reported it, so that the cache holds it."""
+        # The cache holds a write only once the gateway has reported it, so the next read waits for that.
         nonce = f"{origin or 0}.{secrets.token_hex(6)}"
         if self.client.status is not plsremind.ClientStatus.CONNECTED:
             return await write(nonce)
-        heard = asyncio.create_task(self._heard(echo, nonce))
+        heard = asyncio.create_task(
+            self.client.wait_for(echo, timeout=None, predicate=lambda event: event.nonce == nonce)
+        )
+        heard.add_done_callback(_settled)
         # One turn of the loop, so that the wait is in place before the request goes out.
         await asyncio.sleep(0)
         try:
             result = await write(nonce)
-        except BaseException:
+            # Counted from the answer, so that a write the hub took long over is still waited for.
+            await asyncio.wait({heard}, timeout=ECHO)
+            return result
+        finally:
             heard.cancel()
-            raise
-        await heard
-        return result
-
-    async def _heard(self, echo: type[plsremind.ChangeEvent], nonce: str) -> None:
-        with contextlib.suppress(TimeoutError, plsremind.GatewayError):
-            await self.client.wait_for(echo, timeout=ECHO, predicate=lambda event: event.nonce == nonce)
 
     async def _on_ready(self, event: plsremind.UserReadyEvent) -> None:
         self.user_ready(event)
@@ -247,6 +245,12 @@ class Hub:
         for account in self._accounts.pop(user, ()):
             if self._users.get(account) == user:
                 del self._users[account]
+
+
+def _settled(task: asyncio.Task[object]) -> None:
+    # A wait that ended in an error is of no concern: the write it belonged to stands.
+    if not task.cancelled():
+        task.exception()
 
 
 async def _unless_closed(answer: collections.abc.Awaitable[object]) -> None:

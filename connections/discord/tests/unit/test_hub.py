@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+import collections.abc
 import datetime
 import inspect
 import typing
@@ -252,12 +254,115 @@ async def test_a_write_waits_until_the_gateway_has_reported_it(made: Made) -> No
     await made.hub.set_done(MIA, ITEM.id, done=True, origin=7)
     waited = made.client.wait_for.await_args
     assert waited.args == (plsremind.ItemUpdateEvent,)
-    assert waited.kwargs["timeout"] == pytest.approx(hub_module.ECHO)
+    assert waited.kwargs["timeout"] is None, "the time to wait starts once the hub has answered"
     accepts = waited.kwargs["predicate"]
     own = nonce(made.client.rest.update_item)
     assert accepts(plsremind.ItemUpdateEvent(user_id=MIA, actor=None, nonce=own, item=ITEM))
     assert not accepts(plsremind.ItemUpdateEvent(user_id=MIA, actor=None, nonce="7.someone-else", item=ITEM))
     assert not accepts(plsremind.ItemUpdateEvent(user_id=MIA, actor=None, nonce=None, item=ITEM))
+
+
+class Gateway:
+    """Stands in for the client's wait for events: what the hub reports reaches the waits in place."""
+
+    def __init__(self) -> None:
+        self.waits: list[tuple[type, collections.abc.Callable[[object], bool], asyncio.Future[object]]] = []
+
+    async def wait_for(
+        self,
+        kind: type,
+        *,
+        timeout: float | None,  # ruff: ignore[async-function-with-timeout]
+        predicate: collections.abc.Callable[[object], bool],
+    ) -> object:
+        wait = (kind, predicate, asyncio.get_running_loop().create_future())
+        self.waits.append(wait)
+        try:
+            async with asyncio.timeout(timeout):
+                return await wait[2]
+        finally:
+            self.waits.remove(wait)
+
+    def report(self, event: object) -> None:
+        for kind, accepts, future in list(self.waits):
+            if isinstance(event, kind) and accepts(event) and not future.done():
+                future.set_result(event)
+
+
+@pytest.fixture
+def gateway(made: Made, monkeypatch: pytest.MonkeyPatch) -> Gateway:
+    stand_in = Gateway()
+    made.client.wait_for.side_effect = stand_in.wait_for
+    monkeypatch.setattr(hub_module, "ECHO", 0.2)
+    return stand_in
+
+
+def echoed(gateway: Gateway, made: Made, order: list[str], *, after: float) -> None:
+    reports: list[asyncio.Task[None]] = []
+
+    async def answer(*_: object, nonce: str, **__: object) -> plsremind.Item:
+        await asyncio.sleep(after)
+        order.append("answered")
+
+        async def later() -> None:
+            await asyncio.sleep(0.05)
+            order.append("reported")
+            gateway.report(plsremind.ItemUpdateEvent(user_id=MIA, actor=None, nonce=nonce, item=ITEM))
+
+        reports.append(asyncio.get_running_loop().create_task(later()))
+        return ITEM
+
+    made.client.rest.update_item.side_effect = answer
+
+
+async def test_a_slow_write_is_still_waited_for(made: Made, gateway: Gateway) -> None:
+    order: list[str] = []
+    echoed(gateway, made, order, after=0.3)
+    await made.hub.set_done(MIA, ITEM.id, done=True)
+    order.append("returned")
+    assert order == ["answered", "reported", "returned"]
+    assert gateway.waits == []
+
+
+async def test_a_report_that_comes_before_the_answer_is_not_missed(made: Made, gateway: Gateway) -> None:
+    async def answer(*_: object, nonce: str, **__: object) -> plsremind.Item:
+        gateway.report(plsremind.ItemUpdateEvent(user_id=MIA, actor=None, nonce=nonce, item=ITEM))
+        return ITEM
+
+    made.client.rest.update_item.side_effect = answer
+    started = asyncio.get_running_loop().time()
+    await made.hub.set_done(MIA, ITEM.id, done=True)
+    assert asyncio.get_running_loop().time() - started < 0.1
+    assert gateway.waits == []
+
+
+async def test_a_report_that_never_comes_is_waited_for_only_so_long(made: Made, gateway: Gateway) -> None:
+    made.client.rest.update_item.return_value = ITEM
+    started = asyncio.get_running_loop().time()
+    assert await made.hub.set_done(MIA, ITEM.id, done=True) == ITEM
+    assert 0.15 < asyncio.get_running_loop().time() - started < 0.5
+    await asyncio.sleep(0)
+    assert gateway.waits == []
+
+
+async def test_a_failed_write_leaves_no_wait_behind(made: Made, gateway: Gateway) -> None:
+    made.client.rest.update_item.side_effect = plsremind.ServerError(500, "boom", "no")
+    with pytest.raises(plsremind.ServerError):
+        await made.hub.set_done(MIA, ITEM.id, done=True)
+    await asyncio.sleep(0)
+    assert gateway.waits == []
+
+
+async def test_a_write_that_is_called_off_leaves_no_wait_behind(made: Made, gateway: Gateway) -> None:
+    order: list[str] = []
+    echoed(gateway, made, order, after=0.3)
+    writing = asyncio.create_task(made.hub.set_done(MIA, ITEM.id, done=True))
+    await asyncio.sleep(0.05)
+    writing.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await writing
+    await asyncio.sleep(0)
+    assert gateway.waits == []
 
 
 async def test_each_kind_of_write_waits_for_its_own_report(made: Made) -> None:
