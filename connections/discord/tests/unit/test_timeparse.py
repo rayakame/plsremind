@@ -160,6 +160,72 @@ def test_a_time_the_clocks_show_twice_is_the_first_one() -> None:
     assert parsed.at.isoformat() == "2026-10-25T02:30:00+02:00"
 
 
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("1d", "2027-03-28T12:00:00+02:00"),
+        ("1w", "2027-04-03T12:00:00+02:00"),
+        ("1d2h", "2027-03-28T14:00:00+02:00"),
+        ("in 1 tag", "2027-03-28T12:00:00+02:00"),
+        ("48h", "2027-03-29T13:00:00+02:00"),
+    ],
+)
+def test_days_and_weeks_keep_the_time_of_day_across_a_clock_change(text: str, expected: str) -> None:
+    parsed = timeparse.parse(text, now=at(2027, 3, 27, 12, 0), zone=BERLIN)
+    assert isinstance(parsed, Moment)
+    assert parsed.at.isoformat() == expected
+
+
+def test_a_day_later_from_a_time_the_clocks_skip_lands_on_one_that_exists() -> None:
+    parsed = timeparse.parse("1d", now=at(2027, 3, 27, 2, 30), zone=BERLIN)
+    assert isinstance(parsed, Moment)
+    assert parsed.at.isoformat() == "2027-03-28T03:30:00+02:00"
+
+
+FIRST_0230 = datetime.datetime(2026, 10, 25, 2, 30, tzinfo=BERLIN)
+SECOND_0230 = datetime.datetime(2026, 10, 25, 2, 30, tzinfo=BERLIN, fold=1)
+
+
+@pytest.mark.parametrize(
+    ("now", "text", "expected"),
+    [
+        (FIRST_0230, "2:45", "2026-10-25T02:45:00+02:00"),
+        (SECOND_0230, "2:45", "2026-10-25T02:45:00+01:00"),
+        (SECOND_0230, "heute 2:45", "2026-10-25T02:45:00+01:00"),
+        (FIRST_0230, "2:15", "2026-10-25T02:15:00+01:00"),
+        (SECOND_0230, "2:15", "2026-10-26T02:15:00+01:00"),
+        (SECOND_0230, "3:00", "2026-10-25T03:00:00+01:00"),
+        (SECOND_0230, "15m", "2026-10-25T02:45:00+01:00"),
+        (FIRST_0230, "15m", "2026-10-25T02:45:00+02:00"),
+        (FIRST_0230, "1h", "2026-10-25T02:30:00+01:00"),
+    ],
+)
+def test_in_the_hour_the_clocks_show_twice_the_next_such_time_is_meant(
+    now: datetime.datetime, text: str, expected: str
+) -> None:
+    parsed = timeparse.parse(text, now=now, zone=BERLIN)
+    assert isinstance(parsed, Moment)
+    assert parsed.at.isoformat() == expected
+    assert parsed.at.astimezone(datetime.UTC) > now.astimezone(datetime.UTC)
+
+
+def test_a_time_of_today_that_has_passed_both_times_is_refused() -> None:
+    with pytest.raises(TimeError) as caught:
+        timeparse.parse("heute 2:15", now=SECOND_0230, zone=BERLIN)
+    assert caught.value.reason == "past"
+
+
+@pytest.mark.parametrize("text", ["31.12.9999 23:00", "31.12.9999", "9999-12-31 9", "01.01.2200", "2200-01-01 12:00"])
+def test_a_date_too_far_off_to_reckon_with_is_refused(text: str) -> None:
+    with pytest.raises(TimeError) as caught:
+        timeparse.parse(text, now=NOW, zone=BERLIN)
+    assert caught.value.reason == "unreadable"
+
+
+def test_a_date_decades_ahead_is_still_a_date() -> None:
+    assert timeparse.parse("01.01.2100", now=NOW, zone=BERLIN) == on(2100, 1, 1)
+
+
 def test_a_span_too_long_to_reckon_with_is_refused() -> None:
     with pytest.raises(TimeError) as caught:
         timeparse.parse("99999999999w", now=NOW, zone=BERLIN)

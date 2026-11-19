@@ -192,23 +192,29 @@ def _facts(view: Shown, item: plsremind.Item) -> list[str]:
 
 
 def snooze_at(choice: str, now: datetime.datetime, zone: zoneinfo.ZoneInfo) -> datetime.datetime | None:
-    here = now.astimezone(zone)
+    # Reckoned in UTC: within one zone, datetimes add up and compare by what the clock shows.
+    instant = now.astimezone(datetime.UTC)
+    today = instant.astimezone(zone).date()
     if choice == "15m":
-        return here + datetime.timedelta(minutes=15)
+        return (instant + datetime.timedelta(minutes=15)).astimezone(zone)
     if choice == "1h":
-        return here + datetime.timedelta(hours=1)
+        return (instant + datetime.timedelta(hours=1)).astimezone(zone)
     if choice == "evening":
-        return datetime.datetime.combine(here.date(), _EVENING, tzinfo=zone)
+        return _wall(today, _EVENING, zone)
     if choice == "morning":
-        return datetime.datetime.combine(here.date() + datetime.timedelta(days=1), _MORNING, tzinfo=zone)
+        return _wall(today + datetime.timedelta(days=1), _MORNING, zone)
     return None
+
+
+def _wall(date: datetime.date, clock: datetime.time, zone: zoneinfo.ZoneInfo) -> datetime.datetime:
+    return datetime.datetime.combine(date, clock, tzinfo=zone).astimezone(datetime.UTC).astimezone(zone)
 
 
 def snooze_options(view: Shown) -> list[ui.SelectOption]:
     options: list[ui.SelectOption] = []
     for choice in SNOOZE:
         at = snooze_at(choice, view.now, view.zone)
-        if choice == CUSTOM or (at is not None and at > view.now):
+        if choice == CUSTOM or (at is not None and at > view.now.astimezone(datetime.UTC)):
             options.append(ui.SelectOption(view.texts(f"snooze.{choice}", view.locale), choice))
     return options
 
@@ -241,7 +247,7 @@ async def remind_later(hub: Hub, view: Shown, user: bytes, choice: str, *, origi
     if view.item is None:
         raise RefusedError(GONE)
     at = snooze_at(choice, view.now, view.zone)
-    if at is None or at <= view.now:
+    if at is None or at <= view.now.astimezone(datetime.UTC):
         raise RefusedError(_PAST)
     await remind_at(hub, unpack(user), view.item.id, at, origin=origin)
     return at

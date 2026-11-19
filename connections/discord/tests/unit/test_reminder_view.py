@@ -77,6 +77,36 @@ def test_the_fixed_times_to_snooze_to() -> None:
     assert common.snooze_at("evening", NOW.astimezone(datetime.UTC), BERLIN) == NOW.replace(hour=20, minute=0)
 
 
+@pytest.mark.parametrize(
+    "now",
+    [
+        datetime.datetime(2026, 10, 25, 2, 50, tzinfo=BERLIN),
+        datetime.datetime(2026, 10, 25, 2, 50, tzinfo=BERLIN, fold=1),
+        datetime.datetime(2027, 3, 28, 1, 50, tzinfo=BERLIN),
+    ],
+)
+def test_a_short_snooze_counts_time_that_passes_when_the_clocks_change(now: datetime.datetime) -> None:
+    instant = now.astimezone(datetime.UTC)
+
+    def snoozed(choice: str, start: datetime.datetime) -> datetime.datetime:
+        at = common.snooze_at(choice, start, BERLIN)
+        assert at is not None
+        assert at.tzinfo is BERLIN
+        # In UTC, because a time in the hour the clocks show twice equals none of another zone.
+        return at.astimezone(datetime.UTC)
+
+    assert snoozed("15m", now) == instant + datetime.timedelta(minutes=15)
+    assert snoozed("1h", now) == instant + HOUR
+    assert snoozed("15m", instant) == instant + datetime.timedelta(minutes=15)
+
+
+def test_the_morning_after_a_clock_change_is_still_eight() -> None:
+    before = datetime.datetime(2027, 3, 27, 22, 0, tzinfo=BERLIN)
+    morning = common.snooze_at("morning", before, BERLIN)
+    assert morning is not None
+    assert morning.isoformat() == "2027-03-28T08:00:00+02:00"
+
+
 def test_a_choice_whose_time_has_passed_is_not_offered() -> None:
     afternoon = [option.value for option in common.snooze_options(seen(things.item()))]
     assert afternoon == ["15m", "1h", "evening", "morning", "custom"]
