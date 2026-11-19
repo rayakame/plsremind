@@ -121,9 +121,10 @@ def shown(
     )
 
 
-def click(*values: str, message: int = 555, locale: str = "de") -> mock.Mock:
+def click(*values: str, message: int = 555, locale: str = "de", user: int = 1234) -> mock.Mock:
     """A click as a handler sees it."""
     ctx = mock.Mock(spec=risa.ComponentContext)
+    ctx.user.id = hikari.Snowflake(user)
     ctx.message.id = hikari.Snowflake(message)
     ctx.values = list(values)
     ctx.rest = mock.Mock(spec=hikari.api.RESTClient)
