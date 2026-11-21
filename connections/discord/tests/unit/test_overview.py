@@ -99,6 +99,13 @@ def test_eight_items_fit_on_a_page() -> None:
     assert discord.written(drawn(*items, page=7)) == discord.written(second)
 
 
+def test_the_summary_says_which_page_is_shown_once_there_is_more_than_one() -> None:
+    items = [things.item(number, due_at=NOW + number * HOUR) for number in range(1, 18)]
+    assert "17 offen · 0 überfällig · Seite 1 von 3" in discord.written(drawn(*items))
+    assert "Seite 3 von 3" in discord.written(drawn(*items, page=2))
+    assert "Seite" not in discord.written(drawn(*items[:8]))
+
+
 def test_a_row_says_what_matters_about_its_item() -> None:
     item = things.item(
         1, title="Report", due_at=NOW + 2 * HOUR, list_id=things.WORK, priority=plsremind.Priority.HIGH, subitems=5

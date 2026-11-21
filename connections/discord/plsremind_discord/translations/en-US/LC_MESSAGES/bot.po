@@ -96,6 +96,9 @@ msgstr "Discord did not accept the reminder."
 msgid "delivery.no_account"
 msgstr "No Discord account is linked."
 
+msgid "overview.page"
+msgstr "Page {page} of {pages}"
+
 msgid "overview.title"
 msgstr "Your items"
 

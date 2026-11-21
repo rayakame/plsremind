@@ -107,12 +107,10 @@ class OverviewView(common.Owned):
         pages = _pages(every)
         page = min(self.page, pages - 1)
         overdue = sum(1 for line in every if line.group == "overdue")
-        parts: list[ui.ContainerChild] = [
-            ui.TextDisplay(
-                f"## {say('overview.title', locale)}\n"
-                f"-# {say('overview.summary', locale, open=len(every), overdue=overdue)}"
-            )
-        ]
+        summary = say("overview.summary", locale, open=len(every), overdue=overdue)
+        if pages > 1:
+            summary += f" · {say('overview.page', locale, page=page + 1, pages=pages)}"
+        parts: list[ui.ContainerChild] = [ui.TextDisplay(f"## {say('overview.title', locale)}\n-# {summary}")]
         group: Group | None = None
         for line in every[page * ROWS : (page + 1) * ROWS]:
             if line.group != group:

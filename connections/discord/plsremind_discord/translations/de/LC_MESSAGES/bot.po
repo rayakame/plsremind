@@ -96,6 +96,9 @@ msgstr "Discord hat die Erinnerung nicht angenommen."
 msgid "delivery.no_account"
 msgstr "Es ist kein Discord-Konto verknüpft."
 
+msgid "overview.page"
+msgstr "Seite {page} von {pages}"
+
 msgid "overview.title"
 msgstr "Deine Aufgaben"
 
