@@ -179,5 +179,8 @@ docker compose --profile discord up -d --build
 
 ## Backups
 
-All state lives in the PostgreSQL volume. Back it up with `pg_dump`, and keep
-`PLSREMIND_SECRET_KEY` with the backup.
+The hub's state lives in the PostgreSQL volume. Back it up with `pg_dump`, and keep
+`PLSREMIND_SECRET_KEY` with the backup. The Discord bot keeps its SQLite file on a volume
+of its own, which this backup does not cover. Restored without it, the bot works on, as
+described in its section: a reminder still waiting for its confirmation may arrive a
+second time, and older messages catch up only when someone clicks them.

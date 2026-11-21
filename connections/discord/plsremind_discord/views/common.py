@@ -49,6 +49,7 @@ class Shown(msgspec.Struct, frozen=True, kw_only=True):
     now: datetime.datetime
     public_url: str
     texts: texts_.Texts
+    version: datetime.datetime | None = None
 
 
 class Owned(risa.View):
@@ -147,6 +148,7 @@ async def shown(
     return Shown(
         item=found,
         list_name=(hub.list_name(found.list_id) or "") if found is not None else "",
+        version=hub.version(found) if found is not None else None,
         locale=texts_.locale_for(profile, speaks),
         zone=profile.timezone if profile is not None else _UTC,
         now=clock.now(),

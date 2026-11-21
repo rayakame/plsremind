@@ -265,7 +265,12 @@ class Hub:
     def _remember[T: plsremind.Item | None](
         self, user: plsremind.ID, item: plsremind.ID, written: T, *, heard: bool
     ) -> T:
-        if not heard:
+        before = self._written_items.get(item)
+        # Answers to writes that overlapped can arrive in any order; a deletion stays one.
+        newer = before is None or (
+            before.item is not None and (written is None or written.updated_at >= before.item.updated_at)
+        )
+        if not heard and newer:
             self._written_items[item] = _Written(user, written, time.monotonic())
         return written
 

@@ -90,10 +90,9 @@ tags:
     description: |
       Reminders a user asks for explicitly, in the style of "remind me again in 2 hours". They
       work for todos and deadlines alike and are independent of the reminder plans. A
-      reminder leaves its item shortly after its time has passed, once it went out or could
-      not because the item was done; one that quiet hours hold back stays until it goes out.
-      What was sent stays in the reminder log. An item holds at most 20 reminders that have
-      not gone out yet.
+      reminder leaves its item a few seconds after its time has passed, once it has fired,
+      whether it went out or could not because the item was done. What was sent stays in the
+      reminder log. An item holds at most 20 reminders that have not fired yet.
   - name: Connections
     description: |
       A connection is an integration the admin installs for everyone, for example the Discord
@@ -1095,7 +1094,7 @@ paths:
       summary: Remind about an item at a chosen time
       description: |
         Send exactly one of `at` and `in`. Not possible for items that are done (`409` with
-        the code `item_done`) or that already hold 20 reminders that have not gone out (`409`
+        the code `item_done`) or that already hold 20 reminders that have not fired yet (`409`
         with the code `reminder_limit`).
       requestBody:
         required: true
@@ -2085,8 +2084,7 @@ components:
           type: array
           description: >-
             The reminders the user set on the item by hand, earliest first. One whose time has passed
-            stays here until it has gone out, which takes a few seconds, or longer while quiet hours hold
-            it back.
+            stays here for the few seconds until it has fired.
           items:
             $ref: "#/components/schemas/ManualReminder"
         created_at:

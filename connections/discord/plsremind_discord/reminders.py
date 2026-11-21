@@ -53,6 +53,7 @@ class Reminders:
         store: Store,
         texts: texts_.Texts,
         clock: Clock,
+        redraw: collections.abc.Callable[[int, int], None],
         sleep: collections.abc.Callable[[float], collections.abc.Awaitable[None]] = asyncio.sleep,
     ) -> None:
         self._hub: typing.Final = hub
@@ -62,6 +63,7 @@ class Reminders:
         self._texts: typing.Final = texts
         self._clock: typing.Final = clock
         self._sleep: typing.Final = sleep
+        self._redraw: typing.Final = redraw
         self._busy: set[plsremind.ID] = set()
         self._withdrawn: set[plsremind.ID] = set()
         self._refused: dict[plsremind.ID, str] = {}
@@ -161,6 +163,7 @@ class Reminders:
         if not accounts:
             return await self._report(delivery.id, self._texts("delivery.no_account", locale))
         views: dict[int, ui.Rendered] = {}
+        version: datetime.datetime | None = None
         for account in accounts:
             view = ReminderView(user=common.pack(delivery.user.id), item=common.pack(delivery.item.id), account=account)
             views[account] = await self._views.build(view)
@@ -168,7 +171,8 @@ class Reminders:
                 # The user or the item is out of reach this moment; if it stays so, the hub withdraws the delivery.
                 _LOGGER.info("delivery %s waits until its item can be read", delivery.id)
                 return _Outcome.PASSING
-        return await self._conclude(delivery, await self._send(delivery, views), locale)
+            version = view.shown.version
+        return await self._conclude(delivery, await self._send(delivery, views, version), locale)
 
     async def _conclude(self, delivery: plsremind.Delivery, sending: _Sending, locale: hikari.Locale) -> _Outcome:
         if sending.sent:
@@ -178,7 +182,9 @@ class Reminders:
         reason = "delivery.refused" if sending.refused else "delivery.closed_dms"
         return await self._report(delivery.id, self._texts(reason, locale))
 
-    async def _send(self, delivery: plsremind.Delivery, views: dict[int, ui.Rendered]) -> _Sending:
+    async def _send(
+        self, delivery: plsremind.Delivery, views: dict[int, ui.Rendered], version: datetime.datetime | None
+    ) -> _Sending:
         sent: list[Sent] = []
         passing = refused = False
         for account, rendered in views.items():
@@ -200,7 +206,7 @@ class Reminders:
             one = Sent(message_id=int(message.id), channel_id=int(channel.id), account_id=account)
             # At once, so that a stop before the next account cannot make this one go out twice.
             self._sent.add(delivery.id)
-            await self._record(delivery, [one])
+            await self._record(delivery, [one], version)
             sent.append(one)
         return _Sending(sent, passing=passing, refused=refused)
 
@@ -210,19 +216,25 @@ class Reminders:
             return list(accounts_of(delivery.user.external_ids))
         return list(self._hub.discord_ids(delivery.user.id))
 
-    async def _record(self, delivery: plsremind.Delivery, sent: list[Sent]) -> None:
+    async def _record(self, delivery: plsremind.Delivery, sent: list[Sent], version: datetime.datetime | None) -> None:
         try:
             await self._store.record(
                 delivery_id=delivery.id,
                 user_id=delivery.user.id,
                 item_id=delivery.item.id,
-                shown_at=self._hub.version(delivery.item),
+                shown_at=version,
                 messages=sent,
                 now=self._clock.now(),
             )
         except Exception:
             # The user has the reminder; trying again would only send it twice.
             _LOGGER.exception("delivery %s was sent but could not be recorded", delivery.id)
+            return
+        # A change while the message was on its way found no message to redraw yet.
+        now = self._hub.cached(delivery.user.id, delivery.item.id)
+        if now is not None and self._hub.version(now) != version:
+            for one in sent:
+                self._redraw(one.message_id, one.channel_id)
 
     async def _confirm(self, delivery_id: plsremind.ID) -> _Outcome:
         try:

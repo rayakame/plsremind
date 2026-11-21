@@ -188,9 +188,9 @@ counterparts of Discord's `GUILD_DELETE` and `GUILD_CREATE`.
 - Every change to a subitem or a manual reminder is followed by `item.updated` with the
   whole item. If you keep items in memory you can ignore the `subitem.*` and `reminder.*`
   events and just replace the item.
-- A manual reminder leaves its item a few seconds after its time has passed, once it went
-  out or could not because the item was done; one that quiet hours hold back stays until it
-  goes out. An item's `reminders` are therefore the ones that have not gone out. The hub announces
+- A manual reminder leaves its item a few seconds after its time has passed, once it has
+  fired, whether it went out or could not because the item was done. An item's `reminders`
+  are therefore the ones that have not fired yet. The hub announces
   the removal as `reminder.deleted` and `item.updated` without an actor; when several
   reminders of one item go at once, one `item.updated` follows them all.
 - An item that is completed arrives as `item.updated` with `status: "done"`. Remove it

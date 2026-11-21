@@ -63,7 +63,7 @@ class Sync:
         for row in await self._store.messages_for_item(item_id):
             # The click that made this change has redrawn its own message already.
             if origin_of(event.nonce) != row.message_id:
-                self._redraw_soon(row.message_id, row.channel_id)
+                self.redraw_soon(row.message_id, row.channel_id)
 
     async def list_changed(self, event: plsremind.ListUpdateEvent) -> None:
         if event.old_list is not None and event.old_list.name == event.list.name:
@@ -71,7 +71,7 @@ class Sync:
         for row in await self._store.messages_for_user(event.user_id):
             item = await self._hub.item(event.user_id, plsremind.ID(row.item_id))
             if item is not None and item.list_id == event.list.id:
-                self._redraw_soon(row.message_id, row.channel_id)
+                self.redraw_soon(row.message_id, row.channel_id)
 
     async def user_ready(self, event: plsremind.UserReadyEvent) -> None:
         profile = self._hub.profile(event.user_id)
@@ -80,7 +80,7 @@ class Sync:
         for row in await self._store.messages_for_user(event.user_id):
             item = self._hub.cached(event.user_id, plsremind.ID(row.item_id))
             if item is None or self._hub.version(item) != row.shown_at:
-                self._redraw_soon(row.message_id, row.channel_id)
+                self.redraw_soon(row.message_id, row.channel_id)
 
     async def user_changed(self, event: plsremind.UserUpdateEvent) -> None:
         if isinstance(event.user, plsremind.ConnectionUser):
@@ -113,7 +113,8 @@ class Sync:
         if task is not None and task is not asyncio.current_task():
             task.cancel()
 
-    def _redraw_soon(self, message: int, channel: int) -> None:
+    def redraw_soon(self, message: int, channel: int) -> None:
+        """Redraw a message once things have been quiet for a moment."""
         self._asked[message] = self._asked.get(message, 0) + 1
         if message not in self._tasks:
             self._tasks[message] = asyncio.create_task(self._follow(message, channel), name=f"redraw-{message}")
@@ -143,5 +144,4 @@ class Sync:
         except Exception:
             _LOGGER.exception("message %s could not be redrawn", message)
             return
-        item = view.shown.item if view.shown is not None else None
-        await self._store.stamp(message, self._hub.version(item) if item is not None else None)
+        await self._store.stamp(message, view.shown.version if view.shown is not None else None)

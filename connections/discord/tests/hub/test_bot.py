@@ -67,6 +67,12 @@ async def running(kit: kit_.Kit, tmp_path: pathlib.Path) -> collections.abc.Asyn
     rest.create_message.side_effect = message
     clock = Clock()
     views = discord.views(hub, ReminderView, Notice, clock=clock)
+    redraws = kit_.Redraws()
+
+    async def at_once(_: float) -> None:
+        return
+
+    sync = Sync(hub=hub, views=redraws, store=store, sleep=at_once)
     reminders = Reminders(
         hub=hub,
         views=views,
@@ -74,13 +80,8 @@ async def running(kit: kit_.Kit, tmp_path: pathlib.Path) -> collections.abc.Asyn
         store=store,
         texts=discord.say(),
         clock=clock,
+        redraw=sync.redraw_soon,
     )
-    redraws = kit_.Redraws()
-
-    async def at_once(_: float) -> None:
-        return
-
-    sync = Sync(hub=hub, views=redraws, store=store, sleep=at_once)
     gate = bot_module.Gate()
     bot_module.listen(hub.client, reminders=reminders, sync=sync, gate=gate)
     await hub.start()

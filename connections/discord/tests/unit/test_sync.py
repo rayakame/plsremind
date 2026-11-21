@@ -55,7 +55,8 @@ class Views:
             raise self.fail[message]
         item = await self.hub.item(MIA, self.items[message])
         view = ReminderView(user=common.pack(MIA), item=common.pack(self.items[message]))
-        view.shown = discord.shown(item)
+        version = self.hub.version(item) if item is not None else None
+        view.shown = msgspec.structs.replace(discord.shown(item), version=version)
         yield typing.cast("T", view)
 
 

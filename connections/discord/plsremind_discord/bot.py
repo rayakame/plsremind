@@ -73,8 +73,10 @@ async def build(config: Config, store: Store, hub: hub_.Hub) -> Parts:
     for loader in every.LOADERS:
         await loader.add_to_client(commands)
 
-    reminders = Reminders(hub=hub, views=views, rest=discord.rest, store=store, texts=texts, clock=clock)
     sync = Sync(hub=hub, views=views, store=store)
+    reminders = Reminders(
+        hub=hub, views=views, rest=discord.rest, store=store, texts=texts, clock=clock, redraw=sync.redraw_soon
+    )
     modals = Modals(hub=hub, views=views, store=store, texts=texts, clock=clock, config=config)
     discord.subscribe(hikari.ModalInteractionCreateEvent, modals.submitted)
     gate = Gate()

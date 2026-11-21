@@ -11,6 +11,7 @@ from unittest import mock
 
 import aiohttp
 import hikari
+import msgspec
 import plsremind
 import pytest
 
@@ -56,6 +57,7 @@ class Made(typing.NamedTuple):
     store: Store
     clock: discord.FixedClock
     slept: list[float]
+    redrawn: list[tuple[int, int]]
 
 
 @pytest.fixture
@@ -78,6 +80,7 @@ async def made(tmp_path: pathlib.Path) -> collections.abc.AsyncIterator[Made]:
         slept.append(seconds)
         clock.moment += datetime.timedelta(seconds=seconds)
 
+    redrawn: list[tuple[int, int]] = []
     reminders = Reminders(
         hub=hub,
         views=discord.views(hub, ReminderView, clock=clock),
@@ -85,10 +88,11 @@ async def made(tmp_path: pathlib.Path) -> collections.abc.AsyncIterator[Made]:
         store=store,
         texts=discord.say(),
         clock=clock,
+        redraw=lambda message, channel: redrawn.append((message, channel)),
         sleep=sleep,
     )
     try:
-        yield Made(reminders, hub, rest, store, clock, slept)
+        yield Made(reminders, hub, rest, store, clock, slept, redrawn)
     finally:
         await reminders.close()
         await store.close()
@@ -234,6 +238,7 @@ def held(made: Made) -> Held:
         store=made.store,
         texts=discord.say(),
         clock=made.clock,
+        redraw=lambda message, channel: made.redrawn.append((message, channel)),
         sleep=sleep,
     )
     return Held(reminders, go)
@@ -629,3 +634,25 @@ async def test_a_message_that_went_out_is_recorded_before_the_next_account_is_tr
         await waiting.close()
     assert await made.store.knows_delivery(things.uid(9001))
     assert [row.channel_id for row in await made.store.messages_for_item(ITEM.id)] == [CHANNEL + 1234]
+
+
+async def test_a_reminder_records_what_it_shows_and_is_redrawn_if_its_list_changed_while_it_went_out(
+    made: Made,
+) -> None:
+    inbox, work = made.hub.their_lists[MIA]
+    renamed = msgspec.structs.replace(inbox, name="Eingang", updated_at=ITEM.updated_at + datetime.timedelta(hours=1))
+
+    def answer(*_: object, **__: object) -> mock.Mock:
+        made.hub.their_lists[MIA] = (renamed, work)
+        return mock.Mock(id=hikari.Snowflake(100))
+
+    made.rest.create_message.side_effect = answer
+    await made.reminders.deliver(delivery())
+    (row,) = await made.store.messages_for_item(ITEM.id)
+    assert row.shown_at == ITEM.updated_at, "the list as it was drawn"
+    assert made.redrawn == [(100, CHANNEL + 1234)]
+
+
+async def test_a_reminder_whose_item_did_not_change_meanwhile_needs_no_redraw(made: Made) -> None:
+    await made.reminders.deliver(delivery())
+    assert made.redrawn == []

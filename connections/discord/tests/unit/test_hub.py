@@ -544,3 +544,22 @@ def test_what_a_message_shows_changes_with_the_item_and_with_the_name_of_its_lis
     assert made.hub.version(later(ITEM, 120)) == ITEM.updated_at + datetime.timedelta(minutes=120)
     made.client.cache.get_list.return_value = None
     assert made.hub.version(ITEM) == ITEM.updated_at
+
+
+async def test_an_older_answer_that_arrives_later_does_not_replace_a_newer_write(away: Made) -> None:
+    reopened = later(ITEM, 3)
+    done = later(ITEM, 2, status=plsremind.ItemStatus.DONE)
+    away.client.rest.update_item.return_value = reopened
+    await away.hub.set_done(MIA, ITEM.id, done=False)
+    away.client.rest.update_item.return_value = done
+    await away.hub.set_done(MIA, ITEM.id, done=True)
+    assert away.hub.cached(MIA, ITEM.id) == reopened
+    assert away.hub.open_items(MIA) == (reopened,)
+
+
+async def test_a_deletion_is_not_undone_by_an_answer_to_an_earlier_write(away: Made) -> None:
+    await away.hub.delete(MIA, ITEM.id)
+    away.client.rest.update_item.return_value = later(ITEM, 5)
+    await away.hub.set_done(MIA, ITEM.id, done=False)
+    assert away.hub.cached(MIA, ITEM.id) is None
+    assert away.hub.open_items(MIA) == ()
