@@ -130,7 +130,7 @@ class DetailView(common.Owned):
             await ctx.rerender()
             return
         title, rows = modals.edit_modal(ctx.rest, view.texts, view.locale, view.item, view.zone)
-        custom_id = modals.edit_id(view.item.id, self._back())
+        custom_id = modals.edit_id(view.item.id, self._back(), due=modals.due_text(view.item, view.zone))
         await ctx.interaction.create_modal_response(title, custom_id, components=rows)
 
     @risa.handler

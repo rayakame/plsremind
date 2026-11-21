@@ -411,6 +411,23 @@ async def test_a_discord_gateway_that_ends_after_the_start_ends_the_bot_with_a_r
     assert "Authentication failed" in caplog.text
 
 
+async def test_a_discord_gateway_that_simply_ends_ends_the_bot_too(
+    running: tuple[Running, bot.Config], caplog: pytest.LogCaptureFixture
+) -> None:
+    parts, config = running
+    ended = asyncio.Event()
+
+    async def joined(*_: object, **__: object) -> None:
+        await ended.wait()
+
+    parts.discord_joined.side_effect = joined
+    serving = asyncio.create_task(bot.main(config))
+    await discord.until(lambda: "the bot is running" in caplog.text)
+    ended.set()
+    assert await asyncio.wait_for(serving, 5) == 1
+    assert "stopping: Discord's gateway closed" in caplog.text
+
+
 async def test_a_stop_while_the_hub_is_still_starting_ends_the_bot_before_discord_is_touched(
     running: tuple[Running, bot.Config], caplog: pytest.LogCaptureFixture
 ) -> None:

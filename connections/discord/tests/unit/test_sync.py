@@ -342,3 +342,45 @@ async def test_a_user_whose_profile_is_not_known_keeps_every_message(made: Made)
     await settled(made)
 
     assert [row.message_id for row in await made.store.messages_for_user(MIA)] == [100]
+
+
+async def test_a_list_renamed_while_the_bot_was_away_is_caught_up_on_return(made: Made) -> None:
+    await sent(made, 100)
+    inbox, work = made.hub.their_lists[MIA]
+    renamed_list = msgspec.structs.replace(
+        inbox, name="Eingang", updated_at=inbox.updated_at + datetime.timedelta(hours=1)
+    )
+    made.hub.their_lists[MIA] = (renamed_list, work)
+
+    await made.sync.user_ready(plsremind.UserReadyEvent(user_id=MIA))
+    await settled(made)
+
+    assert made.views.redrawn == [100]
+    (row,) = await made.store.messages_for_item(ITEM.id)
+    assert row.shown_at == renamed_list.updated_at, "the next return does not redraw it again"
+
+
+async def test_a_redraw_waiting_for_quiet_is_called_off_when_its_account_is_unlinked(made: Made) -> None:
+    both = things.user(external_ids=("1234", "5678"))
+    made.hub.knows(both, ITEM, OTHER)
+    await sent(made, 100, account=5678)
+    made.quiet.clear()
+    await made.sync.item_changed(updated(renamed(ITEM), ITEM))
+    assert made.sync.pending == frozenset({100})
+
+    await made.sync.user_changed(moved(things.user(external_ids=("1234",))))
+    assert made.sync.pending == frozenset()
+    made.quiet.set()
+    await asyncio.sleep(0)
+    assert made.views.redrawn == []
+
+
+async def test_a_redraw_waiting_for_quiet_is_called_off_when_the_user_is_gone(made: Made) -> None:
+    await sent(made, 100)
+    made.quiet.clear()
+    await made.sync.item_changed(updated(renamed(ITEM), ITEM))
+    await made.sync.user_gone(plsremind.UserGoneEvent(user_id=MIA))
+    assert made.sync.pending == frozenset()
+    made.quiet.set()
+    await asyncio.sleep(0)
+    assert made.views.redrawn == []

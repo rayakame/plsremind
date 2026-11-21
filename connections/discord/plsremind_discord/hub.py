@@ -96,9 +96,17 @@ class Hub:
     def lists(self, user: plsremind.ID) -> tuple[plsremind.List, ...]:
         return self.client.cache.get_lists(user)
 
+    def list_of(self, list_id: plsremind.ID) -> plsremind.List | None:
+        return self.client.cache.get_list(list_id)
+
     def list_name(self, list_id: plsremind.ID) -> str | None:
-        found = self.client.cache.get_list(list_id)
+        found = self.list_of(list_id)
         return found.name if found is not None else None
+
+    def version(self, item: plsremind.Item) -> datetime.datetime:
+        """When what a message shows of the item last changed: the item itself, or the name of its list."""
+        found = self.list_of(item.list_id)
+        return max(item.updated_at, found.updated_at) if found is not None else item.updated_at
 
     def open_items(self, user: plsremind.ID) -> tuple[plsremind.Item, ...]:
         found = self.client.cache.get_items(user)

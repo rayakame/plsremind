@@ -79,7 +79,7 @@ class Sync:
             await self._drop_unlinked(event.user_id, accounts_of(profile.external_ids))
         for row in await self._store.messages_for_user(event.user_id):
             item = self._hub.cached(event.user_id, plsremind.ID(row.item_id))
-            if item is None or item.updated_at != row.shown_at:
+            if item is None or self._hub.version(item) != row.shown_at:
                 self._redraw_soon(row.message_id, row.channel_id)
 
     async def user_changed(self, event: plsremind.UserUpdateEvent) -> None:
@@ -87,6 +87,8 @@ class Sync:
             await self._drop_unlinked(event.user_id, accounts_of(event.user.external_ids))
 
     async def user_gone(self, event: plsremind.UserGoneEvent) -> None:
+        for row in await self._store.messages_for_user(event.user_id):
+            self._call_off(row.message_id)
         await self._store.forget_user(event.user_id)
 
     async def close(self) -> None:
@@ -101,7 +103,15 @@ class Sync:
         # An account that was unlinked must not keep seeing what becomes of the user's items.
         for row in await self._store.messages_for_user(user):
             if row.account_id not in linked:
+                self._call_off(row.message_id)
                 await self._store.forget_message(row.message_id)
+
+    def _call_off(self, message: int) -> None:
+        # A redraw already waiting would still show the item to whoever sees the message.
+        task = self._tasks.pop(message, None)
+        self._asked.pop(message, None)
+        if task is not None and task is not asyncio.current_task():
+            task.cancel()
 
     def _redraw_soon(self, message: int, channel: int) -> None:
         self._asked[message] = self._asked.get(message, 0) + 1
@@ -134,4 +144,4 @@ class Sync:
             _LOGGER.exception("message %s could not be redrawn", message)
             return
         item = view.shown.item if view.shown is not None else None
-        await self._store.stamp(message, item.updated_at if item is not None else None)
+        await self._store.stamp(message, self._hub.version(item) if item is not None else None)

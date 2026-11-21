@@ -85,6 +85,19 @@ class FakeHub(Hub):
         return self.their_lists.get(user, ())
 
     @typing.override
+    def list_of(self, list_id: plsremind.ID) -> plsremind.List | None:
+        for lists in self.their_lists.values():
+            for one in lists:
+                if one.id == list_id:
+                    return one
+        return None
+
+    @typing.override
+    def version(self, item: plsremind.Item) -> datetime.datetime:
+        found = self.list_of(item.list_id)
+        return max(item.updated_at, found.updated_at) if found is not None else item.updated_at
+
+    @typing.override
     def list_name(self, list_id: plsremind.ID) -> str | None:
         for lists in self.their_lists.values():
             for one in lists:

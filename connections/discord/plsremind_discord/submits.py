@@ -9,6 +9,7 @@ import zoneinfo
 import hikari
 import plsremind
 import risa
+from risa import ui
 
 from plsremind_discord import actions
 from plsremind_discord import modals
@@ -46,8 +47,7 @@ class _Reply:
             await self._interaction.create_initial_response(hikari.ResponseType.DEFERRED_MESSAGE_UPDATE)
         self._waiting = True
 
-    async def redraw(self, view: risa.View) -> None:
-        rendered = await self._views.build(view)
+    async def redraw(self, rendered: ui.Rendered) -> None:
         if self._waiting:
             await self._interaction.edit_initial_response(**rendered)
         else:
@@ -145,13 +145,17 @@ class Modals:
         values: Values,
     ) -> None:
         message = interaction.message
-        view, at = await patience.unhurried(self._snoozed(interaction, user, modal, values), reply.wait)
-        if modal.detail is not None:
-            await reply.redraw(self._detail(interaction, user, modal.item, modal.detail))
-            return
-        text, link, label = common.snoozed(view, at)
-        await reply.redraw(Notice(text=text, link=link, label=label))
-        if message is not None:
+
+        # The view that follows is built within the time Discord is given, since loading it reads the hub too.
+        async def work() -> ui.Rendered:
+            view, at = await self._snoozed(interaction, user, modal, values)
+            if modal.detail is not None:
+                return await self._views.build(self._detail(interaction, user, modal.item, modal.detail))
+            text, link, label = common.snoozed(view, at)
+            return await self._views.build(Notice(text=text, link=link, label=label))
+
+        await reply.redraw(await patience.unhurried(work(), reply.wait))
+        if modal.detail is None and message is not None:
             await self._store.forget_message(int(message.id))
 
     async def _snoozed(
@@ -183,8 +187,11 @@ class Modals:
         modal: modals.EditModal,
         values: Values,
     ) -> None:
-        await patience.unhurried(self._edited(interaction, user, modal, values), reply.wait)
-        await reply.redraw(self._detail(interaction, user, modal.item, modal.back))
+        async def work() -> ui.Rendered:
+            await self._edited(interaction, user, modal, values)
+            return await self._views.build(self._detail(interaction, user, modal.item, modal.back))
+
+        await reply.redraw(await patience.unhurried(work(), reply.wait))
 
     async def _edited(
         self, interaction: hikari.ModalInteraction, user: plsremind.ID, modal: modals.EditModal, values: Values
@@ -195,8 +202,8 @@ class Modals:
         now, zone = self._clock.now(), self._zone(user)
         typed = values.get(modals.DUE, "").strip()
         due: timeparse.Moment | timeparse.Day | Unchanged | None
-        if typed == modals.due_text(item, zone):
-            # Left as it was: a deadline that has passed must not stand in the way of a new title.
+        if modals.seal(typed) == modal.shown:
+            # Left as shown: neither a deadline that has passed nor one changed elsewhere meanwhile is written back.
             due = UNCHANGED
         else:
             due = timeparse.parse(typed, now=now, zone=zone) if typed else None

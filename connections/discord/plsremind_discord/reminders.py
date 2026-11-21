@@ -172,8 +172,6 @@ class Reminders:
 
     async def _conclude(self, delivery: plsremind.Delivery, sending: _Sending, locale: hikari.Locale) -> _Outcome:
         if sending.sent:
-            self._sent.add(delivery.id)
-            await self._record(delivery, sending.sent)
             return await self._confirm(delivery.id)
         if sending.passing:
             return _Outcome.PASSING
@@ -199,7 +197,11 @@ class Reminders:
                 _LOGGER.warning("delivery %s did not get through to Discord: %s", delivery.id, trouble)
                 passing = True
                 continue
-            sent.append(Sent(message_id=int(message.id), channel_id=int(channel.id), account_id=account))
+            one = Sent(message_id=int(message.id), channel_id=int(channel.id), account_id=account)
+            # At once, so that a stop before the next account cannot make this one go out twice.
+            self._sent.add(delivery.id)
+            await self._record(delivery, [one])
+            sent.append(one)
         return _Sending(sent, passing=passing, refused=refused)
 
     def _accounts(self, delivery: plsremind.Delivery, *, first: bool) -> list[int]:
@@ -209,13 +211,12 @@ class Reminders:
         return list(self._hub.discord_ids(delivery.user.id))
 
     async def _record(self, delivery: plsremind.Delivery, sent: list[Sent]) -> None:
-        # Recorded before it is confirmed: a crash in between can then only repeat the confirmation.
         try:
             await self._store.record(
                 delivery_id=delivery.id,
                 user_id=delivery.user.id,
                 item_id=delivery.item.id,
-                shown_at=delivery.item.updated_at,
+                shown_at=self._hub.version(delivery.item),
                 messages=sent,
                 now=self._clock.now(),
             )

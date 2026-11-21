@@ -9,6 +9,7 @@ import uuid
 from unittest import mock
 
 import hikari
+import msgspec
 import plsremind
 import pytest
 
@@ -40,6 +41,11 @@ class Made(typing.NamedTuple):
     store: Store
 
 
+def edit_of(item: plsremind.Item, back: tuple[plsremind.ID | None, int] = (None, 0)) -> str:
+    """The ID of the edit modal as it is opened for the item as it is now."""
+    return modals.edit_id(item.id, back, due=modals.due_text(item, things.BERLIN))
+
+
 @pytest.fixture
 async def made(tmp_path: pathlib.Path) -> collections.abc.AsyncIterator[Made]:
     hub = FakeHub()
@@ -66,7 +72,9 @@ def test_every_id_is_read_back() -> None:
         item=item, detail=(things.WORK, 4)
     )
     assert modals.read(modals.snooze_id(item, detail=(None, 0))) == modals.SnoozeModal(item=item, detail=(None, 0))
-    assert modals.read(modals.edit_id(item, (things.WORK, 4))) == modals.EditModal(item=item, back=(things.WORK, 4))
+    assert modals.read(modals.edit_id(item, (things.WORK, 4), due="20.11.2026")) == modals.EditModal(
+        item=item, back=(things.WORK, 4), shown=modals.seal("20.11.2026")
+    )
     longest = modals.message_id(guild=2**64 - 1, channel=2**64 - 1, message=2**64 - 1)
     assert len(longest) <= 100
 
@@ -192,9 +200,7 @@ async def test_snoozing_an_item_that_is_gone_says_so(made: Made) -> None:
     ],
 )
 async def test_an_edit_sends_what_was_typed(made: Made, typed: str, due: object) -> None:
-    event = discord.submitted(
-        modals.edit_id(ITEM.id, (None, 0)), {modals.TITLE: "Final report", modals.DUE: typed, modals.NOTE: "new note"}
-    )
+    event = discord.submitted(edit_of(ITEM), {modals.TITLE: "Final report", modals.DUE: typed, modals.NOTE: "new note"})
     await made.modals.submitted(event)
     (edited,) = made.hub.named("edit")
     assert (edited["title"], edited["due"], edited["note"], edited["origin"]) == ("Final report", due, "new note", 555)
@@ -204,7 +210,7 @@ async def test_an_edit_sends_what_was_typed(made: Made, typed: str, due: object)
 
 
 async def test_an_edit_without_the_note_field_leaves_the_note(made: Made) -> None:
-    event = discord.submitted(modals.edit_id(ITEM.id, (None, 0)), {modals.TITLE: "x", modals.DUE: ""})
+    event = discord.submitted(edit_of(ITEM), {modals.TITLE: "x", modals.DUE: ""})
     await made.modals.submitted(event)
     assert made.hub.named("edit")[0]["note"] is None
 
@@ -213,7 +219,7 @@ async def test_an_overdue_deadline_left_as_it_was_does_not_block_the_edit(made: 
     late = things.item(2, title="Late", due_at=NOW - datetime.timedelta(days=1))
     made.hub.knows(things.user(), late)
     event = discord.submitted(
-        modals.edit_id(late.id, (None, 0)),
+        edit_of(late),
         {modals.TITLE: "Still late", modals.DUE: modals.due_text(late, things.BERLIN)},
     )
     await made.modals.submitted(event)
@@ -222,7 +228,7 @@ async def test_an_overdue_deadline_left_as_it_was_does_not_block_the_edit(made: 
 
 
 async def test_editing_an_item_that_is_gone_shows_that_it_is_gone(made: Made) -> None:
-    event = discord.submitted(modals.edit_id(things.uid(4242), (None, 0)), {modals.TITLE: "x", modals.DUE: ""})
+    event = discord.submitted(modals.edit_id(things.uid(4242), (None, 0), due=""), {modals.TITLE: "x", modals.DUE: ""})
     await made.modals.submitted(event)
     assert made.hub.named("edit") == []
     kind, _, text = discord.answer(event.interaction)
@@ -232,7 +238,7 @@ async def test_editing_an_item_that_is_gone_shows_that_it_is_gone(made: Made) ->
 
 async def test_what_the_hub_refuses_is_said(made: Made) -> None:
     made.hub.fail["edit"] = plsremind.BadRequestError(422, "validation_failed", "no", {"title": "too long"})
-    event = discord.submitted(modals.edit_id(ITEM.id, (None, 0)), {modals.TITLE: "x", modals.DUE: ""})
+    event = discord.submitted(edit_of(ITEM), {modals.TITLE: "x", modals.DUE: ""})
     await made.modals.submitted(event)
     kind, hidden, text = discord.answer(event.interaction)
     assert (kind, hidden) == (CREATE, True)
@@ -264,7 +270,7 @@ async def test_a_modal_of_someone_else_is_not_answered(made: Made) -> None:
 
 def test_the_longest_way_back_fits_into_an_id() -> None:
     assert len(modals.snooze_id(things.uid(1001), detail=(things.WORK, 2**31))) <= 100
-    assert uuid.UUID(things.WORK).hex in modals.edit_id(things.uid(1001), (things.WORK, 1))
+    assert uuid.UUID(things.WORK).hex in modals.edit_id(things.uid(1001), (things.WORK, 1), due="")
 
 
 async def test_a_snooze_modal_without_its_message_still_sets_the_reminder(made: Made) -> None:
@@ -292,7 +298,7 @@ async def test_a_slow_edit_asks_discord_to_wait_and_then_redraws_the_message(
     made: Made, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     go = discord.slow(monkeypatch, made.hub, "edit")
-    event = discord.submitted(modals.edit_id(ITEM.id, (None, 0)), {modals.TITLE: "Final report", modals.DUE: ""})
+    event = discord.submitted(edit_of(ITEM), {modals.TITLE: "Final report", modals.DUE: ""})
     running = asyncio.create_task(made.modals.submitted(event))
     await waited_for(event)
     event.interaction.create_initial_response.assert_awaited_once_with(DEFERRED_UPDATE)
@@ -372,7 +378,7 @@ async def test_a_modal_that_fails_for_a_reason_nobody_foresaw_is_answered_and_lo
     made: Made, caplog: pytest.LogCaptureFixture
 ) -> None:
     made.hub.fail["edit"] = RuntimeError("boom")
-    event = discord.submitted(modals.edit_id(ITEM.id, (None, 0)), {modals.TITLE: "x", modals.DUE: ""})
+    event = discord.submitted(edit_of(ITEM), {modals.TITLE: "x", modals.DUE: ""})
     await made.modals.submitted(event)
     kind, hidden, text = discord.answer(event.interaction)
     assert (kind, hidden) == (CREATE, True)
@@ -384,7 +390,7 @@ async def test_a_modal_that_fails_for_a_reason_nobody_foresaw_is_answered_and_lo
 async def test_a_modal_that_can_no_longer_be_answered_is_only_logged(
     made: Made, caplog: pytest.LogCaptureFixture, due: str
 ) -> None:
-    event = discord.submitted(modals.edit_id(ITEM.id, (None, 0)), {modals.TITLE: "x", modals.DUE: due})
+    event = discord.submitted(edit_of(ITEM), {modals.TITLE: "x", modals.DUE: due})
     event.interaction.create_initial_response.side_effect = hikari.HikariError("the token ran out")
     await made.modals.submitted(event)
     assert "could not be answered" in caplog.text
@@ -397,3 +403,39 @@ async def test_a_private_confirmation_for_a_message_names_the_list(made: Made) -
     )
     await made.modals.submitted(event)
     assert "-# Inbox" in discord.answer(event.interaction)[2]
+
+
+@pytest.mark.usefixtures("impatient")
+async def test_an_edit_asks_discord_to_wait_when_the_view_after_it_takes_long(
+    made: Made, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    reads, go = 0, asyncio.Event()
+    real = made.hub.item
+
+    async def item(user: plsremind.ID, item_id: plsremind.ID) -> plsremind.Item | None:
+        nonlocal reads
+        reads += 1
+        if reads > 1:
+            await go.wait()
+        return await real(user, item_id)
+
+    monkeypatch.setattr(made.hub, "item", item)
+    event = discord.submitted(
+        edit_of(ITEM), {modals.TITLE: "Final report", modals.DUE: modals.due_text(ITEM, things.BERLIN)}
+    )
+    running = asyncio.create_task(made.modals.submitted(event))
+    await waited_for(event)
+    event.interaction.create_initial_response.assert_awaited_once_with(DEFERRED_UPDATE)
+    go.set()
+    await running
+    assert "Final report" in discord.edited(event.interaction)
+
+
+async def test_a_deadline_left_as_the_modal_showed_it_stays_whatever_happened_to_it_meanwhile(made: Made) -> None:
+    shown = edit_of(ITEM)
+    moved = msgspec.structs.replace(ITEM, due_at=ITEM.due_at + datetime.timedelta(days=1) if ITEM.due_at else None)
+    made.hub.their_items[MIA][ITEM.id] = moved
+    event = discord.submitted(shown, {modals.TITLE: "Final report", modals.DUE: modals.due_text(ITEM, things.BERLIN)})
+    await made.modals.submitted(event)
+    (edited,) = made.hub.named("edit")
+    assert edited["due"] is hub_module.UNCHANGED

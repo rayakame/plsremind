@@ -607,3 +607,25 @@ async def test_closing_does_not_wait_out_the_grace_for_a_try_that_failed(made: M
         started = asyncio.get_running_loop().time()
         await asyncio.wait_for(closing, 3)
     assert asyncio.get_running_loop().time() - started < 1.0
+
+
+async def test_a_message_that_went_out_is_recorded_before_the_next_account_is_tried(made: Made) -> None:
+    waiting, go = held(made)
+    second, let_go = asyncio.Event(), asyncio.Event()
+    made.hub.knows(things.user(external_ids=("1234", "5678")), ITEM)
+    made.rest.create_message.side_effect = broken()
+    await waiting.deliver(delivery(to=things.user(external_ids=("1234", "5678"))))
+
+    async def answer(target: mock.Mock, **_: object) -> mock.Mock:
+        if target.id == CHANNEL + 5678:
+            second.set()
+            await let_go.wait()
+        return mock.Mock(id=hikari.Snowflake(400))
+
+    made.rest.create_message.side_effect = answer
+    go.set()
+    await asyncio.wait_for(second.wait(), 2)
+    with mock.patch.object(reminders_module, "CLOSE_GRACE", 0.01):
+        await waiting.close()
+    assert await made.store.knows_delivery(things.uid(9001))
+    assert [row.channel_id for row in await made.store.messages_for_item(ITEM.id)] == [CHANNEL + 1234]

@@ -535,3 +535,12 @@ async def test_a_write_the_gateway_reported_needs_nothing_remembered(made: Made,
     await made.hub.set_done(MIA, ITEM.id, done=True)
     made.client.cache.get_item.return_value = ITEM
     assert made.hub.cached(MIA, ITEM.id) == ITEM
+
+
+def test_what_a_message_shows_changes_with_the_item_and_with_the_name_of_its_list(made: Made) -> None:
+    renamed = msgspec.structs.replace(things.a_list(), updated_at=ITEM.updated_at + datetime.timedelta(hours=1))
+    made.client.cache.get_list.return_value = renamed
+    assert made.hub.version(ITEM) == renamed.updated_at
+    assert made.hub.version(later(ITEM, 120)) == ITEM.updated_at + datetime.timedelta(minutes=120)
+    made.client.cache.get_list.return_value = None
+    assert made.hub.version(ITEM) == ITEM.updated_at

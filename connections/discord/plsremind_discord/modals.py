@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import typing
 import uuid
+import zlib
 import zoneinfo
 
 import hikari
@@ -33,6 +34,7 @@ class SnoozeModal(msgspec.Struct, frozen=True):
 class EditModal(msgspec.Struct, frozen=True):
     item: plsremind.ID
     back: tuple[plsremind.ID | None, int]
+    shown: str
 
 
 def message_id(*, guild: int | None, channel: int, message: int) -> str:
@@ -56,8 +58,8 @@ def _read(parts: list[str]) -> MessageModal | SnoozeModal | EditModal | None:
             return SnoozeModal(item=_item(item), detail=None)
         case ["pr", "snooze", "d", item, only, page]:
             return SnoozeModal(item=_item(item), detail=(_only(only), int(page)))
-        case ["pr", "edit", item, only, page]:
-            return EditModal(item=_item(item), back=(_only(only), int(page)))
+        case ["pr", "edit", item, only, page, shown]:
+            return EditModal(item=_item(item), back=(_only(only), int(page)), shown=shown)
         case _:
             return None
 
@@ -91,9 +93,15 @@ def time_modal(
     return texts("modal.time.title", locale), [row]
 
 
-def edit_id(item: plsremind.ID, back: tuple[plsremind.ID | None, int]) -> str:
+def edit_id(item: plsremind.ID, back: tuple[plsremind.ID | None, int], *, due: str) -> str:
+    """The ID of the edit modal. It carries a seal of the deadline the modal shows, to tell whether it was changed."""
     only, page = back
-    return f"pr:edit:{uuid.UUID(item).hex}:{uuid.UUID(only).hex if only is not None else '-'}:{page}"
+    return f"pr:edit:{uuid.UUID(item).hex}:{uuid.UUID(only).hex if only is not None else '-'}:{page}:{seal(due)}"
+
+
+def seal(text: str) -> str:
+    """A short fingerprint of a field's text, small enough for an ID."""
+    return f"{zlib.crc32(text.strip().encode()):08x}"
 
 
 def due_text(item: plsremind.Item, zone: zoneinfo.ZoneInfo) -> str:

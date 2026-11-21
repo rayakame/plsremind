@@ -297,7 +297,7 @@ async def test_edit_opens_a_modal_filled_with_the_item() -> None:
     await DetailView.edit.func(view, ctx)
     title, custom_id = ctx.interaction.create_modal_response.await_args.args
     assert title == "Aufgabe bearbeiten"
-    assert custom_id == modals.edit_id(item.id, (things.WORK, 2))
+    assert custom_id == modals.edit_id(item.id, (things.WORK, 2), due=modals.due_text(item, BERLIN))
     assert len(ctx.interaction.create_modal_response.await_args.kwargs["components"]) == 3
 
     gone = opened(None)
@@ -340,9 +340,12 @@ async def test_the_way_back_to_the_overview() -> None:
 
 def test_the_id_of_the_edit_modal() -> None:
     item = things.uid(1001)
-    assert modals.edit_id(item, (None, 0)) == f"pr:edit:{uuid.UUID(item).hex}:-:0"
-    assert modals.edit_id(item, (things.WORK, 3)) == f"pr:edit:{uuid.UUID(item).hex}:{uuid.UUID(things.WORK).hex}:3"
-    assert len(modals.edit_id(item, (things.WORK, 999999))) <= 100
+    empty = modals.seal("")
+    assert modals.edit_id(item, (None, 0), due="") == f"pr:edit:{uuid.UUID(item).hex}:-:0:{empty}"
+    worked = modals.edit_id(item, (things.WORK, 3), due="")
+    assert worked == f"pr:edit:{uuid.UUID(item).hex}:{uuid.UUID(things.WORK).hex}:3:{empty}"
+    assert len(modals.edit_id(item, (things.WORK, 999999), due="31.12.2099 23:59")) <= 100
+    assert modals.seal(" 20.11.2026 ") == modals.seal("20.11.2026") != modals.seal("21.11.2026")
 
 
 @pytest.mark.parametrize(
