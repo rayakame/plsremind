@@ -27,28 +27,28 @@ const sweepRounds = 5
 // Not in fireBatch: that holds schedule rows before the user's row, the reverse of a request.
 func sweepSpent(ctx context.Context, d *core.Deps) error {
 	var failed []error
+	params := sqlc.ListSpentManualRemindersParams{Now: d.Now(), Batch: batchSize}
 	for range sweepRounds {
 		var spent []sqlc.ListSpentManualRemindersRow
 		err := store.Tx(ctx, d.Pool, func(q *sqlc.Queries) error {
 			var err error
-			spent, err = q.ListSpentManualReminders(ctx, sqlc.ListSpentManualRemindersParams{Now: d.Now(), Batch: batchSize})
+			spent, err = q.ListSpentManualReminders(ctx, params)
 			return err
 		})
 		if err != nil {
 			return errors.Join(append(failed, err)...)
 		}
-		removed := 0
-		for _, item := range bySpentItem(spent) {
-			n, err := dropSpent(ctx, d, item)
-			if err != nil {
-				// Reported once the others are done: the list comes in order, so this item would block those after it.
-				failed = append(failed, err)
-				continue
-			}
-			removed += n
-		}
-		if removed == 0 {
+		if len(spent) == 0 {
 			break
+		}
+		// The next round starts after this batch, so that reminders that could not be swept do not block the rest.
+		last := spent[len(spent)-1]
+		params.AfterAt, params.AfterID = last.RemindAt, last.ID
+		for _, item := range bySpentItem(spent) {
+			if _, err := dropSpent(ctx, d, item); err != nil {
+				// Reported once the others are done.
+				failed = append(failed, err)
+			}
 		}
 	}
 	return errors.Join(failed...)

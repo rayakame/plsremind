@@ -238,3 +238,41 @@ func TestOneItemThatCannotBeSweptDoesNotHoldUpTheOthers(t *testing.T) {
 	require.Len(t, remindersOf(t, mia, stuck), 1)
 	require.Empty(t, remindersOf(t, ben, freed), "the item after the one that failed is swept all the same")
 }
+
+func TestAWholeBatchThatCannotBeSweptDoesNotHoldUpWhatComesAfterIt(t *testing.T) {
+	e := testkit.New(t)
+	ctx := context.Background()
+	mia, ben := e.User(t, "mia"), e.User(t, "ben")
+	stuck, freed := newItem(t, mia), newItem(t, ben)
+	_, err := e.Pool.Exec(ctx,
+		`INSERT INTO manual_reminders (id, item_id, remind_at, created_at)
+		 SELECT gen_random_uuid(), $1, $2, $2 FROM generate_series(1, 201)`, stuck, e.Clock.Now().Add(-2*time.Hour))
+	require.NoError(t, err)
+	_, err = e.Pool.Exec(ctx,
+		`INSERT INTO manual_reminders (id, item_id, remind_at, created_at) VALUES (gen_random_uuid(), $1, $2, $2)`,
+		freed, e.Clock.Now().Add(-time.Hour))
+	require.NoError(t, err)
+	_, err = e.Pool.Exec(ctx, `CREATE FUNCTION refuse() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'refused'; END $$`)
+	require.NoError(t, err)
+	_, err = e.Pool.Exec(ctx, `CREATE TRIGGER refuse BEFORE DELETE ON manual_reminders FOR EACH ROW
+		WHEN (OLD.item_id = '`+stuck+`') EXECUTE FUNCTION refuse()`)
+	require.NoError(t, err)
+
+	require.Error(t, delivery.RunOnce(ctx, e.Deps))
+
+	require.Empty(t, remindersOf(t, ben, freed), "a batch in which nothing could be swept is stepped over")
+}
+
+func TestRemindersWhoseTimeHasPassedDoNotCountTowardsTheLimitBeforeTheSweep(t *testing.T) {
+	e := testkit.New(t)
+	ctx := context.Background()
+	mia := e.User(t, "mia")
+	id := newItem(t, mia)
+	_, err := e.Pool.Exec(ctx,
+		`INSERT INTO manual_reminders (id, item_id, remind_at, created_at)
+		 SELECT gen_random_uuid(), $1, $2, $2 FROM generate_series(1, 20)`, id, e.Clock.Now().Add(-time.Minute))
+	require.NoError(t, err)
+
+	r := mia.Do(t, "POST", "/users/@me/items/"+id+"/reminders", J{"in": "1h"})
+	require.Equal(t, 201, r.Status, string(r.Body))
+}

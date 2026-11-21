@@ -107,11 +107,12 @@ func createReminder(d *core.Deps) fiber.Handler {
 			if row.Status == "done" {
 				return api.Conflict("item_done", "The item is already done.")
 			}
-			existing, err := q.ListManualReminders(c.Context(), itemID)
+			// Reminders whose time has passed count no longer, even before the sweep has removed them.
+			ahead, err := q.CountManualRemindersAhead(c.Context(), sqlc.CountManualRemindersAheadParams{ItemID: itemID, Now: now})
 			if err != nil {
 				return err
 			}
-			if len(existing) >= maxRemindersPerItem {
+			if ahead >= maxRemindersPerItem {
 				return api.Conflict("reminder_limit", "An item can have at most 20 manual reminders.")
 			}
 			added, err := q.CreateManualReminder(c.Context(), sqlc.CreateManualReminderParams{

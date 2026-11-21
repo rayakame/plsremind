@@ -171,6 +171,12 @@ git pull
 docker compose up -d --build
 ```
 
+With the Discord bot, name its profile, or the bot keeps running its old image:
+
+```sh
+docker compose --profile discord up -d --build
+```
+
 ## Backups
 
 All state lives in the PostgreSQL volume. Back it up with `pg_dump`, and keep
