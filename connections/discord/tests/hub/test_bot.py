@@ -67,7 +67,7 @@ async def running(kit: kit_.Kit, tmp_path: pathlib.Path) -> collections.abc.Asyn
     rest.create_message.side_effect = message
     clock = Clock()
     views = discord.views(hub, ReminderView, Notice, clock=clock)
-    redraws = kit_.Redraws()
+    redraws = kit_.Redraws(hub)
 
     async def at_once(_: float) -> None:
         return
@@ -188,6 +188,7 @@ async def test_done_in_discord_reaches_the_hub_and_only_other_messages_are_redra
         messages=[Sent(555, CHANNEL, 1234), Sent(556, CHANNEL, 1234)],
         now=now(),
     )
+    running.redraws.shows.update({555: (mia.id, item.id), 556: (mia.id, item.id)})
     await discord.until(lambda: running.hub.cached(mia.id, item.id) is not None, within=10)
 
     changed = await running.hub.set_done(mia.id, item.id, done=True, origin=555)
@@ -197,7 +198,10 @@ async def test_done_in_discord_reaches_the_hub_and_only_other_messages_are_redra
     await discord.until(lambda: bool(running.redraws.messages), within=10)
     await discord.until(lambda: not running.sync.pending, within=10)
     assert running.redraws.messages == [556]
-    assert running.hub.cached(mia.id, item.id) is not None, "a completed item stays readable through the history"
+    seen = running.hub.cached(mia.id, item.id)
+    assert seen is not None, "a completed item stays readable through the history"
+    stamps = {row.message_id: row.shown_at for row in await running.store.messages_for_item(item.id)}
+    assert stamps == {555: item.updated_at, 556: running.hub.version(seen)}, "the redrawn message is stamped"
 
 
 async def test_what_the_bot_wrote_is_what_it_reads_next(running: Running) -> None:
@@ -246,8 +250,14 @@ async def test_a_change_in_the_hub_redraws_the_message(running: Running) -> None
         messages=[Sent(555, CHANNEL, 1234)],
         now=now(),
     )
+    running.redraws.shows[555] = (mia.id, item.id)
     await mia.rest.update_item(item.id, title="Final report")
     await discord.until(lambda: running.redraws.messages == [555], within=10)
+    await discord.until(lambda: not running.sync.pending, within=10)
+    (row,) = await running.store.messages_for_item(item.id)
+    seen = running.hub.cached(mia.id, item.id)
+    assert seen is not None
+    assert row.shown_at == running.hub.version(seen)
     await mia.rest.delete_item(item.id)
     await discord.until(lambda: running.redraws.messages == [555, 555], within=10)
 

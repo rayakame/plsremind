@@ -656,3 +656,13 @@ async def test_a_reminder_records_what_it_shows_and_is_redrawn_if_its_list_chang
 async def test_a_reminder_whose_item_did_not_change_meanwhile_needs_no_redraw(made: Made) -> None:
     await made.reminders.deliver(delivery())
     assert made.redrawn == []
+
+
+async def test_a_reminder_whose_item_was_deleted_while_it_went_out_is_redrawn(made: Made) -> None:
+    def answer(*_: object, **__: object) -> mock.Mock:
+        made.hub.their_items[MIA].pop(ITEM.id)
+        return mock.Mock(id=hikari.Snowflake(100))
+
+    made.rest.create_message.side_effect = answer
+    await made.reminders.deliver(delivery())
+    assert made.redrawn == [(100, CHANNEL + 1234)]

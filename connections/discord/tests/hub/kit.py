@@ -12,6 +12,12 @@ import asyncpg
 import plsremind
 import risa
 
+from plsremind_discord.clock import Clock
+from plsremind_discord.hub import Hub
+from plsremind_discord.views import common
+from plsremind_discord.views.reminder import ReminderView
+from tests.support import discord
+
 PROXY_HEADER: typing.Final = "X-Forwarded-For"
 _addresses = 0
 
@@ -124,18 +130,26 @@ class Kit:
 
 
 class Redraws:
-    """Stands in for the risa client where a test only cares which messages were redrawn."""
+    """Stands in for the risa client: records which messages were redrawn and loads what they show."""
 
-    def __init__(self) -> None:
+    def __init__(self, hub: Hub) -> None:
+        self.hub = hub
         self.messages: list[int] = []
+        self.shows: dict[int, tuple[plsremind.ID, plsremind.ID]] = {}
 
     @contextlib.asynccontextmanager
     async def open[T: risa.View](
         self, channel: int, message: int, cls: type[T], /
     ) -> collections.abc.AsyncGenerator[T]:
         del channel
+        assert cls is ReminderView
         self.messages.append(message)
-        yield cls.__new__(cls)
+        user, item = self.shows[message]
+        view = ReminderView(user=common.pack(user), item=common.pack(item))
+        view.shown = await common.shown(
+            self.hub, discord.CONFIG, Clock(), discord.say(), user=view.user, item=view.item
+        )
+        yield typing.cast("T", view)
 
 
 async def eventually(

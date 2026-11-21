@@ -230,9 +230,9 @@ class Reminders:
             # The user has the reminder; trying again would only send it twice.
             _LOGGER.exception("delivery %s was sent but could not be recorded", delivery.id)
             return
-        # A change while the message was on its way found no message to redraw yet.
+        # A change while the message was on its way found no message to redraw yet; a deletion too.
         now = self._hub.cached(delivery.user.id, delivery.item.id)
-        if now is not None and self._hub.version(now) != version:
+        if now is None or self._hub.version(now) != version:
             for one in sent:
                 self._redraw(one.message_id, one.channel_id)
 
