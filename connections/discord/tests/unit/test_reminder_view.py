@@ -488,7 +488,7 @@ async def test_a_fixed_snooze_ends_the_message_and_stops_following_it(store: Sto
     item = things.item(1, title="Tax return")
     view = loaded(hub, item)
     await store.record(
-        delivery_id="d1", user_id=MIA, item_id=item.id, item_updated_at=None, messages=[Sent(MESSAGE, 7, 1234)], now=NOW
+        delivery_id="d1", user_id=MIA, item_id=item.id, shown_at=None, messages=[Sent(MESSAGE, 7, 1234)], now=NOW
     )
 
     await ReminderView.snooze.func(view, ctx, hub, store, discord.views(hub, common.Notice))
@@ -521,7 +521,7 @@ async def test_a_refused_snooze_tells_the_user_and_keeps_the_message(store: Stor
     view = loaded(hub, item)
     hub.fail["remind"] = plsremind.ConflictError(409, "reminder_limit", "no")
     await store.record(
-        delivery_id="d1", user_id=MIA, item_id=item.id, item_updated_at=None, messages=[Sent(MESSAGE, 7, 1234)], now=NOW
+        delivery_id="d1", user_id=MIA, item_id=item.id, shown_at=None, messages=[Sent(MESSAGE, 7, 1234)], now=NOW
     )
 
     await ReminderView.snooze.func(view, ctx, hub, store, discord.views(hub, common.Notice))

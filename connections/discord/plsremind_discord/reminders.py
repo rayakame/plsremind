@@ -215,7 +215,7 @@ class Reminders:
                 delivery_id=delivery.id,
                 user_id=delivery.user.id,
                 item_id=delivery.item.id,
-                item_updated_at=delivery.item.updated_at,
+                shown_at=delivery.item.updated_at,
                 messages=sent,
                 now=self._clock.now(),
             )

@@ -25,5 +25,5 @@ class Message(msgspec.Struct):
     account_id: int
     user_id: str
     item_id: str
-    item_updated_at: datetime.datetime | None
+    shown_at: datetime.datetime | None
     sent_at: datetime.datetime

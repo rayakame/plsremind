@@ -98,7 +98,7 @@ async def sent(
         delivery_id=f"d{message}",
         user_id=user,
         item_id=item.id,
-        item_updated_at=item.updated_at,
+        shown_at=item.updated_at,
         messages=[Sent(message, CHANNEL, account)],
         now=things.NOW,
     )
@@ -126,7 +126,7 @@ async def test_a_change_that_shows_redraws_the_message_after_a_quiet_moment(made
     assert made.views.redrawn == [100]
     assert made.slept == [QUIET]
     (row,) = await made.store.messages_for_item(ITEM.id)
-    assert row.item_updated_at == changed.updated_at
+    assert row.shown_at == changed.updated_at
 
 
 async def test_several_changes_in_a_row_cause_one_redraw(made: Made) -> None:
@@ -200,7 +200,7 @@ async def test_a_deleted_item_redraws_its_messages(made: Made) -> None:
     await made.sync.item_changed(gone)
     await settled(made)
     assert made.views.redrawn == [100]
-    assert (await made.store.messages_for_item(ITEM.id))[0].item_updated_at is None
+    assert (await made.store.messages_for_item(ITEM.id))[0].shown_at is None
 
 
 @pytest.mark.parametrize(

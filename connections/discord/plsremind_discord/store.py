@@ -54,7 +54,7 @@ class Store:
         delivery_id: str,
         user_id: str,
         item_id: str,
-        item_updated_at: datetime.datetime | None,
+        shown_at: datetime.datetime | None,
         messages: collections.abc.Sequence[Sent],
         now: datetime.datetime,
     ) -> None:
@@ -68,7 +68,7 @@ class Store:
                     account_id=sent.account_id,
                     user_id=user_id,
                     item_id=item_id,
-                    item_updated_at=_utc(item_updated_at),
+                    shown_at=_utc(shown_at),
                     sent_at=_utc(now),
                 )
 
@@ -78,9 +78,9 @@ class Store:
     async def messages_for_user(self, user_id: str) -> collections.abc.Sequence[models.Message]:
         return await queries.messages_for_user(self._db, user_id=user_id)
 
-    async def stamp(self, message_id: int, item_updated_at: datetime.datetime | None) -> None:
+    async def stamp(self, message_id: int, shown_at: datetime.datetime | None) -> None:
         async with self._write():
-            await queries.stamp_message(self._db, item_updated_at=_utc(item_updated_at), message_id=message_id)
+            await queries.stamp_message(self._db, shown_at=_utc(shown_at), message_id=message_id)
 
     async def forget_message(self, message_id: int) -> None:
         async with self._write():

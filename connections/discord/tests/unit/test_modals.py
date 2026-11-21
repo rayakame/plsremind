@@ -142,7 +142,7 @@ async def test_a_time_that_cannot_be_used_creates_nothing(made: Made, when: str,
 
 async def test_a_custom_snooze_from_the_dm_ends_the_message(made: Made) -> None:
     await made.store.record(
-        delivery_id="d1", user_id=MIA, item_id=ITEM.id, item_updated_at=None, messages=[Sent(555, 7, 1234)], now=NOW
+        delivery_id="d1", user_id=MIA, item_id=ITEM.id, shown_at=None, messages=[Sent(555, 7, 1234)], now=NOW
     )
     event = discord.submitted(modals.snooze_id(ITEM.id, detail=None), {modals.WHEN: "in 3h"})
     await made.modals.submitted(event)

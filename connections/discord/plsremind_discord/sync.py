@@ -79,7 +79,7 @@ class Sync:
             await self._drop_unlinked(event.user_id, accounts_of(profile.external_ids))
         for row in await self._store.messages_for_user(event.user_id):
             item = self._hub.cached(event.user_id, plsremind.ID(row.item_id))
-            if item is None or item.updated_at != row.item_updated_at:
+            if item is None or item.updated_at != row.shown_at:
                 self._redraw_soon(row.message_id, row.channel_id)
 
     async def user_changed(self, event: plsremind.UserUpdateEvent) -> None:

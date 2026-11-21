@@ -58,20 +58,20 @@ DELETE FROM deliveries WHERE sent_at < ?
 """
 
 ADD_MESSAGE: typing.Final[str] = """-- name: AddMessage :exec
-INSERT INTO messages (message_id, channel_id, account_id, user_id, item_id, item_updated_at, sent_at)
+INSERT INTO messages (message_id, channel_id, account_id, user_id, item_id, shown_at, sent_at)
 VALUES (?, ?, ?, ?, ?, ?, ?)
 """
 
 MESSAGES_FOR_ITEM: typing.Final[str] = """-- name: MessagesForItem :many
-SELECT message_id, channel_id, account_id, user_id, item_id, item_updated_at, sent_at FROM messages WHERE item_id = ? ORDER BY message_id
+SELECT message_id, channel_id, account_id, user_id, item_id, shown_at, sent_at FROM messages WHERE item_id = ? ORDER BY message_id
 """
 
 MESSAGES_FOR_USER: typing.Final[str] = """-- name: MessagesForUser :many
-SELECT message_id, channel_id, account_id, user_id, item_id, item_updated_at, sent_at FROM messages WHERE user_id = ? ORDER BY message_id
+SELECT message_id, channel_id, account_id, user_id, item_id, shown_at, sent_at FROM messages WHERE user_id = ? ORDER BY message_id
 """
 
 STAMP_MESSAGE: typing.Final[str] = """-- name: StampMessage :exec
-UPDATE messages SET item_updated_at = ? WHERE message_id = ?
+UPDATE messages SET shown_at = ? WHERE message_id = ?
 """
 
 FORGET_MESSAGE: typing.Final[str] = """-- name: ForgetMessage :execrows
@@ -144,26 +144,26 @@ async def purge_deliveries(conn: aiosqlite.Connection, *, sent_at: datetime.date
     return (await conn.execute(PURGE_DELIVERIES, (sent_at,))).rowcount
 
 
-async def add_message(conn: aiosqlite.Connection, *, message_id: int, channel_id: int, account_id: int, user_id: str, item_id: str, item_updated_at: datetime.datetime | None, sent_at: datetime.datetime) -> None:
-    await conn.execute(ADD_MESSAGE, (message_id, channel_id, account_id, user_id, item_id, item_updated_at, sent_at))
+async def add_message(conn: aiosqlite.Connection, *, message_id: int, channel_id: int, account_id: int, user_id: str, item_id: str, shown_at: datetime.datetime | None, sent_at: datetime.datetime) -> None:
+    await conn.execute(ADD_MESSAGE, (message_id, channel_id, account_id, user_id, item_id, shown_at, sent_at))
 
 
 def messages_for_item(conn: aiosqlite.Connection, *, item_id: str) -> QueryResults[models.Message]:
     def _decode_hook(row: sqlite3.Row) -> models.Message:
-        return models.Message(message_id=row[0], channel_id=row[1], account_id=row[2], user_id=row[3], item_id=row[4], item_updated_at=row[5], sent_at=row[6])
+        return models.Message(message_id=row[0], channel_id=row[1], account_id=row[2], user_id=row[3], item_id=row[4], shown_at=row[5], sent_at=row[6])
 
     return QueryResults(conn, MESSAGES_FOR_ITEM, _decode_hook, item_id)
 
 
 def messages_for_user(conn: aiosqlite.Connection, *, user_id: str) -> QueryResults[models.Message]:
     def _decode_hook(row: sqlite3.Row) -> models.Message:
-        return models.Message(message_id=row[0], channel_id=row[1], account_id=row[2], user_id=row[3], item_id=row[4], item_updated_at=row[5], sent_at=row[6])
+        return models.Message(message_id=row[0], channel_id=row[1], account_id=row[2], user_id=row[3], item_id=row[4], shown_at=row[5], sent_at=row[6])
 
     return QueryResults(conn, MESSAGES_FOR_USER, _decode_hook, user_id)
 
 
-async def stamp_message(conn: aiosqlite.Connection, *, item_updated_at: datetime.datetime | None, message_id: int) -> None:
-    await conn.execute(STAMP_MESSAGE, (item_updated_at, message_id))
+async def stamp_message(conn: aiosqlite.Connection, *, shown_at: datetime.datetime | None, message_id: int) -> None:
+    await conn.execute(STAMP_MESSAGE, (shown_at, message_id))
 
 
 async def forget_message(conn: aiosqlite.Connection, *, message_id: int) -> int:

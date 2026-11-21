@@ -5,6 +5,7 @@ import collections.abc
 import datetime
 import enum
 import secrets
+import time
 import typing
 
 import plsremind
@@ -23,6 +24,7 @@ INTENTS: typing.Final = (
 _PROVIDER: typing.Final = "discord"
 _CLOSED: typing.Final = "delivery_closed"
 ECHO: typing.Final = 2.0
+RECENT = 60.0
 
 
 class HubError(Exception):
@@ -36,6 +38,12 @@ class Unchanged(enum.Enum):
 UNCHANGED: typing.Final = Unchanged.UNCHANGED
 
 
+class _Written(typing.NamedTuple):
+    user: plsremind.ID
+    item: plsremind.Item | None
+    at: float
+
+
 class Hub:
     """The bot's only way to the hub."""
 
@@ -44,6 +52,8 @@ class Hub:
         self.ready = asyncio.Event()
         self._users: dict[int, plsremind.ID] = {}
         self._accounts: dict[plsremind.ID, tuple[int, ...]] = {}
+        # Writes the gateway has not reported yet, so that the bot reads what it wrote; None for a deletion.
+        self._written_items: dict[plsremind.ID, _Written] = {}
         client.subscribe(plsremind.UserReadyEvent, self._on_ready)
         client.subscribe(plsremind.UserUpdateEvent, self._on_updated)
         client.subscribe(plsremind.UserGoneEvent, self._on_gone)
@@ -91,9 +101,24 @@ class Hub:
         return found.name if found is not None else None
 
     def open_items(self, user: plsremind.ID) -> tuple[plsremind.Item, ...]:
-        return self.client.cache.get_items(user)
+        found = self.client.cache.get_items(user)
+        if not self._written_items:
+            return found
+        items = {item.id: item for item in found}
+        for item_id in list(self._written_items):
+            written = self._recent(user, item_id)
+            if written is None:
+                continue
+            if written.item is None or written.item.status is not plsremind.ItemStatus.OPEN:
+                items.pop(item_id, None)
+            else:
+                items[item_id] = written.item
+        return tuple(items.values())
 
     def cached(self, user: plsremind.ID, item: plsremind.ID) -> plsremind.Item | None:
+        written = self._recent(user, item)
+        if written is not None:
+            return written.item
         found = self.client.cache.get_item(item)
         # The cache finds an item of any user, so the list tells whose it is.
         if found is not None and any(one.id == found.list_id for one in self.client.cache.get_lists(user)):
@@ -127,30 +152,33 @@ class Hub:
         given = {"note": note or None, "list_id": list_id, "priority": priority, "due_at": due_at, "due_date": due_date}
         fields: dict[str, typing.Any] = {name: value for name, value in given.items() if value is not None}
         rest = self.client.rest
-        return await self._written(
+        made, heard = await self._written(
             plsremind.ItemCreateEvent,
             lambda nonce: rest.create_item(title=title, **fields, user=user, nonce=nonce),
             origin,
         )
+        return self._remember(user, made.id, made, heard=heard)
 
     async def remind(
         self, user: plsremind.ID, item: plsremind.ID, at: datetime.datetime, *, origin: int | None = None
     ) -> plsremind.ManualReminder:
         rest = self.client.rest
-        return await self._written(
+        made, _ = await self._written(
             plsremind.ItemUpdateEvent, lambda nonce: rest.create_reminder(item, at=at, user=user, nonce=nonce), origin
         )
+        return made
 
     async def set_done(
         self, user: plsremind.ID, item: plsremind.ID, *, done: bool, origin: int | None = None
     ) -> plsremind.Item:
         status = plsremind.ItemStatus.DONE if done else plsremind.ItemStatus.OPEN
         rest = self.client.rest
-        return await self._written(
+        changed, heard = await self._written(
             plsremind.ItemUpdateEvent,
             lambda nonce: rest.update_item(item, status=status, user=user, nonce=nonce),
             origin,
         )
+        return self._remember(user, item, changed, heard=heard)
 
     async def edit(
         self,
@@ -171,25 +199,28 @@ class Hub:
         if note is not None:
             fields["note"] = note
         rest = self.client.rest
-        return await self._written(
+        changed, heard = await self._written(
             plsremind.ItemUpdateEvent, lambda nonce: rest.update_item(item, **fields, user=user, nonce=nonce), origin
         )
+        return self._remember(user, item, changed, heard=heard)
 
     async def delete(self, user: plsremind.ID, item: plsremind.ID, *, origin: int | None = None) -> None:
         rest = self.client.rest
-        await self._written(
+        _, heard = await self._written(
             plsremind.ItemDeleteEvent, lambda nonce: rest.delete_item(item, user=user, nonce=nonce), origin
         )
+        self._remember(user, item, None, heard=heard)
 
     async def tick(
         self, user: plsremind.ID, item: plsremind.ID, subitem: plsremind.ID, *, done: bool, origin: int | None = None
     ) -> plsremind.Subitem:
         rest = self.client.rest
-        return await self._written(
+        changed, _ = await self._written(
             plsremind.ItemUpdateEvent,
             lambda nonce: rest.update_subitem(item, subitem, done=done, user=user, nonce=nonce),
             origin,
         )
+        return changed
 
     async def delivered(self, delivery: plsremind.ID) -> None:
         status = plsremind.DeliveryStatus.DELIVERED
@@ -204,11 +235,11 @@ class Hub:
         echo: type[plsremind.ChangeEvent],
         write: collections.abc.Callable[[str], collections.abc.Awaitable[T]],
         origin: int | None,
-    ) -> T:
+    ) -> tuple[T, bool]:
         # The cache holds a write only once the gateway has reported it, so the next read waits for that.
         nonce = f"{origin or 0}.{secrets.token_hex(6)}"
         if self.client.status is not plsremind.ClientStatus.CONNECTED:
-            return await write(nonce)
+            return await write(nonce), False
         heard = asyncio.create_task(
             self.client.wait_for(echo, timeout=None, predicate=lambda event: event.nonce == nonce)
         )
@@ -219,9 +250,30 @@ class Hub:
             result = await write(nonce)
             # Counted from the answer, so that a write the hub took long over is still waited for.
             await asyncio.wait({heard}, timeout=ECHO)
-            return result
+            return result, heard.done() and not heard.cancelled() and heard.exception() is None
         finally:
             heard.cancel()
+
+    def _remember[T: plsremind.Item | None](
+        self, user: plsremind.ID, item: plsremind.ID, written: T, *, heard: bool
+    ) -> T:
+        if not heard:
+            self._written_items[item] = _Written(user, written, time.monotonic())
+        return written
+
+    def _recent(self, user: plsremind.ID, item: plsremind.ID) -> _Written | None:
+        written = self._written_items.get(item)
+        if written is None:
+            return None
+        cached = self.client.cache.get_item(item)
+        if written.item is None:
+            caught_up = cached is None
+        else:
+            caught_up = cached is not None and cached.updated_at >= written.item.updated_at
+        if caught_up or time.monotonic() - written.at >= RECENT:
+            del self._written_items[item]
+            return None
+        return written if written.user == user else None
 
     async def _on_ready(self, event: plsremind.UserReadyEvent) -> None:
         self.user_ready(event)

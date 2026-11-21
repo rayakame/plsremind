@@ -7,6 +7,7 @@ import inspect
 import typing
 from unittest import mock
 
+import msgspec
 import plsremind
 import pytest
 
@@ -458,3 +459,79 @@ def test_the_stand_in_answers_everything_the_hub_answers() -> None:
     public = {name for name, _ in inspect.getmembers(Hub, inspect.isfunction) if not name.startswith("_")}
     own = {name for name in public if name in vars(FakeHub)}
     assert public - own == set()
+
+
+def later(item: plsremind.Item, minutes: int = 1, **changes: object) -> plsremind.Item:
+    return msgspec.structs.replace(item, updated_at=item.updated_at + datetime.timedelta(minutes=minutes), **changes)
+
+
+@pytest.fixture
+def away(made: Made) -> Made:
+    made.client.status = plsremind.ClientStatus.RECONNECTING
+    made.client.cache.get_item.return_value = ITEM
+    made.client.cache.get_items.return_value = (ITEM,)
+    return made
+
+
+async def test_a_write_the_gateway_has_not_reported_is_read_back_as_written(away: Made) -> None:
+    done = later(ITEM, status=plsremind.ItemStatus.DONE)
+    away.client.rest.update_item.return_value = done
+    await away.hub.set_done(MIA, ITEM.id, done=True)
+    assert away.hub.cached(MIA, ITEM.id) == done
+    assert away.hub.open_items(MIA) == ()
+
+    newer = later(ITEM, 2, title="renamed elsewhere")
+    away.client.cache.get_item.return_value = newer
+    away.client.cache.get_items.return_value = (newer,)
+    assert away.hub.cached(MIA, ITEM.id) == newer, "once the cache has caught up, it counts again"
+    assert away.hub.open_items(MIA) == (newer,)
+
+
+async def test_an_edit_the_gateway_has_not_reported_is_shown(away: Made) -> None:
+    edited = later(ITEM, title="Final report")
+    away.client.rest.update_item.return_value = edited
+    await away.hub.edit(MIA, ITEM.id, title="Final report", due=hub_module.UNCHANGED, note=None)
+    assert away.hub.cached(MIA, ITEM.id) == edited
+    assert away.hub.open_items(MIA) == (edited,)
+
+
+async def test_a_deletion_the_gateway_has_not_reported_leaves_the_item_out(away: Made) -> None:
+    await away.hub.delete(MIA, ITEM.id)
+    assert away.hub.cached(MIA, ITEM.id) is None
+    assert away.hub.open_items(MIA) == ()
+    away.client.cache.get_item.return_value = None
+    away.client.cache.get_items.return_value = ()
+    assert away.hub.open_items(MIA) == ()
+
+
+async def test_a_new_item_the_gateway_has_not_reported_is_among_the_open_ones(away: Made) -> None:
+    made_now = things.item(7, title="Laundry")
+    away.client.rest.create_item.return_value = made_now
+    away.client.cache.get_item.side_effect = {ITEM.id: ITEM}.get
+    await away.hub.add(MIA, title="Laundry")
+    assert {item.id for item in away.hub.open_items(MIA)} == {ITEM.id, made_now.id}
+
+
+async def test_what_was_written_counts_only_for_its_own_user_and_only_for_a_while(
+    away: Made, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    done = later(ITEM, status=plsremind.ItemStatus.DONE)
+    away.client.rest.update_item.return_value = done
+    await away.hub.set_done(MIA, ITEM.id, done=True)
+    assert away.hub.open_items(BEN) == (ITEM,)
+    monkeypatch.setattr(hub_module, "RECENT", 0.0)
+    assert away.hub.cached(MIA, ITEM.id) == ITEM
+
+
+async def test_a_write_the_gateway_reported_needs_nothing_remembered(made: Made, gateway: Gateway) -> None:
+    done = later(ITEM, status=plsremind.ItemStatus.DONE)
+
+    async def answer(*_: object, nonce: str, **__: object) -> plsremind.Item:
+        gateway.report(plsremind.ItemUpdateEvent(user_id=MIA, actor=None, nonce=nonce, item=done))
+        return done
+
+    made.client.rest.update_item.side_effect = answer
+    made.client.cache.get_item.return_value = done
+    await made.hub.set_done(MIA, ITEM.id, done=True)
+    made.client.cache.get_item.return_value = ITEM
+    assert made.hub.cached(MIA, ITEM.id) == ITEM

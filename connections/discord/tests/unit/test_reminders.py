@@ -128,7 +128,7 @@ async def test_a_reminder_goes_out_is_recorded_and_then_confirmed(made: Made) ->
     assert made.hub.named("delivered") == [{"delivery": things.uid(9001)}]
     (row,) = await made.store.messages_for_item(ITEM.id)
     assert (row.message_id, row.channel_id, row.user_id) == (100, CHANNEL + 1234, MIA)
-    assert row.item_updated_at == ITEM.updated_at
+    assert row.shown_at == ITEM.updated_at
     assert await made.store.knows_delivery(things.uid(9001))
     assert made.reminders.waiting == frozenset()
 

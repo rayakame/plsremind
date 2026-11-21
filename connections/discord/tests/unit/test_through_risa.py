@@ -102,7 +102,7 @@ async def test_a_fixed_snooze_sets_the_reminder_and_turns_the_message_into_the_n
         delivery_id="d1",
         user_id=MIA,
         item_id=ITEM.id,
-        item_updated_at=ITEM.updated_at,
+        shown_at=ITEM.updated_at,
         messages=[Sent(555, wire.CHANNEL, 1234)],
         now=NOW,
     )
@@ -171,7 +171,7 @@ async def test_a_change_made_elsewhere_redraws_the_message_discord_holds(made: M
         delivery_id="d1",
         user_id=MIA,
         item_id=ITEM.id,
-        item_updated_at=ITEM.updated_at,
+        shown_at=ITEM.updated_at,
         messages=[Sent(555, wire.CHANNEL, 1234)],
         now=NOW,
     )
@@ -195,7 +195,7 @@ async def test_a_change_made_elsewhere_redraws_the_message_discord_holds(made: M
     assert edit.args == (wire.CHANNEL, 555)
     assert "## Final report" in wire.texts(wire.sent({"components": edit.kwargs["components"]}))
     (row,) = await store.messages_for_item(ITEM.id)
-    assert row.item_updated_at == NOW
+    assert row.shown_at == NOW
 
 
 async def test_a_message_that_shows_something_else_by_now_is_forgotten_instead_of_redrawn(made: Made) -> None:
@@ -207,7 +207,7 @@ async def test_a_message_that_shows_something_else_by_now_is_forgotten_instead_o
         delivery_id="d1",
         user_id=MIA,
         item_id=ITEM.id,
-        item_updated_at=ITEM.updated_at,
+        shown_at=ITEM.updated_at,
         messages=[Sent(555, wire.CHANNEL, 1234)],
         now=NOW,
     )

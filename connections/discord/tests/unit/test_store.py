@@ -42,7 +42,7 @@ async def record(
         delivery_id=delivery,
         user_id=user,
         item_id=item,
-        item_updated_at=stamp,
+        shown_at=stamp,
         messages=[Sent(message_id=message, channel_id=7, account_id=1234) for message in messages],
         now=now,
     )
@@ -106,7 +106,7 @@ async def test_times_come_back_as_they_went_in(store: Store) -> None:
     (row,) = await store.messages_for_item(ITEM)
     assert row.sent_at == NOW
     assert row.sent_at.utcoffset() == datetime.timedelta(0)
-    assert row.item_updated_at == stamp
+    assert row.shown_at == stamp
     assert row.channel_id == 7
     assert (row.user_id, row.item_id) == (MIA, ITEM)
 
@@ -126,9 +126,9 @@ async def test_a_stamp_can_be_set_and_cleared(store: Store) -> None:
     later = NOW + datetime.timedelta(minutes=5)
     await store.stamp(100, later)
     first, second = await store.messages_for_item(ITEM)
-    assert (first.item_updated_at, second.item_updated_at) == (later, None)
+    assert (first.shown_at, second.shown_at) == (later, None)
     await store.stamp(100, None)
-    assert (await store.messages_for_item(ITEM))[0].item_updated_at is None
+    assert (await store.messages_for_item(ITEM))[0].shown_at is None
 
 
 async def test_a_message_can_be_forgotten(store: Store) -> None:

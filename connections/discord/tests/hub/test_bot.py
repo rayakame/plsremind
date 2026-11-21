@@ -183,7 +183,7 @@ async def test_done_in_discord_reaches_the_hub_and_only_other_messages_are_redra
         delivery_id="d1",
         user_id=mia.id,
         item_id=item.id,
-        item_updated_at=item.updated_at,
+        shown_at=item.updated_at,
         messages=[Sent(555, CHANNEL, 1234), Sent(556, CHANNEL, 1234)],
         now=now(),
     )
@@ -241,7 +241,7 @@ async def test_a_change_in_the_hub_redraws_the_message(running: Running) -> None
         delivery_id="d1",
         user_id=mia.id,
         item_id=item.id,
-        item_updated_at=None,
+        shown_at=None,
         messages=[Sent(555, CHANNEL, 1234)],
         now=now(),
     )
@@ -258,7 +258,7 @@ async def test_a_user_who_switches_the_connection_off_is_forgotten(running: Runn
         delivery_id="d1",
         user_id=mia.id,
         item_id=item.id,
-        item_updated_at=None,
+        shown_at=None,
         messages=[Sent(555, CHANNEL, 1234)],
         now=now(),
     )

@@ -9,7 +9,7 @@ CREATE TABLE messages (
     account_id integer NOT NULL,
     user_id text NOT NULL,
     item_id text NOT NULL,
-    item_updated_at timestamp,
+    shown_at timestamp,
     sent_at timestamp NOT NULL
 );
 CREATE INDEX messages_item_idx ON messages (item_id);
