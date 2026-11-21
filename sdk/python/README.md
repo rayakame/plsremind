@@ -128,7 +128,8 @@ event.
 
 - Every event about a user has `user_id`. Change events also have `actor` (compare
   `actor.id` with `client.principal.id` to recognise your own changes) and `nonce`, the
-  `nonce=` of the REST call that made the change.
+  `nonce=` of the REST call that made the change. `actor` is `None` for what the hub does
+  by itself, such as removing a manual reminder whose time has passed.
 - `old_*` is the object the cache held before the change, or `None` if it held none.
 - Listening to a base class gets every event below it: `ItemEvent`, `ListEvent`,
   `DeliveryEvent`, `ChangeEvent`, `UserEvent`, or `Event` for everything.
@@ -136,6 +137,8 @@ event.
   its own, started in the order of the events and not waited for, so a slow listener
   holds up neither the connection nor other listeners.
 - An event nobody listens to, and the cache does not need, is never decoded.
+- A `UserGoneEvent` also comes for a user the cache held whom a new session no longer
+  names, for example one who switched a connection off while it could not resume.
 - If a change arrives that this version cannot read, the client logs it and starts the
   session over, so the cache cannot quietly differ from the hub. If it cannot read the
   hub's login answer or a user's state at all, it gives up with a `ClosedEvent`.
@@ -242,6 +245,9 @@ await client.rest.create_reminder(item.id, after=datetime.timedelta(hours=2))
   Nothing else is retried. A call may take 30 seconds (`rest_timeout=`).
 - `session=` on `Client` and `RESTClient` takes an `aiohttp.ClientSession` of your own,
   for example to go through a proxy.
+- The client asks the hub where its gateway listens, and the hub names its public address.
+  A client that reaches the hub by another address, such as one inside a container
+  network, passes `gateway_url="ws://hub:8080/api/v1/gateway"`.
 
 ## A connection
 

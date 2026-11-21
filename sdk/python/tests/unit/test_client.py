@@ -159,6 +159,22 @@ async def test_start_raises_on_a_fatal_close(hub: fakes.FakeHub, make: Make) -> 
     assert closed[0].error is caught.value
 
 
+async def test_a_given_gateway_address_is_used_and_info_is_never_asked(hub: fakes.FakeHub) -> None:
+    hub.answer("GET", "/info", fakes.error(503, "down"))
+    address = hub.url.replace("http://", "ws://") + fakes.PREFIX + "/gateway"
+    client = plsremind.Client(hub.url, token=TOKEN, intents=STATE, gateway_url=address)
+    try:
+        await started(hub, client)
+        assert hub.requests == []
+    finally:
+        await client.close()
+
+
+async def test_without_a_gateway_address_info_is_asked(hub: fakes.FakeHub, make: Make) -> None:
+    await started(hub, make())
+    assert [request.path for request in hub.requests] == ["/info"]
+
+
 async def test_start_raises_when_the_hub_is_unreachable(hub: fakes.FakeHub, make: Make) -> None:
     hub.answer("GET", "/info", fakes.error(503, "unavailable", "Down."))
     client = make()
@@ -532,6 +548,34 @@ async def test_a_raising_predicate_reaches_the_waiter(hub: fakes.FakeHub, make: 
     await connection.dispatch("item.created", change(item(1)))
     with pytest.raises(LookupError, match="item 1"):
         await waiting
+
+
+async def test_a_user_the_new_session_no_longer_names_is_reported_gone(hub: fakes.FakeHub, make: Make) -> None:
+    other = fixtures.OTHER_USER_ID
+    client = make()
+    seen = collect(client, events.Event)
+    starting = asyncio.create_task(client.start())
+    connection = await handshake(hub, users=[ME, other])
+    await connection.dispatch("user.sync", sync())
+    await connection.dispatch("user.sync", sync(user=other))
+    await asyncio.wait_for(starting, 2)
+    assert client.cache.get_users() == (ME, other)
+    connection.drop()
+    again = await hub.gateway.connection()
+    await again.hello()
+    await again.receive_op(RESUME)
+    await again.send(INVALID_SESSION, d=False)
+    await again.receive_op(IDENTIFY)
+    await again.ready(users=[ME], principal=fixtures.PRINCIPAL, intents=["users", "lists", "items", "plans"])
+    await again.dispatch("user.sync", sync())
+    await until(lambda: sum(isinstance(event, plsremind.ReadyEvent) for event in seen) == 2)
+    kinds = [type(event) for event in seen]
+    gone = [event for event in seen if isinstance(event, plsremind.UserGoneEvent)]
+    assert [event.user_id for event in gone] == [other]
+    assert kinds.index(plsremind.UserGoneEvent) < max(
+        at for at, kind in enumerate(kinds) if kind is plsremind.ReadyEvent
+    )
+    assert client.cache.get_users() == (ME,)
 
 
 async def test_ready_event_again_after_an_invalid_session(hub: fakes.FakeHub, make: Make) -> None:

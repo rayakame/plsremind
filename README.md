@@ -20,8 +20,9 @@ bot is next.
   See [sdk/ts](sdk/ts/README.md).
 - **Python SDK** (`sdk/python/`): an asyncio client with listeners, a cache of frozen
   objects and the REST API as methods. See [sdk/python](sdk/python/README.md).
-- **Connections**: integrations an admin installs for all users of an instance, such as a
-  Discord bot.
+- **Connections**: integrations an admin installs for all users of an instance. The
+  Discord bot (`connections/discord/`) sends reminders as direct messages and answers
+  commands. See [connections/discord](connections/discord/README.md).
 - **Adapters**: your own tools, using a personal token that only reaches your data.
 
 ## Try it

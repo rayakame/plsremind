@@ -1,0 +1,301 @@
+msgid ""
+msgstr ""
+"Content-Type: text/plain; charset=UTF-8\n"
+"Language: en-US\n"
+
+msgid "reminder.upcoming"
+msgstr "Due {when}"
+
+msgid "reminder.overdue"
+msgstr "Overdue, was due {when}"
+
+msgid "reminder.plain"
+msgstr "Reminder"
+
+msgid "reminder.done"
+msgstr "Done {when}"
+
+msgid "reminder.gone"
+msgstr "This item no longer exists."
+
+msgid "reminder.snoozed"
+msgstr "Snoozed"
+
+msgid "reminder.snoozed_until"
+msgstr "I will remind you again {when}."
+
+msgid "priority.low"
+msgstr "Low priority"
+
+msgid "priority.high"
+msgstr "High priority"
+
+msgid "button.done"
+msgstr "Done"
+
+msgid "button.undo"
+msgstr "Undo"
+
+msgid "button.dashboard"
+msgstr "Dashboard"
+
+msgid "button.message"
+msgstr "To the message"
+
+msgid "snooze.placeholder"
+msgstr "Remind me later"
+
+msgid "snooze.15m"
+msgstr "In 15 minutes"
+
+msgid "snooze.1h"
+msgstr "In 1 hour"
+
+msgid "snooze.evening"
+msgstr "This evening (20:00)"
+
+msgid "snooze.morning"
+msgstr "Tomorrow morning (08:00)"
+
+msgid "snooze.custom"
+msgstr "Another time ..."
+
+msgid "reminder.upcoming_day"
+msgstr "Due on {day}"
+
+msgid "reminder.overdue_day"
+msgstr "Overdue, was due on {day}"
+
+msgid "reminder.item_done"
+msgstr "This item is already done."
+
+msgid "modal.time.title"
+msgstr "Remind me later"
+
+msgid "modal.time.label"
+msgstr "When?"
+
+msgid "modal.time.placeholder"
+msgstr "tomorrow 9, in 2h, fri 18:00"
+
+msgid "error.time_past"
+msgstr "That time has already passed."
+
+msgid "error.reminder_limit"
+msgstr "This item already has 20 reminders ahead. Remove one in the dashboard."
+
+msgid "error.outdated"
+msgstr "This message is out of date."
+
+msgid "delivery.closed_dms"
+msgstr "Discord did not accept the direct message. Check that you allow messages from the bot and that the app is still installed."
+
+msgid "delivery.refused"
+msgstr "Discord did not accept the reminder."
+
+msgid "delivery.no_account"
+msgstr "No Discord account is linked."
+
+msgid "overview.page"
+msgstr "Page {page} of {pages}"
+
+msgid "overview.title"
+msgstr "Your items"
+
+msgid "overview.summary"
+msgstr "{open} open · {overdue} overdue"
+
+msgid "overview.empty"
+msgstr "Nothing open."
+
+msgid "overview.reminder"
+msgstr "Reminder {when}"
+
+msgid "overview.steps"
+msgstr "{done} of {all}"
+
+msgid "group.overdue"
+msgstr "Overdue"
+
+msgid "group.today"
+msgstr "Today"
+
+msgid "group.soon"
+msgstr "Coming up"
+
+msgid "group.none"
+msgstr "No deadline"
+
+msgid "filter.all"
+msgstr "All lists"
+
+msgid "button.open"
+msgstr "Open"
+
+msgid "button.back"
+msgstr "Back"
+
+msgid "button.next"
+msgstr "Next"
+
+msgid "button.tick"
+msgstr "Tick off"
+
+msgid "button.untick"
+msgstr "Reopen"
+
+msgid "button.edit"
+msgstr "Edit"
+
+msgid "button.delete"
+msgstr "Delete"
+
+msgid "button.really_delete"
+msgstr "Delete for good"
+
+msgid "button.cancel"
+msgstr "Cancel"
+
+msgid "button.to_overview"
+msgstr "To overview"
+
+msgid "detail.next_reminder"
+msgstr "Next reminder: {when}"
+
+msgid "detail.steps"
+msgstr "Steps · {done} of {all}"
+
+msgid "detail.more_steps"
+msgstr "+ {count} more in the dashboard"
+
+msgid "modal.edit.title"
+msgstr "Edit item"
+
+msgid "modal.edit.name"
+msgstr "Title"
+
+msgid "modal.edit.due"
+msgstr "Deadline (empty for none)"
+
+msgid "modal.edit.note"
+msgstr "Note"
+
+msgid "modal.message.title"
+msgstr "Remind me"
+
+msgid "ack.remind"
+msgstr "I will remind you {when}: **{title}**"
+
+msgid "error.time_unreadable"
+msgstr "I could not read that time. Try for example: tomorrow 9, in 2h, fri 18:00"
+
+msgid "error.not_linked"
+msgstr "Your Discord account is not linked to plsremind, or the Discord connection is switched off."
+
+msgid "error.failed"
+msgstr "That did not work. Please try again."
+
+msgid "error.starting"
+msgstr "The bot is just starting. Try again in a moment."
+
+msgid "error.invalid"
+msgstr "The hub did not accept that."
+
+msgid "button.settings"
+msgstr "Settings"
+
+msgid "command.remind.name"
+msgstr "remind"
+
+msgid "command.remind.description"
+msgstr "Remind me of something at a time"
+
+msgid "command.deadline.name"
+msgstr "deadline"
+
+msgid "command.deadline.description"
+msgstr "Add an item with a deadline"
+
+msgid "command.todos.name"
+msgstr "todos"
+
+msgid "command.todos.description"
+msgstr "Show what is open"
+
+msgid "command.done.name"
+msgstr "done"
+
+msgid "command.done.description"
+msgstr "Complete an item"
+
+msgid "command.remind_me.name"
+msgstr "Remind me"
+
+msgid "option.when.name"
+msgstr "when"
+
+msgid "option.when.description"
+msgstr "When, for example: tomorrow 9, in 2h, fri 18:00"
+
+msgid "option.due.name"
+msgstr "due"
+
+msgid "option.due.description"
+msgstr "The deadline, for example: fri 18:00 or 24.12."
+
+msgid "option.what.name"
+msgstr "what"
+
+msgid "option.what.description"
+msgstr "What it is about"
+
+msgid "option.note.name"
+msgstr "note"
+
+msgid "option.note.description"
+msgstr "A note to keep with it"
+
+msgid "option.priority.name"
+msgstr "priority"
+
+msgid "option.priority.description"
+msgstr "How important it is"
+
+msgid "option.list.name"
+msgstr "list"
+
+msgid "option.list.description"
+msgstr "The list it belongs to"
+
+msgid "option.public_ack.name"
+msgstr "public_ack"
+
+msgid "option.public_ack.description"
+msgstr "Show the confirmation to everyone in the channel"
+
+msgid "option.item.name"
+msgstr "item"
+
+msgid "option.item.description"
+msgstr "The item"
+
+msgid "choice.priority.low"
+msgstr "Low"
+
+msgid "choice.priority.normal"
+msgstr "Normal"
+
+msgid "choice.priority.high"
+msgstr "High"
+
+msgid "ack.deadline"
+msgstr "Deadline set for {when}: **{title}**"
+
+msgid "error.unknown_list"
+msgstr "I do not know that list. Pick one from the suggestions."
+
+msgid "error.unknown_item"
+msgstr "I do not know that item. Pick one from the suggestions."
+
+msgid "modal.message.fallback"
+msgstr "Message from {name}"

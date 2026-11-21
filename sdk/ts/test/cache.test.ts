@@ -320,9 +320,10 @@ test("a part 0 that arrives again starts the user over", () => {
 
 test("a user the new session no longer names is removed", () => {
   const { store, changes } = loaded();
-  store.begin(["u2"], all, "u2");
+  expect(store.begin(["u2"], all, "u2")).toEqual(["u1"]);
   expect(store.cache.user("u1")).toBeUndefined();
   expect(changes).toEqual([{ userId: "u1", kinds, cause: undefined }]);
+  expect(store.begin(["u2"], all, "u2")).toEqual([]);
 });
 
 test("user() without an id is the caller's own user", () => {

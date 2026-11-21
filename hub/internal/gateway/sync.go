@@ -426,6 +426,10 @@ func (s *Session) dispatch(ctx context.Context, q *sqlc.Queries, ev sqlc.Event) 
 			return nil
 		}
 	}
-	s.emit(ev.Type, true, envelope{UserID: ev.UserID, Actor: &actor{Kind: ev.ActorKind, ID: ev.ActorID}, Nonce: ev.Nonce, Data: data})
+	var by *actor
+	if ev.ActorKind != nil && ev.ActorID != nil {
+		by = &actor{Kind: *ev.ActorKind, ID: *ev.ActorID}
+	}
+	s.emit(ev.Type, true, envelope{UserID: ev.UserID, Actor: by, Nonce: ev.Nonce, Data: data})
 	return nil
 }

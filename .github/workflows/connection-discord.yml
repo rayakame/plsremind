@@ -1,0 +1,64 @@
+name: connection-discord
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "connections/discord/**"
+      - "sdk/python/**"
+      - "hub/**"
+      - "docs/**"
+      - ".github/workflows/connection-discord.yml"
+  pull_request:
+    paths:
+      - "connections/discord/**"
+      - "sdk/python/**"
+      - "hub/**"
+      - "docs/**"
+      - ".github/workflows/connection-discord.yml"
+
+defaults:
+  run:
+    working-directory: connections/discord
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      # setup-uv publishes no floating major tag, so it is pinned to a release.
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          enable-cache: true
+          python-version: "3.15"
+      - run: uv run --group nox nox -s format-check ruff pyright generated-check
+
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          enable-cache: true
+          python-version: "3.15"
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: hub/go.mod
+          cache-dependency-path: hub/go.sum
+      - run: uv run --group nox nox -s pytest hub
+
+  image:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: .
+    steps:
+      - uses: actions/checkout@v5
+      - run: docker build -f connections/discord/Dockerfile -t plsremind-discord .
+      # Without its settings the bot has to say what is missing and stop.
+      - run: |
+          docker run --rm plsremind-discord 2> out.txt && exit 1
+          grep -q DISCORD_TOKEN out.txt

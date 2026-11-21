@@ -143,11 +143,20 @@ def test_users_missing_from_a_new_ready_are_dropped() -> None:
     cache.apply(sync(ME, connection=True, items=[item(1)]))
     cache.apply(sync(OTHER, connection=True, items=[item(2)]))
     assert cache.get_users() == (ME, OTHER)
-    cache.begin(msgspec.convert(fixtures.CONNECTION_PRINCIPAL, models.Principal), [OTHER], STATE)
+    dropped = cache.begin(msgspec.convert(fixtures.CONNECTION_PRINCIPAL, models.Principal), [OTHER], STATE)
+    assert dropped == (ME,)
     assert cache.get_users() == (OTHER,)
     assert cache.get_item(ID(uuid(1))) is None
     assert cache.get_item(ID(uuid(2))) is not None
     assert cache.get_items(ME) == ()
+
+
+def test_a_new_ready_that_names_everyone_drops_nobody() -> None:
+    cache = connected(ME, OTHER)
+    cache.apply(sync(ME, connection=True))
+    again = cache.begin(msgspec.convert(fixtures.CONNECTION_PRINCIPAL, models.Principal), [ME, OTHER], STATE)
+    assert again == ()
+    assert cache.get_users() == (ME,)
 
 
 def test_gone_user_is_dropped() -> None:

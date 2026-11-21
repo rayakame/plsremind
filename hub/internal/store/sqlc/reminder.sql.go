@@ -12,6 +12,24 @@ import (
 	"github.com/google/uuid"
 )
 
+const countManualRemindersAhead = `-- name: CountManualRemindersAhead :one
+SELECT count(*) FROM manual_reminders m
+WHERE m.item_id = $1
+  AND (m.remind_at > $2 OR EXISTS (SELECT 1 FROM scheduled_reminders s WHERE s.manual_id = m.id))
+`
+
+type CountManualRemindersAheadParams struct {
+	ItemID uuid.UUID
+	Now    time.Time
+}
+
+func (q *Queries) CountManualRemindersAhead(ctx context.Context, arg CountManualRemindersAheadParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countManualRemindersAhead, arg.ItemID, arg.Now)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createManualReminder = `-- name: CreateManualReminder :one
 INSERT INTO manual_reminders (id, item_id, remind_at, created_at)
 VALUES ($1, $2, $3, $4)
@@ -53,6 +71,25 @@ type DeleteManualReminderParams struct {
 
 func (q *Queries) DeleteManualReminder(ctx context.Context, arg DeleteManualReminderParams) (int64, error) {
 	result, err := q.db.Exec(ctx, deleteManualReminder, arg.ID, arg.ItemID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const deleteSpentManualReminder = `-- name: DeleteSpentManualReminder :execrows
+DELETE FROM manual_reminders m
+WHERE m.id = $1 AND m.remind_at <= $2
+  AND NOT EXISTS (SELECT 1 FROM scheduled_reminders s WHERE s.manual_id = m.id)
+`
+
+type DeleteSpentManualReminderParams struct {
+	ID  uuid.UUID
+	Now time.Time
+}
+
+func (q *Queries) DeleteSpentManualReminder(ctx context.Context, arg DeleteSpentManualReminderParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteSpentManualReminder, arg.ID, arg.Now)
 	if err != nil {
 		return 0, err
 	}
@@ -106,6 +143,60 @@ func (q *Queries) ListManualRemindersForItems(ctx context.Context, itemIds []uui
 			&i.ItemID,
 			&i.RemindAt,
 			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listSpentManualReminders = `-- name: ListSpentManualReminders :many
+SELECT m.id, m.item_id, m.remind_at, i.user_id
+FROM manual_reminders m JOIN items i ON i.id = m.item_id
+WHERE m.remind_at <= $1
+  AND (m.remind_at, m.id) > ($2::timestamptz, $3::uuid)
+  AND NOT EXISTS (SELECT 1 FROM scheduled_reminders s WHERE s.manual_id = m.id)
+ORDER BY m.remind_at, m.id
+LIMIT $4
+`
+
+type ListSpentManualRemindersParams struct {
+	Now     time.Time
+	AfterAt time.Time
+	AfterID uuid.UUID
+	Batch   int32
+}
+
+type ListSpentManualRemindersRow struct {
+	ID       uuid.UUID
+	ItemID   uuid.UUID
+	RemindAt time.Time
+	UserID   uuid.UUID
+}
+
+func (q *Queries) ListSpentManualReminders(ctx context.Context, arg ListSpentManualRemindersParams) ([]ListSpentManualRemindersRow, error) {
+	rows, err := q.db.Query(ctx, listSpentManualReminders,
+		arg.Now,
+		arg.AfterAt,
+		arg.AfterID,
+		arg.Batch,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListSpentManualRemindersRow
+	for rows.Next() {
+		var i ListSpentManualRemindersRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.ItemID,
+			&i.RemindAt,
+			&i.UserID,
 		); err != nil {
 			return nil, err
 		}
