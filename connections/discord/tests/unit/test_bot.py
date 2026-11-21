@@ -244,6 +244,7 @@ class Running(typing.NamedTuple):
     discord_closed: mock.AsyncMock
     commands_stopped: mock.AsyncMock
     order: list[str]
+    discord_joined: mock.AsyncMock
 
 
 @pytest.fixture
@@ -262,6 +263,15 @@ def running(
 
         return stepped
 
+    gone = asyncio.Event()
+
+    def closed_discord(*_: object, **__: object) -> None:
+        order.append("discord closed")
+        gone.set()
+
+    async def until_closed(*_: object, **__: object) -> None:
+        await gone.wait()
+
     config = msgspec.structs.replace(discord.CONFIG, discord_token=TOKEN, database=tmp_path / "discord.db")
     with (
         mock.patch.object(bot.hub_, "connect", return_value=hub),
@@ -272,11 +282,12 @@ def running(
         mock.patch.object(bot.Reminders, "close", mock.AsyncMock(side_effect=step("reminders closed"))),
         mock.patch.object(bot.Sync, "close", mock.AsyncMock(side_effect=step("sync closed"))),
         mock.patch.object(hikari.GatewayBot, "start", mock.AsyncMock(side_effect=step("discord"))) as started,
-        mock.patch.object(hikari.GatewayBot, "close", mock.AsyncMock(side_effect=step("discord closed"))) as closed,
+        mock.patch.object(hikari.GatewayBot, "close", mock.AsyncMock(side_effect=closed_discord)) as closed,
+        mock.patch.object(hikari.GatewayBot, "join", mock.AsyncMock(side_effect=until_closed)) as joined,
         mock.patch.object(lightbulb.Client, "start", mock.AsyncMock(side_effect=step("commands"))),
         mock.patch.object(lightbulb.Client, "stop", mock.AsyncMock()) as stopped,
     ):
-        yield Running(hub, started, closed, stopped, order), config
+        yield Running(hub, started, closed, stopped, order, joined), config
 
 
 async def test_the_bot_runs_until_it_is_told_to_stop(
@@ -378,3 +389,68 @@ async def test_old_rows_keep_being_cleared_after_one_round_failed(caplog: pytest
     assert store.purge.await_count == 3
     assert slept == [bot.PURGE_EVERY] * 3
     assert "old rows could not be cleared" in caplog.text
+
+
+async def test_a_discord_gateway_that_ends_after_the_start_ends_the_bot_with_a_reason(
+    running: tuple[Running, bot.Config], caplog: pytest.LogCaptureFixture
+) -> None:
+    parts, config = running
+    ended = asyncio.Event()
+
+    async def joined(*_: object, **__: object) -> None:
+        await ended.wait()
+        refused = "Authentication failed"
+        raise hikari.GatewayServerClosedConnectionError(refused, 4004)
+
+    parts.discord_joined.side_effect = joined
+    serving = asyncio.create_task(bot.main(config))
+    await discord.until(lambda: "the bot is running" in caplog.text)
+    ended.set()
+    assert await asyncio.wait_for(serving, 5) == 1
+    assert "Discord's gateway closed" in caplog.text
+    assert "Authentication failed" in caplog.text
+
+
+async def test_a_stop_while_the_hub_is_still_starting_ends_the_bot_before_discord_is_touched(
+    running: tuple[Running, bot.Config], caplog: pytest.LogCaptureFixture
+) -> None:
+    parts, config = running
+    asked = asyncio.Event()
+
+    async def never(*_: object, **__: object) -> None:
+        asked.set()
+        await asyncio.Event().wait()
+
+    with mock.patch.object(FakeHub, "start", mock.AsyncMock(side_effect=never)):
+        serving = asyncio.create_task(bot.main(config))
+        await asyncio.wait_for(asked.wait(), 5)
+        os.kill(os.getpid(), signal.SIGTERM)
+        assert await asyncio.wait_for(serving, 5) == 0
+    parts.discord_started.assert_not_called()
+    assert "the bot is running" not in caplog.text
+
+
+@pytest.mark.parametrize("close_first", [False, True])
+async def test_a_delivery_closed_while_waiting_for_discord_is_not_sent(*, close_first: bool) -> None:
+    client = mock.Mock(spec=plsremind.Client)
+    reminders, sync = mock.AsyncMock(), mock.AsyncMock()
+    reminders.withdraw = mock.Mock()
+    gate = bot.Gate()
+    bot.listen(typing.cast("plsremind.Client", client), reminders=reminders, sync=sync, gate=gate)
+    heard = {call.args[0]: call.args[1] for call in client.subscribe.call_args_list}
+    delivery = things.delivery()
+    created = plsremind.DeliveryCreateEvent(user_id=things.MIA, delivery=delivery)
+    closed = plsremind.DeliveryCloseEvent(
+        user_id=things.MIA, delivery_id=delivery.id, status=plsremind.DeliveryStatus.CANCELLED
+    )
+    order = [(plsremind.DeliveryCloseEvent, closed), (plsremind.DeliveryCreateEvent, created)]
+    waiting = [asyncio.create_task(heard[kind](event)) for kind, event in (order if close_first else order[::-1])]
+    for _ in range(5):
+        await asyncio.sleep(0)
+    gate.open()
+    await asyncio.gather(*waiting)
+    reminders.deliver.assert_not_called()
+
+    later = things.delivery(2)
+    await heard[plsremind.DeliveryCreateEvent](plsremind.DeliveryCreateEvent(user_id=things.MIA, delivery=later))
+    reminders.deliver.assert_awaited_once_with(later)

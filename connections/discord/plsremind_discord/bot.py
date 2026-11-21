@@ -97,6 +97,10 @@ class Gate:
         self._open = False
         self._decided.set()
 
+    @property
+    def holding(self) -> bool:
+        return not self._decided.is_set()
+
     async def passes(self) -> bool:
         await self._decided.wait()
         return self._open
@@ -115,14 +119,23 @@ def listen(client: plsremind.Client, *, reminders: Reminders, sync: Sync, gate: 
 
         return waited
 
+    # Held events pass the gate in no fixed order, so a delivery closed meanwhile is noted on arrival.
+    closed_early: set[plsremind.ID] = set()
+
     async def due(event: plsremind.DeliveryCreateEvent) -> None:
+        if event.delivery.id in closed_early:
+            closed_early.discard(event.delivery.id)
+            return
         await reminders.deliver(event.delivery)
 
-    async def withdrawn(event: plsremind.DeliveryCloseEvent) -> None:  # ruff: ignore[unused-async]
-        reminders.withdraw(event.delivery_id)
+    async def withdrawn(event: plsremind.DeliveryCloseEvent) -> None:
+        if gate.holding:
+            closed_early.add(event.delivery_id)
+        if await gate.passes():
+            reminders.withdraw(event.delivery_id)
 
     client.subscribe(plsremind.DeliveryCreateEvent, once_up(due))
-    client.subscribe(plsremind.DeliveryCloseEvent, once_up(withdrawn))
+    client.subscribe(plsremind.DeliveryCloseEvent, withdrawn)
     client.subscribe(plsremind.ItemUpdateEvent, once_up(sync.item_changed))
     client.subscribe(plsremind.ItemDeleteEvent, once_up(sync.item_changed))
     client.subscribe(plsremind.ListUpdateEvent, once_up(sync.list_changed))
@@ -189,16 +202,9 @@ async def _serve(config: Config, store: Store) -> int:
     hub.client.subscribe(plsremind.ClosedEvent, turned_away)
     for number in (signal.SIGINT, signal.SIGTERM):
         loop.add_signal_handler(number, stop, None)
-    purging: asyncio.Task[None] | None = None
+    tasks: list[asyncio.Task[None]] = []
     try:
-        # The hub first: a restart loop over a hub that refuses the bot must not use up Discord's session starts.
-        await hub.start()
-        await parts.discord.start(check_for_updates=False)
-        await parts.commands.start()
-        parts.gate.open()
-        purging = asyncio.create_task(purge(store), name="purge")
-        _LOGGER.info("the bot is running")
-        reason = await stopped
+        reason = await _run(parts, hub, store, stopped=stopped, stop=stop, tasks=tasks)
     except (
         plsremind.PlsremindError,
         hub_.HubError,
@@ -210,20 +216,69 @@ async def _serve(config: Config, store: Store) -> int:
         _LOGGER.exception("the bot ran into something nobody foresaw")
         reason = f"{type(error).__name__}: {error}"
     finally:
-        if purging is not None:
-            purging.cancel()
-        # The hub goes quiet first, so that nothing new comes in while the rest is put away.
-        parts.gate.shut()
-        await hub.close()
-        await parts.reminders.close()
-        await parts.sync.close()
-        await parts.commands.stop()
-        with contextlib.suppress(hikari.HikariError):
-            await parts.discord.close()
+        await _put_away(parts, hub, tasks)
     if reason is None:
         return 0
     _LOGGER.error("stopping: %s", reason)
     return 1
+
+
+async def _run(
+    parts: Parts,
+    hub: hub_.Hub,
+    store: Store,
+    *,
+    stopped: asyncio.Future[str | None],
+    stop: collections.abc.Callable[[str | None], None],
+    tasks: list[asyncio.Task[None]],
+) -> str | None:
+    starting = asyncio.create_task(_start(parts, hub), name="start")
+    # A stop during the start ends it there, before Discord is reached if the hub is still being waited for.
+    await asyncio.wait({starting, stopped}, return_when=asyncio.FIRST_COMPLETED)
+    if not starting.done():
+        starting.cancel()
+        await asyncio.gather(starting, return_exceptions=True)
+        return stopped.result()
+    starting.result()
+    parts.gate.open()
+    tasks.extend(
+        (
+            asyncio.create_task(_watch_discord(parts.discord, stop), name="discord"),
+            asyncio.create_task(purge(store), name="purge"),
+        )
+    )
+    _LOGGER.info("the bot is running")
+    return await stopped
+
+
+async def _start(parts: Parts, hub: hub_.Hub) -> None:
+    # The hub first: a restart loop over a hub that refuses the bot must not use up Discord's session starts.
+    await hub.start()
+    await parts.discord.start(check_for_updates=False)
+    await parts.commands.start()
+
+
+async def _watch_discord(discord: hikari.GatewayBot, stop: collections.abc.Callable[[str | None], None]) -> None:
+    # Without a gateway no command reaches the bot, so it ends and the container starts it again.
+    try:
+        await discord.join()
+    except Exception as error:  # ruff: ignore[blind-except]
+        stop(f"Discord's gateway closed: {error}")
+        return
+    stop("Discord's gateway closed")
+
+
+async def _put_away(parts: Parts, hub: hub_.Hub, tasks: list[asyncio.Task[None]]) -> None:
+    for task in tasks:
+        task.cancel()
+    # The hub goes quiet first, so that nothing new comes in while the rest is put away.
+    parts.gate.shut()
+    await hub.close()
+    await parts.reminders.close()
+    await parts.sync.close()
+    await parts.commands.stop()
+    with contextlib.suppress(hikari.HikariError):
+        await parts.discord.close()
 
 
 async def purge(
