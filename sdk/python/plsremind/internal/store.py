@@ -34,14 +34,16 @@ def _sharing(state: UserState, item: Item) -> Item:
 
 
 class CacheStore(Cache):
-    def begin(self, principal: Principal, users: collections.abc.Iterable[ID], intents: Intents) -> None:
+    def begin(self, principal: Principal, users: collections.abc.Iterable[ID], intents: Intents) -> tuple[ID, ...]:
         self._self = principal.user_id
         self._connection = self._connection or principal.kind is CredentialKind.CONNECTION
         self._history = Intents.HISTORY in intents
         self._pending.clear()
         named = set(users)
-        for user in [user for user in self._users if user not in named]:
+        dropped = tuple(user for user in self._users if user not in named)
+        for user in dropped:
             self._drop(user)
+        return dropped
 
     def clear(self) -> None:
         self._users.clear()

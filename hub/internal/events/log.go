@@ -12,6 +12,7 @@ import (
 	"github.com/rayakame/plsremind/hub/internal/store/sqlc"
 )
 
+// Actor is who made a change. The zero Actor stands for the hub itself.
 type Actor struct {
 	Kind string
 	ID   uuid.UUID
@@ -37,17 +38,19 @@ func Append(ctx context.Context, q *sqlc.Queries, now time.Time, userID uuid.UUI
 	if err != nil {
 		return err
 	}
-	err = q.InsertEvent(ctx, sqlc.InsertEventParams{
+	params := sqlc.InsertEventParams{
 		UserID:    userID,
 		Seq:       seq,
 		Type:      typ,
 		Payload:   raw,
-		ActorKind: a.Kind,
-		ActorID:   a.ID,
 		Nonce:     a.Nonce,
 		CreatedAt: now,
-	})
-	if err != nil {
+	}
+	if a.Kind != "" {
+		params.ActorKind = &a.Kind
+		params.ActorID = &a.ID
+	}
+	if err := q.InsertEvent(ctx, params); err != nil {
 		return err
 	}
 	return NotifyUser(ctx, q, SignalEvent, userID)

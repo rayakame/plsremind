@@ -1,0 +1,66 @@
+line-length = 120
+target-version = "py315"
+
+[format]
+docstring-code-format = true
+docstring-code-line-length = 80
+quote-style = "double"
+line-ending = "lf"
+exclude = ["plsremind_discord/db/**"]
+
+[lint]
+preview = true
+select = ["ALL"]
+ignore = [
+    "COM812",  # missing trailing comma; conflicts with the formatter, which owns trailing commas
+    "CPY001",  # the repository carries its licence in one file
+    "D",       # an application: nothing here is public API
+    "DOC",
+    "PLW0717", # a try clause is as long as what it guards
+    "PLR6301", # a method stays with its class, so that a stand-in can take its place
+    "ICN001",  # the standard library keeps its own names, as in hikari
+    "TC001",   # lightbulb and risa read annotations when the bot runs, so their imports stay real
+    "TC002",
+    "TC003",
+]
+
+[lint.per-file-ignores]
+"**/__init__.py" = [
+    "F401", # imported but unused
+    "F403", # unable to detect undefined names
+]
+"plsremind_discord/hub.py" = ["PLR0904"] # one method for each thing the bot asks of the hub
+"plsremind_discord/db/**" = [
+    "E501",    # generated: SQL is kept on one line
+    "PLR0913", # generated: one parameter per column
+    "I001",    # generated: its own import order
+    "FBT001",  # generated: converters take what sqlite hands them
+]
+"tests/**" = [
+    "S101",    # use of assert
+    "PLR2004", # magic value comparison
+    "PLR0913", # fixtures and helpers take what they need
+    "PLR0917",
+    "SLF001",  # tests reach into private parts
+    "PLC2701", # and the private modules they test
+    "S105",    # test tokens are not secrets
+    "S106",
+    "RUF029",  # a listener in a test need not await anything
+    "PLR0914", # a test that walks a whole view holds a lot
+    "PLW0108", # a lambda reads what it waits for when it is called
+    "S404",    # the hub under test is a subprocess
+    "PLR0904", # a stand-in has every method of what it stands in for
+    "INP001",
+]
+
+[lint.pylint]
+max-args = 16
+max-positional-args = 5
+
+[lint.isort]
+required-imports = ["from __future__ import annotations"]
+force-single-line = true
+
+[lint.flake8-type-checking]
+# msgspec reads a Struct's annotations when the class is made.
+runtime-evaluated-base-classes = ["msgspec.Struct", "risa.View"]

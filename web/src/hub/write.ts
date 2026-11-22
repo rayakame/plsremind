@@ -1,4 +1,4 @@
-import { NetworkError } from "plsremind";
+import { ApiError, NetworkError } from "plsremind";
 import type {
   Client,
   FollowUp,
@@ -578,7 +578,12 @@ export function removeReminder(hub: Writer, item: Item, reminder: ManualReminder
       ),
     }),
     (id, nonce, signal) =>
-      hub.client.rest.deleteReminder(id, partId(hub, reminder.id), { nonce, signal }),
+      hub.client.rest
+        .deleteReminder(id, partId(hub, reminder.id), { nonce, signal })
+        .catch((error: unknown) => {
+          // The hub drops a reminder by itself once its time has passed.
+          if (!(error instanceof ApiError && error.status === 404)) throw error;
+        }),
   );
 }
 

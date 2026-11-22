@@ -37,7 +37,7 @@ export type Principal =
 export interface ChangeEvent<D, O = D> {
   /** The user the change is about. */
   readonly userId: string;
-  /** Null when the hub itself tells a connection that a user's access changed. */
+  /** Null when the hub made the change by itself. */
   readonly actor: Actor | null;
   /** The nonce of the request that made the change, if it sent one. */
   readonly nonce: string | null;
@@ -94,6 +94,7 @@ export interface UserSyncEvent {
   readonly historyCursor?: string | null;
 }
 
+/** A connection lost a user, or a new session no longer covers them. */
 export interface UserGoneEvent {
   readonly userId: string;
 }

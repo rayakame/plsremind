@@ -159,7 +159,9 @@ export class Client {
       this.#ready = { principal: ready.principal, users: ready.users, intents: ready.intents };
       this.#waiting = new Set(ready.users);
       const self = "userId" in ready.principal ? ready.principal.userId : undefined;
-      this.#store.begin(ready.users, ready.intents, self);
+      for (const userId of this.#store.begin(ready.users, ready.intents, self)) {
+        this.#emit("user.gone", { userId });
+      }
       this.#arrived();
       return;
     }

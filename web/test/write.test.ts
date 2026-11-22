@@ -7,6 +7,7 @@ import {
   patchItem,
   removeItem,
   removeList,
+  removeReminder,
   renameList,
   setDone,
 } from "../src/hub/write.js";
@@ -601,4 +602,24 @@ test("a change to an item outside the view stays laid over it until the item was
   const later = fromWire<Parameters<typeof aheadOf>[1]>({ ...old, priority: "low" });
   dropAhead(hub.own, "old", answered);
   expect(aheadOf(hub.own, later).priority).toBe("low");
+});
+
+test("removing a reminder the hub already removed is not an error", async () => {
+  const reminder = {
+    id: "r1",
+    item_id: "a",
+    remind_at: "2026-11-20T09:00:00Z",
+    created_at: "2026-11-19T09:00:00Z",
+  };
+  const hub = await connectedHub({
+    sync: { items: [wireItem({ id: "a", reminders: [reminder] })] },
+  });
+  hub.route("DELETE", "/users/@me/items/a/reminders/r1", {
+    status: 404,
+    body: { error: { code: "not_found", message: "The resource does not exist." } },
+  });
+  const item = hub.mine().item("a")!;
+  await removeReminder(hub.own, item, item.reminders[0]!);
+  expect(hub.mine().item("a")!.reminders).toEqual([]);
+  expect(hub.sent("DELETE", "/users/@me/items/a/reminders/r1")).toHaveLength(1);
 });

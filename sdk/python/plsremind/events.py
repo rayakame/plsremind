@@ -75,7 +75,7 @@ class ChangeEvent(UserEvent, frozen=True, kw_only=True):
     """A change someone made to a user's data."""
 
     actor: Actor | None
-    """Who made the change. `None` when the hub itself changed what a connection may see."""
+    """Who made the change. `None` when the hub made it by itself."""
     nonce: str | None
     """The nonce of the REST call that made the change, if it sent one."""
 
@@ -239,7 +239,10 @@ class UserSyncEvent(UserEvent, frozen=True, kw_only=True):
 
 
 class UserGoneEvent(UserEvent, frozen=True, kw_only=True):
-    """A connection lost a user: they switched it off, were disabled or deleted."""
+    """A connection lost a user: they switched it off, were disabled or deleted.
+
+    It also comes for a user a new session no longer covers.
+    """
 
 
 class UserReadyEvent(UserEvent, frozen=True, kw_only=True):

@@ -1,0 +1,69 @@
+[project]
+name = "plsremind-discord"
+version = "0.1.0"
+description = "The Discord bot for plsremind: reminders as direct messages, and commands to keep up with them."
+readme = "README.md"
+authors = [{ name = "rayakame" }]
+license = "MIT"
+requires-python = ">=3.15"
+dependencies = [
+    "aiosqlite~=0.22",
+    "hikari-lightbulb[localization]~=3.2",
+    "hikari-risa~=1.3",
+    "msgspec~=0.22",
+    "plsremind",
+]
+
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["plsremind_discord"]
+
+[tool.hatch.build.targets.sdist]
+only-include = ["plsremind_discord"]
+
+[tool.uv.sources]
+plsremind = { path = "../../sdk/python", editable = true }
+
+[dependency-groups]
+nox = [
+    "nox[uv]==2026.10.20",
+]
+pyright = [
+    "pyright==1.1.414",
+]
+pytest = [
+    "asyncpg==0.32.0",
+    "asyncpg-stubs==0.32.0",
+    "coverage==7.17.3",
+    "pytest==9.2.0",
+    "pytest-asyncio==1.5.0",
+]
+ruff = [
+    "ruff==0.17.5",
+]
+sqlc = [
+    "sqlc-bin==1.31.1",
+]
+
+[tool.pyright]
+include = ["plsremind_discord", "tests"]
+pythonVersion = "3.15"
+typeCheckingMode = "strict"
+reportUnnecessaryTypeIgnoreComment = "error"
+
+[tool.coverage.run]
+source = ["plsremind_discord"]
+omit = ["plsremind_discord/db/*"]
+branch = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+xfail_strict = true
+markers = ["hub: needs a real hub, built from this repository, and Docker"]
+filterwarnings = ["error"]
