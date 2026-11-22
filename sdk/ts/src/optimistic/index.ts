@@ -401,19 +401,27 @@ function build(client: Client): OptimisticView {
       drafts.delete(entry.id);
       const realId = answered.get(entry.id);
       answered.delete(entry.id);
+      // Found while the list is still a draft; once it is resolved they already read as moved.
+      const inDraft =
+        realId !== undefined && entry.kind === "list" && user
+          ? user.entries.filter(
+              (other) =>
+                other.kind === "item" &&
+                ((other.create ?? user.item(other.id)) as Item | undefined)?.listId === entry.id,
+            )
+          : [];
       if (realId !== undefined) resolved.set(entry.id, realId);
       // Changes made to the draft now belong to the object that took its place.
       for (const other of (realId !== undefined && user?.entries) || []) {
         if (other.id === entry.id && other.kind === entry.kind) {
           other.id = realId!;
           user!.touch(other.kind, realId!);
-        } else if (entry.kind === "list" && other.kind === "item") {
-          const shownNow = (other.create ?? user!.item(other.id)) as Item | undefined;
-          if (shownNow?.listId !== entry.id) continue;
-          if (other.create) other.create = inRealList(other.create as Item);
-          user!.touch(other.kind, other.id);
-          for (const kind of shown.item) kinds.add(kind);
         }
+      }
+      for (const other of inDraft) {
+        if (other.create) other.create = inRealList(other.create as Item);
+        user!.touch(other.kind, other.id);
+        for (const kind of shown.item) kinds.add(kind);
       }
     }
     if (user && !user.entries.some((other) => other.kind === entry.kind && other.id === entry.id)) {

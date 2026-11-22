@@ -292,6 +292,18 @@ test("an item moved into a draft list settles when someone else's event shows it
   expect(mine().item("a")).toBe(real().item("a"));
 });
 
+test("an item moved into a draft list nobody has read yet is announced when the list is real", async () => {
+  const { view, send, heard } = await setup();
+  const list = draftList(view);
+  void view.apply(
+    [{ kind: "item", id: "a", update: (item) => ({ ...item, listId: list.id }) }],
+    () => new Promise(() => {}),
+  );
+  heard.length = 0;
+  send("list.created", change("u1", realList, list.nonce()));
+  expect(heard.at(-1)!.kinds).toContain("items");
+});
+
 test("a list becoming real leaves pending items that are elsewhere alone", async () => {
   const { view, mine, send, heard } = await setup();
   const list = draftList(view);
