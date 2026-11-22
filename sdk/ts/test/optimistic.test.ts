@@ -252,31 +252,58 @@ test("an item drafted into a draft list follows the list to its real id", async 
     ],
     () => new Promise(() => {}),
   );
-  send(
-    "list.created",
-    change("u1", wireList({ id: "l9", name: "New", position: 1, is_inbox: false }), list.nonce()),
+  send("list.created", change("u1", realList, list.nonce()));
+  expect(mine().item(item)!.listId).toBe("l9");
+});
+
+const realList = wireList({ id: "l9", name: "New", position: 1, is_inbox: false });
+
+test("an item drafted into a draft list after that list became real gets the real id", async () => {
+  const { view, mine, send } = await setup();
+  const list = draftList(view);
+  send("list.created", change("u1", realList, list.nonce()));
+  const item = view.tempId();
+  void view.apply(
+    [
+      {
+        kind: "item",
+        create: fromWire<Item>(wireItem({ id: item, title: "fresh", list_id: list.id })),
+      },
+    ],
+    () => new Promise(() => {}),
   );
   expect(mine().item(item)!.listId).toBe("l9");
 });
 
-test("an item moved into a draft list follows the list and settles once the hub moved it", async () => {
+test("an item moved into a draft list settles when someone else's event shows it there", async () => {
   const { view, mine, real, send } = await setup();
   const list = draftList(view);
-  let nonce = "";
-  void view.apply(
+  const moving = deferred<void>();
+  const moved = view.apply(
     [{ kind: "item", id: "a", update: (item) => ({ ...item, listId: list.id }) }],
-    (given) => {
-      nonce = given;
-      return new Promise(() => {});
-    },
+    () => moving.promise,
   );
-  send(
-    "list.created",
-    change("u1", wireList({ id: "l9", name: "New", position: 1, is_inbox: false }), list.nonce()),
-  );
+  send("list.created", change("u1", realList, list.nonce()));
   expect(mine().item("a")!.listId).toBe("l9");
-  send("item.updated", change("u1", wireItem({ id: "a", list_id: "l9" }), nonce));
+  moving.resolve();
+  await moved;
+  send("item.updated", change("u1", wireItem({ id: "a", list_id: "l9" })));
   expect(mine().item("a")).toBe(real().item("a"));
+});
+
+test("a list becoming real leaves pending items that are elsewhere alone", async () => {
+  const { view, mine, send, heard } = await setup();
+  const list = draftList(view);
+  void view.apply(
+    [{ kind: "item", id: "b", update: rename("edited") }],
+    () => new Promise(() => {}),
+  );
+  const before = { item: mine().item("b"), items: mine().items() };
+  heard.length = 0;
+  send("list.created", change("u1", realList, list.nonce()));
+  expect(mine().item("b")).toBe(before.item);
+  expect(mine().items()).toBe(before.items);
+  expect(heard.map((seen) => seen.kinds)).toEqual([["lists"]]);
 });
 
 test("a change to an object that disappears is dropped", async () => {

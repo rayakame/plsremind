@@ -73,19 +73,6 @@ const shown: Record<Kind, readonly CacheKind[]> = {
 };
 const views = new WeakMap<Client, OptimisticView>();
 
-function follow(entry: Entry, draft: string, real: string): boolean {
-  const moved = (item: Item): Item => (item.listId === draft ? { ...item, listId: real } : item);
-  if (entry.create) {
-    const created = entry.create as Item;
-    entry.create = moved(created);
-    return entry.create !== created;
-  }
-  if (!entry.update) return false;
-  const update = entry.update as (value: Item) => Item;
-  entry.update = ((value: Item) => moved(update(value))) as Entry["update"];
-  return true;
-}
-
 function randomText(length: number): string {
   const bytes = crypto.getRandomValues(new Uint8Array(length));
   let text = "";
@@ -375,6 +362,12 @@ function build(client: Client): OptimisticView {
 
   const keepsHistory = () => client.intents.includes("history");
 
+  // An item made in or moved to a draft list would otherwise end up in no list once it is real.
+  function inRealList(item: Item): Item {
+    const real = resolved.get(item.listId);
+    return real === undefined ? item : { ...item, listId: real };
+  }
+
   function userOf(userId: string | undefined): ViewUser | undefined {
     const base = cache.user(userId);
     if (!base) return undefined;
@@ -412,12 +405,10 @@ function build(client: Client): OptimisticView {
         if (other.id === entry.id && other.kind === entry.kind) {
           other.id = realId!;
           user!.touch(other.kind, realId!);
-        } else if (
-          // An item made in or moved to the draft list would otherwise end up in no list.
-          entry.kind === "list" &&
-          other.kind === "item" &&
-          follow(other, entry.id, realId!)
-        ) {
+        } else if (entry.kind === "list" && other.kind === "item") {
+          const shownNow = (other.create ?? user!.item(other.id)) as Item | undefined;
+          if (shownNow?.listId !== entry.id) continue;
+          if (other.create) other.create = inRealList(other.create as Item);
           user!.touch(other.kind, other.id);
           for (const kind of shown.item) kinds.add(kind);
         }
@@ -563,6 +554,11 @@ function build(client: Client): OptimisticView {
           nonce: "create" in change ? nonceFor(change.create.id) : undefined,
           batch,
         };
+        if (entry.kind === "item" && entry.create) entry.create = inRealList(entry.create as Item);
+        if (entry.kind === "item" && entry.update) {
+          const update = entry.update as (value: Item) => Item;
+          entry.update = ((value: Item) => inRealList(update(value))) as Entry["update"];
+        }
         if (entry.create) {
           drafts.add(entry.id);
           created.push(entry);
