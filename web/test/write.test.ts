@@ -128,6 +128,27 @@ test("an item made in a list that is still a draft stays in that list once the l
   ).toMatchObject([{ title: "Fresh" }]);
 });
 
+test("an item made in a new list that the hub then refuses fails at once and goes", async () => {
+  const hub = await connectedHub();
+  const refusal = deferred<{ status: number; body: unknown }>();
+  hub.route("POST", "/users/@me/lists", () => refusal.promise);
+  void createList(hub.own, "Uni").catch(() => {});
+  const list = hub.mine().lists().at(-1)!.id;
+  let outcome: unknown = "waiting";
+  void createItem(hub.own, { title: "Fresh", listId: list }).then(
+    () => (outcome = "made"),
+    (error: unknown) => (outcome = error),
+  );
+  refusal.resolve({
+    status: 409,
+    body: { error: { code: "limit_reached", message: "Too many lists." } },
+  });
+  await settle();
+  expect(outcome).toBeInstanceOf(Error);
+  expect(ids(hub.mine().items())).toEqual(["a", "b"]);
+  expect(hub.sent("POST", "/users/@me/items")).toHaveLength(0);
+});
+
 test("a change to a draft waits for the real id", async () => {
   const hub = await connectedHub();
   const answer = deferred<{ status: number; body: unknown }>();

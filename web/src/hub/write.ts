@@ -51,6 +51,9 @@ function settled(hub: Writer, id: string): Promise<string> {
   if (!isDraft(id)) return Promise.resolve(id);
   const known = hub.view.resolveId(id);
   if (known !== undefined) return Promise.resolve(known);
+  const never = () => new Error("The object was never created.");
+  // A draft the hub refused is taken back at once, and waiting cannot bring it any more.
+  if (!hub.view.isPending(id)) return Promise.reject(never());
   return new Promise((resolve, reject) => {
     const stop = hub.view.subscribe(() => {
       const real = hub.view.resolveId(id);
@@ -58,10 +61,14 @@ function settled(hub: Writer, id: string): Promise<string> {
         finish();
         return resolve(real);
       }
+      if (!hub.view.isPending(id)) {
+        finish();
+        reject(never());
+      }
     });
     const timer = setTimeout(() => {
       finish();
-      reject(new Error("The object was never created."));
+      reject(never());
     }, waitForDraft);
     function finish() {
       stop();
