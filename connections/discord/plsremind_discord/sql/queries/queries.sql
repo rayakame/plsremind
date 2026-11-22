@@ -11,6 +11,9 @@ DELETE FROM deliveries WHERE sent_at < ?;
 INSERT INTO messages (message_id, channel_id, account_id, user_id, item_id, shown_at, sent_at)
 VALUES (?, ?, ?, ?, ?, ?, ?);
 
+-- name: FindMessage :one
+SELECT message_id FROM messages WHERE message_id = ?;
+
 -- name: MessagesForItem :many
 SELECT * FROM messages WHERE item_id = ? ORDER BY message_id;
 

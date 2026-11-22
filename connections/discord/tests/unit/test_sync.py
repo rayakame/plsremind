@@ -385,3 +385,30 @@ async def test_a_redraw_waiting_for_quiet_is_called_off_when_the_user_is_gone(ma
     made.quiet.set()
     await asyncio.sleep(0)
     assert made.views.redrawn == []
+
+
+async def test_a_message_forgotten_while_a_list_change_reads_its_item_is_not_redrawn(made: Made) -> None:
+    made.hub.knows(things.user(external_ids=("1234", "5678")), ITEM, OTHER)
+    await sent(made, 200, OTHER, account=5678)
+    reading, release = asyncio.Event(), asyncio.Event()
+    item = made.hub.item
+
+    async def held(user: plsremind.ID, item_id: plsremind.ID) -> plsremind.Item | None:
+        reading.set()
+        await release.wait()
+        return await item(user, item_id)
+
+    work = things.a_list(things.WORK, "Work", 1)
+    renamed_list = msgspec.structs.replace(work, name="Job")
+    with mock.patch.object(made.hub, "item", held):
+        changing = asyncio.create_task(
+            made.sync.list_changed(
+                plsremind.ListUpdateEvent(user_id=MIA, actor=None, nonce=None, list=renamed_list, old_list=work)
+            )
+        )
+        await asyncio.wait_for(reading.wait(), 2)
+        await made.sync.user_changed(moved(things.user(external_ids=("1234",))))
+        release.set()
+        await changing
+        await settled(made)
+    assert made.views.redrawn == []

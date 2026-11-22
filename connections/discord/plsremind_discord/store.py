@@ -72,6 +72,9 @@ class Store:
                     sent_at=_utc(now),
                 )
 
+    async def knows_message(self, message_id: int) -> bool:
+        return await queries.find_message(self._db, message_id=message_id) is not None
+
     async def messages_for_item(self, item_id: str) -> collections.abc.Sequence[models.Message]:
         return await queries.messages_for_item(self._db, item_id=item_id)
 

@@ -136,6 +136,9 @@ class Sync:
 
     async def _redraw(self, message: int, channel: int) -> None:
         try:
+            # Forgotten since the redraw was asked for, for instance because its account was unlinked.
+            if not await self._store.knows_message(message):
+                return
             async with self._views.open(channel, message, ReminderView) as view:
                 pass
         except risa.MessageOutdatedError, hikari.NotFoundError, hikari.ForbiddenError:

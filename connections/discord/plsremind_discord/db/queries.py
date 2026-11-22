@@ -10,6 +10,7 @@ __all__: collections.abc.Sequence[str] = (
     "add_delivery",
     "add_message",
     "find_delivery",
+    "find_message",
     "forget_message",
     "forget_user",
     "messages_for_item",
@@ -60,6 +61,10 @@ DELETE FROM deliveries WHERE sent_at < ?
 ADD_MESSAGE: typing.Final[str] = """-- name: AddMessage :exec
 INSERT INTO messages (message_id, channel_id, account_id, user_id, item_id, shown_at, sent_at)
 VALUES (?, ?, ?, ?, ?, ?, ?)
+"""
+
+FIND_MESSAGE: typing.Final[str] = """-- name: FindMessage :one
+SELECT message_id FROM messages WHERE message_id = ?
 """
 
 MESSAGES_FOR_ITEM: typing.Final[str] = """-- name: MessagesForItem :many
@@ -146,6 +151,13 @@ async def purge_deliveries(conn: aiosqlite.Connection, *, sent_at: datetime.date
 
 async def add_message(conn: aiosqlite.Connection, *, message_id: int, channel_id: int, account_id: int, user_id: str, item_id: str, shown_at: datetime.datetime | None, sent_at: datetime.datetime) -> None:
     await conn.execute(ADD_MESSAGE, (message_id, channel_id, account_id, user_id, item_id, shown_at, sent_at))
+
+
+async def find_message(conn: aiosqlite.Connection, *, message_id: int) -> int | None:
+    row = await (await conn.execute(FIND_MESSAGE, (message_id,))).fetchone()
+    if row is None:
+        return None
+    return row[0]
 
 
 def messages_for_item(conn: aiosqlite.Connection, *, item_id: str) -> QueryResults[models.Message]:
