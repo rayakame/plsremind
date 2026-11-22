@@ -2142,7 +2142,7 @@ components:
           description: When it goes out. Later than `scheduled_for` if quiet hours hold it back.
     ManualReminder:
       type: object
-      description: A reminder a user set by hand. It exists until its time has passed.
+      description: A reminder a user set by hand. It stays on its item until it has fired, a few seconds after its time.
       required: [id, item_id, remind_at, created_at]
       properties:
         id:
