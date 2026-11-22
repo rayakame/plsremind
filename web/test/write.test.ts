@@ -107,6 +107,27 @@ test("a due day or time is sent the way the hub wants it, in the profile's zone"
   });
 });
 
+test("an item made in a list that is still a draft stays in that list once the list is real", async () => {
+  const hub = await connectedHub();
+  hub.route("POST", "/users/@me/lists", () => new Promise(() => {}));
+  hub.route("POST", "/users/@me/items", () => new Promise(() => {}));
+  void createList(hub.own, "Uni");
+  const list = hub.mine().lists().at(-1)!.id;
+  void createItem(hub.own, { title: "Fresh", listId: list });
+  await settle();
+  const nonce = hub.sent("POST", "/users/@me/lists")[0]!.headers["x-request-nonce"]!;
+  await hub.send(
+    "list.created",
+    change("u1", wireList({ id: "l9", name: "Uni", position: 2, is_inbox: false }), nonce),
+  );
+  expect(
+    hub
+      .mine()
+      .items()
+      .filter((item) => item.listId === "l9"),
+  ).toMatchObject([{ title: "Fresh" }]);
+});
+
 test("a change to a draft waits for the real id", async () => {
   const hub = await connectedHub();
   const answer = deferred<{ status: number; body: unknown }>();

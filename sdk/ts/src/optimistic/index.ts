@@ -49,8 +49,8 @@ type Kind = Change["kind"];
 interface Entry {
   readonly kind: Kind;
   id: string;
-  readonly create: Item | List | undefined;
-  readonly update: ((value: never) => unknown) | undefined;
+  create: Item | List | undefined;
+  update: ((value: never) => unknown) | undefined;
   readonly nonce: string | undefined;
   readonly batch: Batch;
 }
@@ -72,6 +72,19 @@ const shown: Record<Kind, readonly CacheKind[]> = {
   profile: ["profile"],
 };
 const views = new WeakMap<Client, OptimisticView>();
+
+function follow(entry: Entry, draft: string, real: string): boolean {
+  const moved = (item: Item): Item => (item.listId === draft ? { ...item, listId: real } : item);
+  if (entry.create) {
+    const created = entry.create as Item;
+    entry.create = moved(created);
+    return entry.create !== created;
+  }
+  if (!entry.update) return false;
+  const update = entry.update as (value: Item) => Item;
+  entry.update = ((value: Item) => moved(update(value))) as Entry["update"];
+  return true;
+}
 
 function randomText(length: number): string {
   const bytes = crypto.getRandomValues(new Uint8Array(length));
@@ -399,6 +412,14 @@ function build(client: Client): OptimisticView {
         if (other.id === entry.id && other.kind === entry.kind) {
           other.id = realId!;
           user!.touch(other.kind, realId!);
+        } else if (
+          // An item made in or moved to the draft list would otherwise end up in no list.
+          entry.kind === "list" &&
+          other.kind === "item" &&
+          follow(other, entry.id, realId!)
+        ) {
+          user!.touch(other.kind, other.id);
+          for (const kind of shown.item) kinds.add(kind);
         }
       }
     }

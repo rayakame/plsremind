@@ -228,6 +228,57 @@ test("a change to a draft follows it to its real id", async () => {
   expect(mine().item("real")!.title).toBe("edited");
 });
 
+function draftList(view: ReturnType<typeof optimistic>): { id: string; nonce: () => string } {
+  const id = view.tempId();
+  let nonce = "";
+  const created = fromWire<List>(wireList({ id, name: "New", position: 1, is_inbox: false }));
+  void view.apply([{ kind: "list", create: created }], (given) => {
+    nonce = given;
+    return new Promise(() => {});
+  });
+  return { id, nonce: () => nonce };
+}
+
+test("an item drafted into a draft list follows the list to its real id", async () => {
+  const { view, mine, send } = await setup();
+  const list = draftList(view);
+  const item = view.tempId();
+  void view.apply(
+    [
+      {
+        kind: "item",
+        create: fromWire<Item>(wireItem({ id: item, title: "fresh", list_id: list.id })),
+      },
+    ],
+    () => new Promise(() => {}),
+  );
+  send(
+    "list.created",
+    change("u1", wireList({ id: "l9", name: "New", position: 1, is_inbox: false }), list.nonce()),
+  );
+  expect(mine().item(item)!.listId).toBe("l9");
+});
+
+test("an item moved into a draft list follows the list and settles once the hub moved it", async () => {
+  const { view, mine, real, send } = await setup();
+  const list = draftList(view);
+  let nonce = "";
+  void view.apply(
+    [{ kind: "item", id: "a", update: (item) => ({ ...item, listId: list.id }) }],
+    (given) => {
+      nonce = given;
+      return new Promise(() => {});
+    },
+  );
+  send(
+    "list.created",
+    change("u1", wireList({ id: "l9", name: "New", position: 1, is_inbox: false }), list.nonce()),
+  );
+  expect(mine().item("a")!.listId).toBe("l9");
+  send("item.updated", change("u1", wireItem({ id: "a", list_id: "l9" }), nonce));
+  expect(mine().item("a")).toBe(real().item("a"));
+});
+
 test("a change to an object that disappears is dropped", async () => {
   const { view, mine, real, send } = await setup();
   void view.apply([{ kind: "item", id: "a", update: rename("x") }], () => new Promise(() => {}));

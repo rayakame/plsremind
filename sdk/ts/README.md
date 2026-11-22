@@ -230,7 +230,8 @@ await view.apply(
 - A change creates, updates or removes an `item` or a `list`, or updates a `plan` or the
   `profile`. For a new object, take an id from `view.tempId()`; `view.resolveId(tempId)`
   gives the real one once it is known.
-  It answers once the real object has taken the draft's place.
+  It answers once the real object has taken the draft's place. Pending items that name a
+  draft list in `listId` follow the list to its real id.
 - When one `apply` creates several objects of one kind, send each create with a nonce of
   its own, which the call gets as a second argument: `(nonce, nonceFor) =>
 client.rest.createItem(body, { nonce: nonceFor(tempId) })`. Without it the view matches
