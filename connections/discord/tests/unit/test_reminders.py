@@ -653,6 +653,27 @@ async def test_a_reminder_records_what_it_shows_and_is_redrawn_if_its_list_chang
     assert made.redrawn == [(100, CHANNEL + 1234)]
 
 
+async def test_each_reminder_records_its_own_version_when_the_list_changed_between_two_accounts(
+    made: Made,
+) -> None:
+    both = things.user(external_ids=("1234", "5678"))
+    made.hub.knows(both, ITEM)
+    inbox, work = made.hub.their_lists[MIA]
+    renamed = msgspec.structs.replace(inbox, name="Eingang", updated_at=ITEM.updated_at + datetime.timedelta(hours=1))
+    version = made.hub.version
+
+    def drawn(item: plsremind.Item) -> datetime.datetime:
+        seen = version(item)
+        made.hub.their_lists[MIA] = (renamed, work)
+        return seen
+
+    with mock.patch.object(made.hub, "version", side_effect=drawn):
+        await made.reminders.deliver(delivery(to=both))
+    rows = await made.store.messages_for_item(ITEM.id)
+    assert [(row.account_id, row.shown_at) for row in rows] == [(1234, ITEM.updated_at), (5678, renamed.updated_at)]
+    assert made.redrawn == [(100, CHANNEL + 1234)]
+
+
 async def test_a_reminder_whose_item_did_not_change_meanwhile_needs_no_redraw(made: Made) -> None:
     await made.reminders.deliver(delivery())
     assert made.redrawn == []

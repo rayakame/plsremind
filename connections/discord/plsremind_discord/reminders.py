@@ -41,6 +41,11 @@ class _Sending(typing.NamedTuple):
     refused: bool
 
 
+class _Drawn(typing.NamedTuple):
+    rendered: ui.Rendered
+    version: datetime.datetime | None
+
+
 class Reminders:
     """Turns the hub's deliveries into direct messages and tells the hub how each one went."""
 
@@ -162,17 +167,16 @@ class Reminders:
         accounts = self._accounts(delivery, first=first)
         if not accounts:
             return await self._report(delivery.id, self._texts("delivery.no_account", locale))
-        views: dict[int, ui.Rendered] = {}
-        version: datetime.datetime | None = None
+        views: dict[int, _Drawn] = {}
         for account in accounts:
             view = ReminderView(user=common.pack(delivery.user.id), item=common.pack(delivery.item.id), account=account)
-            views[account] = await self._views.build(view)
+            rendered = await self._views.build(view)
             if view.shown is None or view.shown.item is None:
                 # The user or the item is out of reach this moment; if it stays so, the hub withdraws the delivery.
                 _LOGGER.info("delivery %s waits until its item can be read", delivery.id)
                 return _Outcome.PASSING
-            version = view.shown.version
-        return await self._conclude(delivery, await self._send(delivery, views, version), locale)
+            views[account] = _Drawn(rendered, view.shown.version)
+        return await self._conclude(delivery, await self._send(delivery, views), locale)
 
     async def _conclude(self, delivery: plsremind.Delivery, sending: _Sending, locale: hikari.Locale) -> _Outcome:
         if sending.sent:
@@ -182,12 +186,10 @@ class Reminders:
         reason = "delivery.refused" if sending.refused else "delivery.closed_dms"
         return await self._report(delivery.id, self._texts(reason, locale))
 
-    async def _send(
-        self, delivery: plsremind.Delivery, views: dict[int, ui.Rendered], version: datetime.datetime | None
-    ) -> _Sending:
+    async def _send(self, delivery: plsremind.Delivery, views: dict[int, _Drawn]) -> _Sending:
         sent: list[Sent] = []
         passing = refused = False
-        for account, rendered in views.items():
+        for account, (rendered, version) in views.items():
             try:
                 channel = await self._rest.create_dm_channel(account)
                 message = await self._rest.create_message(
