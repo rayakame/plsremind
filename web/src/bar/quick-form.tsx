@@ -1,6 +1,6 @@
 import type { Priority } from "plsremind";
 import { useState, type FormEvent } from "react";
-import { useLists, useResolved } from "../hub/hooks.js";
+import { useLists, usePickedList } from "../hub/hooks.js";
 import type { ItemDraft } from "../hub/write.js";
 import { useT } from "../i18n/index.js";
 import { Button, Field, Input, Select } from "../ui/controls.js";
@@ -23,7 +23,7 @@ export function QuickForm(props: {
   const [time, setTime] = useState("");
   const [priority, setPriority] = useState<Priority>("normal");
   const [picked, setPicked] = useState(props.listId ?? inbox);
-  const listId = useResolved(picked).id ?? picked;
+  const listId = usePickedList(picked, inbox);
 
   const submit = (event: FormEvent) => {
     event.preventDefault();

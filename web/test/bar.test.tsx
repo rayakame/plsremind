@@ -114,3 +114,27 @@ test("the details form keeps showing a new list picked before the hub confirmed 
     list_id: "l9",
   });
 });
+
+test("the details form falls back to the inbox when a new list picked there is refused", async () => {
+  const app = await renderApp();
+  const answer = deferred<{ status: number; body: unknown }>();
+  app.route("POST", "/users/@me/lists", () => answer.promise);
+  app.route("POST", "/users/@me/items", { status: 201, body: wireItem({ id: "n" }) });
+  await userEvent.click(screen.getByRole("button", { name: "New list" }));
+  await userEvent.type(within(screen.getByRole("dialog")).getByLabelText("Name"), "Errands{Enter}");
+  await userEvent.click(screen.getByRole("button", { name: "Create" }));
+  const form = within(screen.getByRole("dialog", { name: "New item" }));
+  await userEvent.selectOptions(form.getByLabelText("List"), "Errands");
+  answer.resolve({
+    status: 409,
+    body: { error: { code: "limit_reached", message: "Too many lists." } },
+  });
+  await waitFor(() => expect(form.queryByRole("option", { name: "Errands" })).toBeNull());
+  await userEvent.type(form.getByLabelText("Title"), "Buy stamps");
+  await userEvent.click(form.getByRole("button", { name: "Create" }));
+  await waitFor(() => expect(app.sent("POST", "/users/@me/items")).toHaveLength(1));
+  expect(app.sent("POST", "/users/@me/items")[0]!.body).toEqual({
+    title: "Buy stamps",
+    list_id: "l1",
+  });
+});

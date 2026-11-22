@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
-import { change, renderApp, wireItem, wireUser } from "./support.js";
+import { change, deferred, renderApp, wireItem, wireUser } from "./support.js";
 
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ["Date"] });
@@ -139,4 +139,21 @@ test("an older item deleted elsewhere leaves the list", async () => {
   await waitFor(() => expect(titles()).toHaveLength(4));
   await app.send("item.deleted", change("u1", { id: "o1" }));
   expect(titles()).toHaveLength(3);
+});
+
+test("a new list picked in the filter and then refused lets everything show again", async () => {
+  const app = await renderApp({ path: "/done", sync: { history } });
+  const answer = deferred<{ status: number; body: unknown }>();
+  app.route("POST", "/users/@me/lists", () => answer.promise);
+  await userEvent.click(screen.getByRole("button", { name: "New list" }));
+  await userEvent.type(within(screen.getByRole("dialog")).getByLabelText("Name"), "Errands{Enter}");
+  await userEvent.selectOptions(screen.getByLabelText("List"), "Errands");
+  expect(titles()).toEqual([]);
+  answer.resolve({
+    status: 409,
+    body: { error: { code: "limit_reached", message: "Too many lists." } },
+  });
+  await waitFor(() =>
+    expect(titles()).toEqual(["This morning", "Yesterday evening", "Last month"]),
+  );
 });

@@ -66,6 +66,13 @@ export function useResolved(id: string | undefined): { id: string | undefined; k
   return { id: resolved, key };
 }
 
+export function usePickedList(picked: string, otherwise: string): string {
+  const lists = useLists();
+  const id = useResolved(picked || undefined).id ?? picked;
+  // A list that is gone, a draft the hub refused for one, must not stay picked unseen.
+  return id === "" || lists.some((list) => list.id === id) ? id : otherwise;
+}
+
 const connectionEvents = ["ready", "resumed", "disconnected", "closed"] as const;
 
 export function useConnection(): ClientStatus {
