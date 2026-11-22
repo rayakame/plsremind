@@ -206,12 +206,17 @@ func TestInfoNamesGateway(t *testing.T) {
 func TestDatabaseTroubleDoesNotLookLikeRevokedAccess(t *testing.T) {
 	e := testkit.New(t)
 	mia := e.User(t, "mia")
-	gw := e.Gateway(t, personalToken(t, mia), "deliveries", "items")
-	gw.Expect(t, "user.sync")
-	// The session's start reads personal_tokens too. An event from a change made after
-	// user.sync can only go out in a later round of its work, so the start is over.
-	require.Equal(t, 201, mia.Do(t, "POST", "/users/@me/items", J{"title": "x"}).Status)
-	gw.Expect(t, "item.created")
+	tok := mia.Do(t, "POST", "/users/@me/tokens", J{"name": "gateway", "remind": true})
+	require.Equal(t, 201, tok.Status)
+	token := tok.Get("token").String()
+	first := e.Gateway(t, token, "deliveries")
+	testkit.DueSoon(t, e, mia)
+	first.Expect(t, "delivery.created")
+	first.Close()
+	// The start of a session reads personal_tokens too. Its last step hands out what is
+	// still pending, so the delivery coming again at this login means the start is over.
+	gw := e.Gateway(t, token, "deliveries")
+	gw.Expect(t, "delivery.created")
 	ctx := context.Background()
 	_, err := e.Pool.Exec(ctx, "ALTER TABLE personal_tokens RENAME TO personal_tokens_away")
 	require.NoError(t, err)
