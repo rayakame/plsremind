@@ -42,6 +42,8 @@ export interface OptimisticView extends Cache {
   tempId(): string;
   /** The real id behind a temporary one, once it is known. */
   resolveId(tempId: string): string | undefined;
+  /** Whether the draft with this id still waits for the hub. False once it is real or taken back. */
+  isPending(tempId: string): boolean;
 }
 
 type Kind = Change["kind"];
@@ -617,5 +619,6 @@ function build(client: Client): OptimisticView {
     apply,
     tempId: () => `tmp_${randomText(16)}`,
     resolveId: (tempId) => resolved.get(tempId),
+    isPending: (tempId) => drafts.has(tempId),
   };
 }

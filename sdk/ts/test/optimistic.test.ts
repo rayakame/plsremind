@@ -240,7 +240,7 @@ function draftList(view: ReturnType<typeof optimistic>): { id: string; nonce: ()
 }
 
 test("an item drafted into a draft list follows the list to its real id", async () => {
-  const { view, mine, send } = await setup();
+  const { view, mine, send, heard } = await setup();
   const list = draftList(view);
   const item = view.tempId();
   void view.apply(
@@ -254,6 +254,7 @@ test("an item drafted into a draft list follows the list to its real id", async 
   );
   send("list.created", change("u1", realList, list.nonce()));
   expect(mine().item(item)!.listId).toBe("l9");
+  expect(heard.at(-1)!.kinds).toContain("items");
 });
 
 const realList = wireList({ id: "l9", name: "New", position: 1, is_inbox: false });
@@ -304,6 +305,26 @@ test("a list becoming real leaves pending items that are elsewhere alone", async
   expect(mine().item("b")).toBe(before.item);
   expect(mine().items()).toBe(before.items);
   expect(heard.map((seen) => seen.kinds)).toEqual([["lists"]]);
+});
+
+test("a draft is pending until the real object takes its place or it is taken back", async () => {
+  const { view, send } = await setup();
+  const kept = draftList(view);
+  expect(view.isPending(kept.id)).toBe(true);
+  send("list.created", change("u1", realList, kept.nonce()));
+  expect(view.isPending(kept.id)).toBe(false);
+
+  const refused = view.tempId();
+  const created = fromWire<List>(
+    wireList({ id: refused, name: "Gone", position: 2, is_inbox: false }),
+  );
+  const failing = deferred<List>();
+  const applied = view.apply([{ kind: "list", create: created }], () => failing.promise);
+  expect(view.isPending(refused)).toBe(true);
+  failing.reject(new Error("refused"));
+  await applied.catch(() => {});
+  expect(view.isPending(refused)).toBe(false);
+  expect(view.isPending("l1")).toBe(false);
 });
 
 test("a change to an object that disappears is dropped", async () => {
