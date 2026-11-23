@@ -1266,6 +1266,9 @@ paths:
                   description: Defaults to all intents.
                   items:
                     type: string
+                install_url:
+                  type: string
+                  description: Where users add the app on the provider's side, such as a Discord install link. Empty or an https address of at most 512 characters.
       responses:
         "201":
           description: The connection. `token` is only shown this once.
@@ -1301,6 +1304,8 @@ paths:
                   type: array
                   items:
                     type: string
+                install_url:
+                  type: string
       responses:
         "200":
           description: The updated connection.
@@ -2221,7 +2226,7 @@ components:
           format: date-time
     Connection:
       type: object
-      required: [id, name, description, provider, enabled, allowed_intents, created_at, last_used_at]
+      required: [id, name, description, provider, enabled, allowed_intents, install_url, reach, created_at, last_used_at]
       properties:
         id:
           type: string
@@ -2236,6 +2241,12 @@ components:
           type: boolean
         allowed_intents:
           $ref: "#/components/schemas/Intents"
+        install_url:
+          type: string
+          description: Where users add the app on the provider's side; empty when there is no such place.
+        reach:
+          type: integer
+          description: How many users the connection would remind now.
         token:
           type: string
           description: Only present right after creating the connection or replacing its token.
@@ -2247,7 +2258,7 @@ components:
           format: date-time
     UserConnection:
       type: object
-      required: [id, name, description, provider, linked, enabled, remind, intents]
+      required: [id, name, description, provider, linked, enabled, remind, intents, install_url, last_delivery]
       properties:
         id:
           type: string
@@ -2269,6 +2280,31 @@ components:
           description: Whether the user is reminded through this connection. On unless the user turns it off.
         intents:
           $ref: "#/components/schemas/Intents"
+        install_url:
+          type: string
+          description: Where the user adds the app on the provider's side; empty when there is no such place.
+        last_delivery:
+          description: How the newest delivery through this connection to the user went, null before the first.
+          oneOf:
+            - type: "null"
+            - $ref: "#/components/schemas/LastDelivery"
+    LastDelivery:
+      type: object
+      required: [status, reason, at, test]
+      properties:
+        status:
+          type: string
+          enum: [pending, delivered, failed, expired]
+        reason:
+          type: string
+          description: What the connection reported when it failed; empty otherwise.
+        at:
+          type: string
+          format: date-time
+          description: When it was closed, or created while it is still pending.
+        test:
+          type: boolean
+          description: True when it was a test the user sent, not a reminder.
     LoginProvider:
       type: object
       required: [key, type, name, login_enabled, link_enabled, client_id, has_client_secret, issuer_url]

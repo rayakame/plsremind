@@ -367,3 +367,31 @@ func TestDetachedSessionDoesNotSwallowWhatTheHubMissed(t *testing.T) {
 		require.Equal(t, int64(1), second.Expect(t, "delivery.created").Get("data.attempt").Int(), "round %d", round)
 	}
 }
+
+func TestTwoAppsOfOneKindAreIndependent(t *testing.T) {
+	e := testkit.New(t)
+	first, second := e.Connection(t, "discord"), e.Connection(t, "discord")
+	mia := testkit.Linked(t, e, "mia", "111")
+	a, b := e.Gateway(t, first.Token, "deliveries"), e.Gateway(t, second.Token, "deliveries")
+
+	testkit.DueSoon(t, e, mia)
+	toFirst, toSecond := a.Expect(t, "delivery.created"), b.Expect(t, "delivery.created")
+	require.NotEqual(t, toFirst.Get("data.id").String(), toSecond.Get("data.id").String())
+	a.ExpectQuiet(t)
+	b.ExpectQuiet(t)
+
+	require.Equal(t, 200, first.Do(t, "PUT", "/deliveries/"+toFirst.Get("data.id").String(), J{"status": "delivered"}).Status)
+	require.Equal(t, 404, first.Do(t, "PUT", "/deliveries/"+toSecond.Get("data.id").String(), J{"status": "delivered"}).Status)
+	apps := mia.Do(t, "GET", "/users/@me/connections", nil)
+	require.Equal(t, "delivered", apps.Get(`#(id=="`+first.ID+`").last_delivery.status`).String())
+	require.Equal(t, "pending", apps.Get(`#(id=="`+second.ID+`").last_delivery.status`).String())
+
+	require.Equal(t, 200, mia.Do(t, "PUT", "/users/@me/connections/"+second.ID, J{"remind": false}).Status)
+	b.Drain(t)
+	testkit.DueSoon(t, e, mia)
+	a.Expect(t, "delivery.created")
+	b.ExpectQuiet(t)
+	admin := e.Admin(t).Do(t, "GET", "/admin/connections", nil)
+	require.Equal(t, int64(1), admin.Get(`#(id=="`+first.ID+`").reach`).Int())
+	require.Equal(t, int64(0), admin.Get(`#(id=="`+second.ID+`").reach`).Int())
+}

@@ -21,6 +21,7 @@ type Connection struct {
 	CreatedAt      time.Time
 	LastUsedAt     *time.Time
 	AllowedIntents []string
+	InstallUrl     string
 }
 
 type ConnectionGrant struct {
