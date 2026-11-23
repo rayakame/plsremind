@@ -205,7 +205,10 @@ func TestInfoNamesGateway(t *testing.T) {
 
 func TestDatabaseTroubleDoesNotLookLikeRevokedAccess(t *testing.T) {
 	e := testkit.New(t)
-	gw := e.Gateway(t, personalToken(t, e.User(t, "mia")), "deliveries")
+	// With deliveries the start of a session reads personal_tokens as well, and the
+	// rename below could hit it instead of the heartbeat checks this test is about.
+	gw := e.Gateway(t, personalToken(t, e.User(t, "mia")), "lists")
+	gw.Expect(t, "user.sync")
 	ctx := context.Background()
 	_, err := e.Pool.Exec(ctx, "ALTER TABLE personal_tokens RENAME TO personal_tokens_away")
 	require.NoError(t, err)

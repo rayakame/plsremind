@@ -1,7 +1,7 @@
 import type { Item } from "plsremind";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useBar } from "../bar/context.js";
-import { useHistory, useLists } from "../hub/hooks.js";
+import { useHistory, useLists, usePickedList } from "../hub/hooks.js";
 import { useNow } from "../hub/now.js";
 import { useOlderDone } from "../hub/older.js";
 import { useHub } from "../hub/session.js";
@@ -29,7 +29,8 @@ export function DonePage() {
   const { filter } = useBar();
   const { selected, select } = useSelection();
   const open = useOpenItem();
-  const [listId, setListId] = useState("");
+  const [picked, setPicked] = useState("");
+  const listId = usePickedList(picked, "");
 
   const all = useMemo(
     () => (older.items.length === 0 ? history : [...history, ...older.items]),
@@ -91,7 +92,7 @@ export function DonePage() {
         <h1 className="h1">{t("nav.done")}</h1>
         <div className="line">
           <Field label={t("item.list")}>
-            <Select value={listId} onChange={(event) => setListId(event.target.value)}>
+            <Select value={listId} onChange={(event) => setPicked(event.target.value)}>
               <option value="">{t("done.allLists")}</option>
               {lists.map((list) => (
                 <option key={list.id} value={list.id}>

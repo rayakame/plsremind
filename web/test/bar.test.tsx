@@ -1,7 +1,7 @@
 import { cleanup, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, expect, test } from "vitest";
-import { renderApp, wireItem } from "./support.js";
+import { change, deferred, renderApp, wireItem, wireList } from "./support.js";
 
 afterEach(cleanup);
 
@@ -85,4 +85,56 @@ test("going somewhere else empties the bar", async () => {
   await userEvent.type(bar(), "call");
   await userEvent.click(screen.getByRole("link", { name: /Work/ }));
   expect((bar() as HTMLInputElement).value).toBe("");
+});
+
+test("the details form keeps showing a new list picked before the hub confirmed it", async () => {
+  const app = await renderApp();
+  const answer = deferred<{ status: number; body: unknown }>();
+  let nonce = "";
+  app.route("POST", "/users/@me/lists", (call) => {
+    nonce = call.headers["x-request-nonce"]!;
+    return answer.promise;
+  });
+  app.route("POST", "/users/@me/items", { status: 201, body: wireItem({ id: "n" }) });
+  await userEvent.click(screen.getByRole("button", { name: "New list" }));
+  await userEvent.type(within(screen.getByRole("dialog")).getByLabelText("Name"), "Errands{Enter}");
+  await userEvent.click(screen.getByRole("button", { name: "Create" }));
+  const form = within(screen.getByRole("dialog", { name: "New item" }));
+  await userEvent.selectOptions(form.getByLabelText("List"), "Errands");
+  expect((form.getByLabelText("List") as HTMLSelectElement).value).toMatch(/^tmp_/);
+  const list = wireList({ id: "l9", name: "Errands", position: 2, is_inbox: false });
+  await app.send("list.created", change("u1", list, nonce));
+  answer.resolve({ status: 201, body: list });
+  await waitFor(() => expect((form.getByLabelText("List") as HTMLSelectElement).value).toBe("l9"));
+  await userEvent.type(form.getByLabelText("Title"), "Buy stamps");
+  await userEvent.click(form.getByRole("button", { name: "Create" }));
+  await waitFor(() => expect(app.sent("POST", "/users/@me/items")).toHaveLength(1));
+  expect(app.sent("POST", "/users/@me/items")[0]!.body).toEqual({
+    title: "Buy stamps",
+    list_id: "l9",
+  });
+});
+
+test("the details form falls back to the inbox when a new list picked there is refused", async () => {
+  const app = await renderApp();
+  const answer = deferred<{ status: number; body: unknown }>();
+  app.route("POST", "/users/@me/lists", () => answer.promise);
+  app.route("POST", "/users/@me/items", { status: 201, body: wireItem({ id: "n" }) });
+  await userEvent.click(screen.getByRole("button", { name: "New list" }));
+  await userEvent.type(within(screen.getByRole("dialog")).getByLabelText("Name"), "Errands{Enter}");
+  await userEvent.click(screen.getByRole("button", { name: "Create" }));
+  const form = within(screen.getByRole("dialog", { name: "New item" }));
+  await userEvent.selectOptions(form.getByLabelText("List"), "Errands");
+  answer.resolve({
+    status: 409,
+    body: { error: { code: "limit_reached", message: "Too many lists." } },
+  });
+  await waitFor(() => expect(form.queryByRole("option", { name: "Errands" })).toBeNull());
+  await userEvent.type(form.getByLabelText("Title"), "Buy stamps");
+  await userEvent.click(form.getByRole("button", { name: "Create" }));
+  await waitFor(() => expect(app.sent("POST", "/users/@me/items")).toHaveLength(1));
+  expect(app.sent("POST", "/users/@me/items")[0]!.body).toEqual({
+    title: "Buy stamps",
+    list_id: "l1",
+  });
 });

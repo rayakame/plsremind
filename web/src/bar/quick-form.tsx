@@ -1,6 +1,6 @@
 import type { Priority } from "plsremind";
 import { useState, type FormEvent } from "react";
-import { useLists } from "../hub/hooks.js";
+import { useLists, usePickedList } from "../hub/hooks.js";
 import type { ItemDraft } from "../hub/write.js";
 import { useT } from "../i18n/index.js";
 import { Button, Field, Input, Select } from "../ui/controls.js";
@@ -22,7 +22,8 @@ export function QuickForm(props: {
   const [day, setDay] = useState(props.day ?? "");
   const [time, setTime] = useState("");
   const [priority, setPriority] = useState<Priority>("normal");
-  const [listId, setListId] = useState(props.listId ?? inbox);
+  const [picked, setPicked] = useState(props.listId ?? inbox);
+  const listId = usePickedList(picked, inbox);
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
@@ -64,7 +65,7 @@ export function QuickForm(props: {
           </Select>
         </Field>
         <Field label={t("item.list")}>
-          <Select value={listId} onChange={(event) => setListId(event.target.value)}>
+          <Select value={listId} onChange={(event) => setPicked(event.target.value)}>
             {lists.map((list) => (
               <option key={list.id} value={list.id}>
                 {list.name}

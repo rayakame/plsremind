@@ -42,6 +42,8 @@ export interface OptimisticView extends Cache {
   tempId(): string;
   /** The real id behind a temporary one, once it is known. */
   resolveId(tempId: string): string | undefined;
+  /** Whether the draft with this id still waits for the hub. False once it is real or taken back. */
+  isPending(tempId: string): boolean;
 }
 
 type Kind = Change["kind"];
@@ -49,8 +51,8 @@ type Kind = Change["kind"];
 interface Entry {
   readonly kind: Kind;
   id: string;
-  readonly create: Item | List | undefined;
-  readonly update: ((value: never) => unknown) | undefined;
+  create: Item | List | undefined;
+  update: ((value: never) => unknown) | undefined;
   readonly nonce: string | undefined;
   readonly batch: Batch;
 }
@@ -362,6 +364,12 @@ function build(client: Client): OptimisticView {
 
   const keepsHistory = () => client.intents.includes("history");
 
+  // An item made in or moved to a draft list would otherwise end up in no list once it is real.
+  function inRealList(item: Item): Item {
+    const real = resolved.get(item.listId);
+    return real === undefined ? item : { ...item, listId: real };
+  }
+
   function userOf(userId: string | undefined): ViewUser | undefined {
     const base = cache.user(userId);
     if (!base) return undefined;
@@ -393,6 +401,15 @@ function build(client: Client): OptimisticView {
       drafts.delete(entry.id);
       const realId = answered.get(entry.id);
       answered.delete(entry.id);
+      // Found while the list is still a draft; once it is resolved they already read as moved.
+      const inDraft =
+        realId !== undefined && entry.kind === "list" && user
+          ? user.entries.filter(
+              (other) =>
+                other.kind === "item" &&
+                ((other.create ?? user.item(other.id)) as Item | undefined)?.listId === entry.id,
+            )
+          : [];
       if (realId !== undefined) resolved.set(entry.id, realId);
       // Changes made to the draft now belong to the object that took its place.
       for (const other of (realId !== undefined && user?.entries) || []) {
@@ -400,6 +417,11 @@ function build(client: Client): OptimisticView {
           other.id = realId!;
           user!.touch(other.kind, realId!);
         }
+      }
+      for (const other of inDraft) {
+        if (other.create) other.create = inRealList(other.create as Item);
+        user!.touch(other.kind, other.id);
+        for (const kind of shown.item) kinds.add(kind);
       }
     }
     if (user && !user.entries.some((other) => other.kind === entry.kind && other.id === entry.id)) {
@@ -542,6 +564,11 @@ function build(client: Client): OptimisticView {
           nonce: "create" in change ? nonceFor(change.create.id) : undefined,
           batch,
         };
+        if (entry.kind === "item" && entry.create) entry.create = inRealList(entry.create as Item);
+        if (entry.kind === "item" && entry.update) {
+          const update = entry.update as (value: Item) => Item;
+          entry.update = ((value: Item) => inRealList(update(value))) as Entry["update"];
+        }
         if (entry.create) {
           drafts.add(entry.id);
           created.push(entry);
@@ -600,5 +627,6 @@ function build(client: Client): OptimisticView {
     apply,
     tempId: () => `tmp_${randomText(16)}`,
     resolveId: (tempId) => resolved.get(tempId),
+    isPending: (tempId) => drafts.has(tempId),
   };
 }

@@ -107,6 +107,48 @@ test("a due day or time is sent the way the hub wants it, in the profile's zone"
   });
 });
 
+test("an item made in a list that is still a draft stays in that list once the list is real", async () => {
+  const hub = await connectedHub();
+  hub.route("POST", "/users/@me/lists", () => new Promise(() => {}));
+  hub.route("POST", "/users/@me/items", () => new Promise(() => {}));
+  void createList(hub.own, "Uni");
+  const list = hub.mine().lists().at(-1)!.id;
+  void createItem(hub.own, { title: "Fresh", listId: list });
+  await settle();
+  const nonce = hub.sent("POST", "/users/@me/lists")[0]!.headers["x-request-nonce"]!;
+  await hub.send(
+    "list.created",
+    change("u1", wireList({ id: "l9", name: "Uni", position: 2, is_inbox: false }), nonce),
+  );
+  expect(
+    hub
+      .mine()
+      .items()
+      .filter((item) => item.listId === "l9"),
+  ).toMatchObject([{ title: "Fresh" }]);
+});
+
+test("an item made in a new list that the hub then refuses fails at once and goes", async () => {
+  const hub = await connectedHub();
+  const refusal = deferred<{ status: number; body: unknown }>();
+  hub.route("POST", "/users/@me/lists", () => refusal.promise);
+  void createList(hub.own, "Uni").catch(() => {});
+  const list = hub.mine().lists().at(-1)!.id;
+  let outcome: unknown = "waiting";
+  void createItem(hub.own, { title: "Fresh", listId: list }).then(
+    () => (outcome = "made"),
+    (error: unknown) => (outcome = error),
+  );
+  refusal.resolve({
+    status: 409,
+    body: { error: { code: "limit_reached", message: "Too many lists." } },
+  });
+  await settle();
+  expect(outcome).toBeInstanceOf(Error);
+  expect(ids(hub.mine().items())).toEqual(["a", "b"]);
+  expect(hub.sent("POST", "/users/@me/items")).toHaveLength(0);
+});
+
 test("a change to a draft waits for the real id", async () => {
   const hub = await connectedHub();
   const answer = deferred<{ status: number; body: unknown }>();
