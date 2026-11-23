@@ -27,7 +27,13 @@ SELECT count(*) FROM login_providers WHERE login_enabled;
 SELECT count(*) FROM identities WHERE provider = @provider;
 
 -- name: RefreshIdentity :exec
-UPDATE identities SET display_name = @display_name, provider_token = @provider_token WHERE id = @id;
+UPDATE identities SET
+    display_name = @display_name,
+    username = @username,
+    provider_token = @provider_token,
+    avatar = CASE WHEN @set_avatar::boolean THEN @avatar ELSE avatar END,
+    avatar_type = CASE WHEN @set_avatar::boolean THEN @avatar_type ELSE avatar_type END
+WHERE id = @id;
 
 -- name: GetUserIdentity :one
 SELECT * FROM identities WHERE id = @id AND user_id = @user_id;

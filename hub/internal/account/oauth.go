@@ -21,9 +21,15 @@ import (
 type OAuthProfile struct {
 	ExternalID  string
 	DisplayName string
+	Username    string
+	AvatarURL   string
 	// Token is the refresh token if the provider issued one, otherwise the access token.
 	// It is only kept to revoke the grant when the account is unlinked.
 	Token string
+
+	avatar      avatarPolicy
+	picture     *picture
+	keepPicture bool
 }
 
 type Provider interface {
@@ -75,7 +81,7 @@ func (s *OAuth) Build(ctx context.Context, row sqlc.LoginProvider) (Provider, er
 		if err != nil {
 			return nil, err
 		}
-		return newOIDC(s.d, provider, row.ClientID, string(clientSecret)), nil
+		return newOIDC(s.d, provider, row.IssuerUrl, row.ClientID, string(clientSecret)), nil
 	}
 	return nil, fmt.Errorf("unknown provider type %q", row.Type)
 }
@@ -120,6 +126,8 @@ func (c *oauthClient) Exchange(ctx context.Context, code, verifier, redirect str
 		return OAuthProfile{}, errors.New("provider returned no user id")
 	}
 	profile.DisplayName = cleanProfileName(profile.DisplayName, profile.ExternalID)
+	profile.Username = cleanProfileName(profile.Username, "")
+	profile.picture, profile.keepPicture = pictureOf(ctx, c.http, profile)
 	profile.Token = token.RefreshToken
 	if profile.Token == "" {
 		profile.Token = token.AccessToken

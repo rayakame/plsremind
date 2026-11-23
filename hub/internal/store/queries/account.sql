@@ -20,8 +20,8 @@ WHERE id = @id
 RETURNING *;
 
 -- name: CreateIdentity :one
-INSERT INTO identities (id, user_id, provider, external_id, display_name, password_hash, provider_token, created_at)
-VALUES (@id, @user_id, @provider, @external_id, @display_name, @password_hash, @provider_token, @created_at)
+INSERT INTO identities (id, user_id, provider, external_id, display_name, username, avatar, avatar_type, password_hash, provider_token, created_at)
+VALUES (@id, @user_id, @provider, @external_id, @display_name, @username, @avatar, @avatar_type, @password_hash, @provider_token, @created_at)
 RETURNING *;
 
 -- name: GetIdentity :one
@@ -48,6 +48,13 @@ DELETE FROM users WHERE id = @id;
 
 -- name: ListIdentities :many
 SELECT * FROM identities WHERE user_id = @user_id ORDER BY created_at, id;
+
+-- name: ListIdentityViews :many
+SELECT id, provider, external_id, display_name, username, (avatar IS NOT NULL)::boolean AS has_avatar, created_at
+FROM identities WHERE user_id = @user_id ORDER BY created_at, id;
+
+-- name: GetIdentityAvatar :one
+SELECT avatar, avatar_type FROM identities WHERE id = @id AND user_id = @user_id AND avatar IS NOT NULL;
 
 -- name: GetPasswordIdentity :one
 SELECT * FROM identities WHERE user_id = @user_id AND provider = 'password';

@@ -1423,6 +1423,52 @@ paths:
           description: The account is unlinked.
         default:
           $ref: "#/components/responses/Error"
+  /users/{user}/identities/{id}/avatar:
+    parameters:
+      - $ref: "#/components/parameters/User"
+      - $ref: "#/components/parameters/Nonce"
+      - $ref: "#/components/parameters/Id"
+    get:
+      tags: [Account]
+      operationId: getIdentityAvatar
+      summary: Fetch the picture of a linked account
+      description: |
+        The hub fetches the picture from the provider when the account is linked and at every
+        login with it, and serves its own copy, so the browser never asks the provider.
+      parameters:
+        - name: If-None-Match
+          in: header
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: The picture.
+          headers:
+            ETag:
+              schema:
+                type: string
+          content:
+            image/png:
+              schema:
+                type: string
+                format: binary
+            image/jpeg:
+              schema:
+                type: string
+                format: binary
+            image/gif:
+              schema:
+                type: string
+                format: binary
+            image/webp:
+              schema:
+                type: string
+                format: binary
+        "304":
+          description: The picture has not changed.
+        default:
+          $ref: "#/components/responses/Error"
   /admin/providers:
     get:
       tags: [Admin]
@@ -1847,7 +1893,7 @@ components:
       description: Pass as `cursor` to get the next page. Null on the last page.
     Identity:
       type: object
-      required: [id, provider, external_id, display_name, created_at]
+      required: [id, provider, external_id, display_name, username, has_avatar, created_at]
       properties:
         id:
           type: string
@@ -1860,6 +1906,12 @@ components:
           description: The user's ID at the provider. For `password` this is the username.
         display_name:
           type: string
+        username:
+          type: string
+          description: The handle at the provider, such as a Discord username. Empty when the provider has none or the account was linked before the hub kept it.
+        has_avatar:
+          type: boolean
+          description: Whether `GET /users/{user}/identities/{id}/avatar` has a picture.
         created_at:
           type: string
           format: date-time

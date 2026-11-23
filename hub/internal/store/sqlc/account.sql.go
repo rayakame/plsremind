@@ -45,9 +45,9 @@ func (q *Queries) CountUsers(ctx context.Context) (int64, error) {
 }
 
 const createIdentity = `-- name: CreateIdentity :one
-INSERT INTO identities (id, user_id, provider, external_id, display_name, password_hash, provider_token, created_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-RETURNING id, user_id, provider, external_id, display_name, password_hash, provider_token, created_at
+INSERT INTO identities (id, user_id, provider, external_id, display_name, username, avatar, avatar_type, password_hash, provider_token, created_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+RETURNING id, user_id, provider, external_id, display_name, password_hash, provider_token, created_at, username, avatar, avatar_type
 `
 
 type CreateIdentityParams struct {
@@ -56,6 +56,9 @@ type CreateIdentityParams struct {
 	Provider      string
 	ExternalID    string
 	DisplayName   string
+	Username      string
+	Avatar        []byte
+	AvatarType    string
 	PasswordHash  *string
 	ProviderToken []byte
 	CreatedAt     time.Time
@@ -68,6 +71,9 @@ func (q *Queries) CreateIdentity(ctx context.Context, arg CreateIdentityParams) 
 		arg.Provider,
 		arg.ExternalID,
 		arg.DisplayName,
+		arg.Username,
+		arg.Avatar,
+		arg.AvatarType,
 		arg.PasswordHash,
 		arg.ProviderToken,
 		arg.CreatedAt,
@@ -82,6 +88,9 @@ func (q *Queries) CreateIdentity(ctx context.Context, arg CreateIdentityParams) 
 		&i.PasswordHash,
 		&i.ProviderToken,
 		&i.CreatedAt,
+		&i.Username,
+		&i.Avatar,
+		&i.AvatarType,
 	)
 	return i, err
 }
@@ -187,7 +196,7 @@ func (q *Queries) DeleteUser(ctx context.Context, id uuid.UUID) (int64, error) {
 }
 
 const getIdentity = `-- name: GetIdentity :one
-SELECT id, user_id, provider, external_id, display_name, password_hash, provider_token, created_at FROM identities WHERE provider = $1 AND external_id = $2
+SELECT id, user_id, provider, external_id, display_name, password_hash, provider_token, created_at, username, avatar, avatar_type FROM identities WHERE provider = $1 AND external_id = $2
 `
 
 type GetIdentityParams struct {
@@ -207,12 +216,36 @@ func (q *Queries) GetIdentity(ctx context.Context, arg GetIdentityParams) (Ident
 		&i.PasswordHash,
 		&i.ProviderToken,
 		&i.CreatedAt,
+		&i.Username,
+		&i.Avatar,
+		&i.AvatarType,
 	)
 	return i, err
 }
 
+const getIdentityAvatar = `-- name: GetIdentityAvatar :one
+SELECT avatar, avatar_type FROM identities WHERE id = $1 AND user_id = $2 AND avatar IS NOT NULL
+`
+
+type GetIdentityAvatarParams struct {
+	ID     uuid.UUID
+	UserID uuid.UUID
+}
+
+type GetIdentityAvatarRow struct {
+	Avatar     []byte
+	AvatarType string
+}
+
+func (q *Queries) GetIdentityAvatar(ctx context.Context, arg GetIdentityAvatarParams) (GetIdentityAvatarRow, error) {
+	row := q.db.QueryRow(ctx, getIdentityAvatar, arg.ID, arg.UserID)
+	var i GetIdentityAvatarRow
+	err := row.Scan(&i.Avatar, &i.AvatarType)
+	return i, err
+}
+
 const getPasswordIdentity = `-- name: GetPasswordIdentity :one
-SELECT id, user_id, provider, external_id, display_name, password_hash, provider_token, created_at FROM identities WHERE user_id = $1 AND provider = 'password'
+SELECT id, user_id, provider, external_id, display_name, password_hash, provider_token, created_at, username, avatar, avatar_type FROM identities WHERE user_id = $1 AND provider = 'password'
 `
 
 func (q *Queries) GetPasswordIdentity(ctx context.Context, userID uuid.UUID) (Identity, error) {
@@ -227,6 +260,9 @@ func (q *Queries) GetPasswordIdentity(ctx context.Context, userID uuid.UUID) (Id
 		&i.PasswordHash,
 		&i.ProviderToken,
 		&i.CreatedAt,
+		&i.Username,
+		&i.Avatar,
+		&i.AvatarType,
 	)
 	return i, err
 }
@@ -281,7 +317,7 @@ func (q *Queries) GetUser(ctx context.Context, id uuid.UUID) (User, error) {
 }
 
 const listIdentities = `-- name: ListIdentities :many
-SELECT id, user_id, provider, external_id, display_name, password_hash, provider_token, created_at FROM identities WHERE user_id = $1 ORDER BY created_at, id
+SELECT id, user_id, provider, external_id, display_name, password_hash, provider_token, created_at, username, avatar, avatar_type FROM identities WHERE user_id = $1 ORDER BY created_at, id
 `
 
 func (q *Queries) ListIdentities(ctx context.Context, userID uuid.UUID) ([]Identity, error) {
@@ -301,6 +337,52 @@ func (q *Queries) ListIdentities(ctx context.Context, userID uuid.UUID) ([]Ident
 			&i.DisplayName,
 			&i.PasswordHash,
 			&i.ProviderToken,
+			&i.CreatedAt,
+			&i.Username,
+			&i.Avatar,
+			&i.AvatarType,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listIdentityViews = `-- name: ListIdentityViews :many
+SELECT id, provider, external_id, display_name, username, (avatar IS NOT NULL)::boolean AS has_avatar, created_at
+FROM identities WHERE user_id = $1 ORDER BY created_at, id
+`
+
+type ListIdentityViewsRow struct {
+	ID          uuid.UUID
+	Provider    string
+	ExternalID  string
+	DisplayName string
+	Username    string
+	HasAvatar   bool
+	CreatedAt   time.Time
+}
+
+func (q *Queries) ListIdentityViews(ctx context.Context, userID uuid.UUID) ([]ListIdentityViewsRow, error) {
+	rows, err := q.db.Query(ctx, listIdentityViews, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListIdentityViewsRow
+	for rows.Next() {
+		var i ListIdentityViewsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Provider,
+			&i.ExternalID,
+			&i.DisplayName,
+			&i.Username,
+			&i.HasAvatar,
 			&i.CreatedAt,
 		); err != nil {
 			return nil, err

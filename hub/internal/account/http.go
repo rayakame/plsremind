@@ -4,6 +4,8 @@ package account
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"net/http"
 	"strings"
@@ -36,6 +38,7 @@ func Register(root, user, admin fiber.Router, d *core.Deps) {
 	user.Patch("", patchProfile(d))
 	user.Delete("", auth.RequireSession(), deleteProfile(d, svc))
 	user.Get("/identities", listIdentities(d))
+	user.Get("/identities/:id/avatar", identityAvatar(d))
 	user.Put("/password", auth.RequireSession(), setPassword(d))
 
 	admin.Get("/settings", getSettings(d))
@@ -322,12 +325,14 @@ type Identity struct {
 	Provider    string    `json:"provider"`
 	ExternalID  string    `json:"external_id"`
 	DisplayName string    `json:"display_name"`
+	Username    string    `json:"username"`
+	HasAvatar   bool      `json:"has_avatar"`
 	CreatedAt   time.Time `json:"created_at"`
 }
 
 func listIdentities(d *core.Deps) fiber.Handler {
 	return func(c fiber.Ctx) error {
-		rows, err := d.Q().ListIdentities(c.Context(), auth.Target(c))
+		rows, err := d.Q().ListIdentityViews(c.Context(), auth.Target(c))
 		if err != nil {
 			return err
 		}
@@ -338,10 +343,37 @@ func listIdentities(d *core.Deps) fiber.Handler {
 				Provider:    row.Provider,
 				ExternalID:  row.ExternalID,
 				DisplayName: row.DisplayName,
+				Username:    row.Username,
+				HasAvatar:   row.HasAvatar,
 				CreatedAt:   row.CreatedAt.UTC(),
 			})
 		}
 		return c.JSON(identities)
+	}
+}
+
+func identityAvatar(d *core.Deps) fiber.Handler {
+	return func(c fiber.Ctx) error {
+		id, err := api.ParamUUID(c, "id")
+		if err != nil {
+			return err
+		}
+		row, err := d.Q().GetIdentityAvatar(c.Context(), sqlc.GetIdentityAvatarParams{ID: id, UserID: auth.Target(c)})
+		if store.IsNotFound(err) {
+			return api.NotFound()
+		}
+		if err != nil {
+			return err
+		}
+		sum := sha256.Sum256(row.Avatar)
+		tag := `"` + hex.EncodeToString(sum[:16]) + `"`
+		c.Set(fiber.HeaderCacheControl, "private, max-age=86400")
+		c.Set(fiber.HeaderETag, tag)
+		if c.Get(fiber.HeaderIfNoneMatch) == tag {
+			return c.SendStatus(http.StatusNotModified)
+		}
+		c.Set(fiber.HeaderContentType, row.AvatarType)
+		return c.Send(row.Avatar)
 	}
 }
 

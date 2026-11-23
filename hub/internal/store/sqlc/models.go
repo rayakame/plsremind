@@ -66,6 +66,9 @@ type Identity struct {
 	PasswordHash  *string
 	ProviderToken []byte
 	CreatedAt     time.Time
+	Username      string
+	Avatar        []byte
+	AvatarType    string
 }
 
 type InstanceSetting struct {

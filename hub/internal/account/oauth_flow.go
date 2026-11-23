@@ -177,15 +177,20 @@ func oauthFinish(c fiber.Ctx, d *core.Deps, used sqlc.LoginProvider, stored sqlc
 			return err
 		}
 		link := func(userID uuid.UUID) error {
-			_, err := q.CreateIdentity(c.Context(), sqlc.CreateIdentityParams{
+			params := sqlc.CreateIdentityParams{
 				ID:            uuid.Must(uuid.NewV7()),
 				UserID:        userID,
 				Provider:      row.Key,
 				ExternalID:    profile.ExternalID,
 				DisplayName:   profile.DisplayName,
+				Username:      profile.Username,
 				ProviderToken: token,
 				CreatedAt:     now,
-			})
+			}
+			if profile.picture != nil {
+				params.Avatar, params.AvatarType = profile.picture.data, profile.picture.kind
+			}
+			_, err := q.CreateIdentity(c.Context(), params)
 			if err != nil {
 				return err
 			}
@@ -193,7 +198,17 @@ func oauthFinish(c fiber.Ctx, d *core.Deps, used sqlc.LoginProvider, stored sqlc
 			return events.NotifyUser(c.Context(), q, events.SignalUser, userID)
 		}
 		refresh := func() error {
-			return q.RefreshIdentity(c.Context(), sqlc.RefreshIdentityParams{ID: identity.ID, DisplayName: profile.DisplayName, ProviderToken: token})
+			params := sqlc.RefreshIdentityParams{
+				ID:            identity.ID,
+				DisplayName:   profile.DisplayName,
+				Username:      profile.Username,
+				ProviderToken: token,
+				SetAvatar:     !profile.keepPicture,
+			}
+			if profile.picture != nil {
+				params.Avatar, params.AvatarType = profile.picture.data, profile.picture.kind
+			}
+			return q.RefreshIdentity(c.Context(), params)
 		}
 
 		if stored.Intent == "link" {
