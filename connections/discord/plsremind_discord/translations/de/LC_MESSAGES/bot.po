@@ -97,7 +97,7 @@ msgid "test.message"
 msgstr "Test: Hier kommen deine Erinnerungen an."
 
 msgid "test.error"
-msgstr "Beim Bot ist etwas schiefgegangen. Sein Log sagt, was."
+msgstr "Beim Bot ist etwas schiefgegangen. Wenn das wieder passiert, sag dem Admin deiner Instanz Bescheid."
 
 msgid "test.trouble"
 msgstr "Discord war gerade nicht erreichbar. Versuch den Test gleich noch einmal."

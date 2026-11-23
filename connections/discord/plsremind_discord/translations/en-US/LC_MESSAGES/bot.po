@@ -97,7 +97,7 @@ msgid "test.message"
 msgstr "Test: this is where your reminders arrive."
 
 msgid "test.error"
-msgstr "Something went wrong in the bot. Its log says what."
+msgstr "Something went wrong in the bot. If it happens again, let the admin of your instance know."
 
 msgid "test.trouble"
 msgstr "Discord could not be reached just now. Try the test again in a moment."
