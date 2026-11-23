@@ -87,6 +87,11 @@ func TestTickNotesHowARoundEnded(t *testing.T) {
 	require.Contains(t, scrape(t, m), "plsremind_ticker_duration_seconds_count 2")
 }
 
+func TestTheTickerCountsFromTheStartOfTheProcess(t *testing.T) {
+	before := float64(time.Now().Unix())
+	require.GreaterOrEqual(t, testutil.ToFloat64(metrics.New("dev").TickerLastSuccess), before)
+}
+
 func TestOpenDeliveriesAreCountedWhenAsked(t *testing.T) {
 	m := metrics.New("dev")
 	m.CountOpenDeliveries(func(context.Context) (int64, error) { return 7, nil })
@@ -115,7 +120,7 @@ func TestOpenDeliveriesGiveUpWithinTwoSeconds(t *testing.T) {
 func TestANilRegistryCountsNothingAndDoesNotFail(t *testing.T) {
 	var m *metrics.Metrics
 	m.Reminder("due", "fired", time.Second)
-	m.Expire(2)
+	m.Expire("connection", 2)
 	m.Acknowledge("delivered")
 	require.NoError(t, m.Tick(func() error { return nil }))
 }

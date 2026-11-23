@@ -12,7 +12,7 @@ func TestTheHealthCommandAsksTheLocalListener(t *testing.T) {
 	for listen, want := range map[string]string{
 		":8080":          "http://127.0.0.1:8080/readyz",
 		"0.0.0.0:9000":   "http://127.0.0.1:9000/readyz",
-		"[::]:8080":      "http://[::1]:8080/readyz",
+		"[::]:8080":      "http://127.0.0.1:8080/readyz",
 		"10.0.0.5:8080":  "http://10.0.0.5:8080/readyz",
 		"localhost:8081": "http://localhost:8081/readyz",
 	} {

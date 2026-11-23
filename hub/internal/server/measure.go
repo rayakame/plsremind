@@ -14,8 +14,6 @@ var knownMethods = map[string]bool{
 	fiber.MethodPatch: true, fiber.MethodDelete: true, fiber.MethodOptions: true,
 }
 
-const gatewayRoute = "/api/v1/gateway"
-
 func measure(m *metrics.Metrics) fiber.Handler {
 	return func(c fiber.Ctx) error {
 		start := time.Now()
@@ -31,10 +29,7 @@ func measure(m *metrics.Metrics) fiber.Handler {
 		}
 		route := routeOf(c)
 		m.Requests.WithLabelValues(method, route, strconv.Itoa(c.Response().StatusCode())).Inc()
-		// A gateway request lasts as long as its connection, which says nothing about speed.
-		if route != gatewayRoute {
-			m.Durations.WithLabelValues(method, route).Observe(time.Since(start).Seconds())
-		}
+		m.Durations.WithLabelValues(method, route).Observe(time.Since(start).Seconds())
 		return nil
 	}
 }

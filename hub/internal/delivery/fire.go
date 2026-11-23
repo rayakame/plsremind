@@ -27,14 +27,21 @@ func RunOnce(ctx context.Context, d *core.Deps) error {
 			break
 		}
 	}
-	var expiredCount int
+	expiredBy := map[string]int{}
 	err := store.Tx(ctx, d.Pool, func(q *sqlc.Queries) error {
+		clear(expiredBy)
 		now := d.Now()
 		expired, err := q.ExpireDeliveries(ctx, &now)
 		if err != nil {
 			return err
 		}
-		expiredCount = len(expired)
+		for _, row := range expired {
+			if row.ConnectionID != nil {
+				expiredBy["connection"]++
+			} else {
+				expiredBy["personal_token"]++
+			}
+		}
 		if err := events.DeliveriesClosed(ctx, q, expired); err != nil {
 			return err
 		}
@@ -48,7 +55,9 @@ func RunOnce(ctx context.Context, d *core.Deps) error {
 	if err != nil {
 		return err
 	}
-	d.Metrics.Expire(expiredCount)
+	for channel, n := range expiredBy {
+		d.Metrics.Expire(channel, n)
+	}
 	return sweepSpent(ctx, d)
 }
 

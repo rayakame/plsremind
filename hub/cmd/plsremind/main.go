@@ -68,12 +68,13 @@ func run() error {
 		HTTP:    &http.Client{Timeout: 10 * time.Second},
 		Metrics: metrics.New(server.Version),
 	}
+	srv := server.New(d)
+	// Once the server has registered what it reports, so that no scrape finds it half done.
 	if cfg.MetricsAddr != "" {
 		if err := metrics.Start(ctx, cfg.MetricsAddr, d.Metrics); err != nil {
 			return fmt.Errorf("PLSREMIND_METRICS_ADDR: %w", err)
 		}
 	}
-	srv := server.New(d)
 	app := srv.App
 	srv.Gateway.Start(ctx)
 
@@ -119,17 +120,14 @@ func run() error {
 	return app.Listen(cfg.ListenAddr, fiber.ListenConfig{DisableStartupMessage: true})
 }
 
-// readyURL is where the hub listening on listen answers /readyz from the same machine.
 func readyURL(listen string) string {
 	host, port, err := net.SplitHostPort(listen)
 	if err != nil {
 		return "http://" + listen + "/readyz"
 	}
-	switch ip := net.ParseIP(host); {
-	case host == "" || (ip != nil && ip.IsUnspecified() && ip.To4() != nil):
+	// Go listens on both families for "[::]", and IPv4 loopback exists where IPv6 may be switched off.
+	if ip := net.ParseIP(host); host == "" || (ip != nil && ip.IsUnspecified()) {
 		host = "127.0.0.1"
-	case ip != nil && ip.IsUnspecified():
-		host = "::1"
 	}
 	return "http://" + net.JoinHostPort(host, port) + "/readyz"
 }

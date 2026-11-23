@@ -9,7 +9,6 @@ import (
 	"github.com/rayakame/plsremind/hub/internal/testkit"
 )
 
-// requests reads plsremind_http_requests_total as "METHOD route status" to count.
 func requests(t *testing.T, e *testkit.Env) map[string]float64 {
 	t.Helper()
 	families, err := e.Deps.Metrics.Registry().Gather()

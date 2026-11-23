@@ -27,7 +27,7 @@ type Metrics struct {
 	Reminders         *prometheus.CounterVec
 	Lateness          prometheus.Histogram
 	Acknowledged      *prometheus.CounterVec
-	Expired           prometheus.Counter
+	Expired           *prometheus.CounterVec
 	TickerRuns        *prometheus.CounterVec
 	TickerDuration    prometheus.Histogram
 	TickerLastSuccess prometheus.Gauge
@@ -78,10 +78,10 @@ func New(version string) *Metrics {
 			Name: "plsremind_deliveries_acknowledged_total",
 			Help: "Deliveries a channel confirmed, by result: delivered or failed.",
 		}, []string{"result"}),
-		Expired: prometheus.NewCounter(prometheus.CounterOpts{
+		Expired: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "plsremind_deliveries_expired_total",
-			Help: "Deliveries that nobody confirmed within a day.",
-		}),
+			Help: "Deliveries that nobody confirmed within a day, by the kind of channel: connection or personal_token.",
+		}, []string{"channel"}),
 		TickerRuns: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "plsremind_ticker_runs_total",
 			Help: "Rounds of the reminder ticker, by result: ok or error.",
@@ -106,6 +106,11 @@ func New(version string) *Metrics {
 	}, []string{"event"})
 	reg.MustRegister(m.Requests, m.Durations, m.Reminders, m.Lateness, m.Acknowledged, m.Expired,
 		m.TickerRuns, m.TickerDuration, m.TickerLastSuccess, m.GatewayCloses, m.GatewayDispatches)
+	for _, channel := range []string{"connection", "personal_token"} {
+		m.Expired.WithLabelValues(channel)
+	}
+	// From the start of the process, so that a hub that just started does not look stalled for decades.
+	m.TickerLastSuccess.SetToCurrentTime()
 	return m
 }
 
@@ -127,8 +132,10 @@ func (m *Metrics) Dispatch(event string) {
 func (m *Metrics) CountSessions(attached func() map[string]int) {
 	if m.sessions == nil {
 		m.sessions = &sessions{desc: prometheus.NewDesc("plsremind_gateway_sessions",
-			"Gateway sessions with a client attached, by the kind of credential behind them.", []string{"kind"}, nil)}
+			"Gateway sessions with a client attached, by the kind of credential behind them.", []string{"kind"}, nil),
+			attached: attached}
 		m.registry.MustRegister(m.sessions)
+		return
 	}
 	m.sessions.mu.Lock()
 	defer m.sessions.mu.Unlock()
@@ -161,8 +168,10 @@ func (m *Metrics) WatchPool(stat func() *pgxpool.Stat) {
 			conns:   prometheus.NewDesc("plsremind_db_pool_connections", "Database connections of the pool, by state.", []string{"state"}, nil),
 			acquire: prometheus.NewDesc("plsremind_db_pool_acquire_seconds_total", "Time spent getting a connection from the pool.", nil, nil),
 			empty:   prometheus.NewDesc("plsremind_db_pool_empty_acquires_total", "Requests for a connection that had to wait because none was free.", nil, nil),
+			stat:    stat,
 		}
 		m.registry.MustRegister(m.pool)
+		return
 	}
 	m.pool.mu.Lock()
 	defer m.pool.mu.Unlock()
@@ -205,10 +214,10 @@ func (m *Metrics) Reminder(kind, outcome string, late time.Duration) {
 	}
 }
 
-// Expire notes deliveries that nobody confirmed in time.
-func (m *Metrics) Expire(n int) {
+// Expire notes deliveries on a kind of channel that nobody confirmed in time.
+func (m *Metrics) Expire(channel string, n int) {
 	if m != nil {
-		m.Expired.Add(float64(n))
+		m.Expired.WithLabelValues(channel).Add(float64(n))
 	}
 }
 
@@ -240,9 +249,11 @@ func (m *Metrics) Tick(run func() error) error {
 func (m *Metrics) CountOpenDeliveries(count func(ctx context.Context) (int64, error)) {
 	if m.open == nil {
 		m.open = &openDeliveries{
-			desc: prometheus.NewDesc("plsremind_deliveries_open", "Deliveries still waiting for a channel to confirm them.", nil, nil),
+			desc:  prometheus.NewDesc("plsremind_deliveries_open", "Deliveries still waiting for a channel to confirm them.", nil, nil),
+			count: count,
 		}
 		m.registry.MustRegister(m.open)
+		return
 	}
 	m.open.mu.Lock()
 	defer m.open.mu.Unlock()
@@ -266,7 +277,7 @@ func (o *openDeliveries) Collect(ch chan<- prometheus.Metric) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	n, err := count(ctx)
-	// A database that cannot answer leaves the number out rather than holding up the whole scrape.
+	// No number is better than a scrape that hangs on a database that is away.
 	if err != nil {
 		return
 	}
