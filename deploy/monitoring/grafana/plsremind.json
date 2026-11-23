@@ -247,7 +247,7 @@
       "fieldConfig": {
         "defaults": {
           "unit": "short",
-          "noValue": "0",
+          "noValue": "no bot",
           "color": {
             "mode": "fixed",
             "fixedColor": "text"
@@ -1093,7 +1093,7 @@
       "fieldConfig": {
         "defaults": {
           "unit": "ops",
-          "noValue": "0",
+          "noValue": "no bot data",
           "color": {
             "mode": "palette-classic"
           },
@@ -1147,7 +1147,7 @@
       "fieldConfig": {
         "defaults": {
           "unit": "ops",
-          "noValue": "0",
+          "noValue": "no bot data",
           "color": {
             "mode": "palette-classic"
           },
@@ -1201,7 +1201,7 @@
       "fieldConfig": {
         "defaults": {
           "unit": "ops",
-          "noValue": "0",
+          "noValue": "no bot data",
           "color": {
             "mode": "palette-classic"
           },
@@ -1255,7 +1255,7 @@
       "fieldConfig": {
         "defaults": {
           "unit": "ops",
-          "noValue": "0",
+          "noValue": "no bot data",
           "color": {
             "mode": "palette-classic"
           },
@@ -1309,7 +1309,7 @@
       "fieldConfig": {
         "defaults": {
           "unit": "ops",
-          "noValue": "0",
+          "noValue": "no bot data",
           "color": {
             "mode": "palette-classic"
           },
@@ -1363,7 +1363,7 @@
       "fieldConfig": {
         "defaults": {
           "unit": "s",
-          "noValue": "-",
+          "noValue": "no bot data",
           "color": {
             "mode": "palette-classic"
           },
@@ -1417,7 +1417,7 @@
       "fieldConfig": {
         "defaults": {
           "unit": "ops",
-          "noValue": "0",
+          "noValue": "no bot data",
           "color": {
             "mode": "palette-classic"
           },
