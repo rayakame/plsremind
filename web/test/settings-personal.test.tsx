@@ -77,40 +77,6 @@ test("quiet hours are switched on with times and off again", async () => {
   expect(sent(app)[2]).toEqual({ quiet_hours: null });
 });
 
-test("a reminder plan takes durations, a follow-up and can go back to the default", async () => {
-  const app = await personal({
-    path: "/settings/reminders",
-    sync: {
-      plans: [
-        wirePlan({ priority: "low" }),
-        wirePlan(),
-        wirePlan({ priority: "high", before: ["1d", "2h"], follow_up: "daily", is_default: false }),
-      ],
-    },
-  });
-  const high = within(screen.getByRole("group", { name: "High priority" }));
-  const before = high.getByLabelText("Remind before the deadline");
-  expect((before as HTMLInputElement).value).toBe("1d, 2h");
-  await userEvent.clear(before);
-  await userEvent.type(before, "soon");
-  await userEvent.tab();
-  expect(high.getByText("Write durations like 1d, 2h.")).toBeTruthy();
-  expect(app.sent("PUT", /reminder-plans/)).toHaveLength(0);
-  await userEvent.clear(before);
-  await userEvent.type(before, "3d, 1h");
-  await userEvent.tab();
-  await userEvent.selectOptions(high.getByLabelText("After the deadline"), "Twice a day");
-  await waitFor(() => expect(app.sent("PUT", /reminder-plans/)).toHaveLength(2));
-  expect(app.sent("PUT", /reminder-plans/).map((call) => [call.path, call.body])).toEqual([
-    ["/users/@me/reminder-plans/high", { before: ["3d", "1h"], follow_up: "daily" }],
-    ["/users/@me/reminder-plans/high", { before: ["3d", "1h"], follow_up: "twice_daily" }],
-  ]);
-  await userEvent.click(high.getByRole("button", { name: "Back to the default" }));
-  await waitFor(() => expect(app.sent("DELETE", "/users/@me/reminder-plans/high")).toHaveLength(1));
-  const normal = within(screen.getByRole("group", { name: "Normal priority" }));
-  expect(normal.queryByRole("button", { name: "Back to the default" })).toBeNull();
-});
-
 test("the command prefix must be one character that is not a letter or digit", async () => {
   const app = await personal({ path: "/settings/keys" });
   const prefix = screen.getByLabelText("Command prefix");

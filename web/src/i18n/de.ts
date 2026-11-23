@@ -247,6 +247,35 @@ export const de: Texts = {
   "followUp.daily": "Einmal am Tag",
   "followUp.twice_daily": "Zweimal am Tag",
   "personal.planReset": "Zurück zum Standard",
+  "duration.day": "1 Tag",
+  "duration.days": "{count} Tage",
+  "duration.hour": "1 Stunde",
+  "duration.hours": "{count} Stunden",
+  "duration.minute": "1 Minute",
+  "duration.minutes": "{count} Minuten",
+  "duration.list": "{first} und {last}",
+  "plan.lead": "Wann dich plsremind erinnert. Das gilt für alle Apps.",
+  "plan.text":
+    "Jeder Eintrag folgt dem Plan seiner Priorität. Einzelne Einträge können davon abweichen.",
+  "plan.quietUntil": "In dieser Zeit kommen keine Erinnerungen. Was hineinfällt, kommt um {end}.",
+  "plan.dueNever": "Erinnert dich nur, wenn die Frist da ist.",
+  "plan.dueDaily":
+    "Erinnert dich, wenn die Frist da ist, danach täglich, bis der Eintrag erledigt ist.",
+  "plan.dueTwice":
+    "Erinnert dich, wenn die Frist da ist, danach zweimal täglich, bis der Eintrag erledigt ist.",
+  "plan.beforeNever": "Erinnert dich {before} vor der Frist und wenn sie da ist.",
+  "plan.beforeDaily":
+    "Erinnert dich {before} vor der Frist, danach täglich, bis der Eintrag erledigt ist.",
+  "plan.beforeTwice":
+    "Erinnert dich {before} vor der Frist, danach zweimal täglich, bis der Eintrag erledigt ist.",
+  "plan.before": "Vor der Frist",
+  "plan.none": "Keine",
+  "plan.add": "Zeitpunkt hinzufügen",
+  "plan.remove": "{time} entfernen",
+  "plan.newTime": "Neuer Zeitpunkt vor der Frist",
+  "plan.timeError": "Schreib einen Zeitpunkt wie 2h oder 1d.",
+  "plan.timeTaken": "Diesen Zeitpunkt gibt es schon.",
+  "plan.timeLimit": "Höchstens zehn Zeitpunkte vor einer Frist.",
   "personal.prefix": "Befehlspräfix",
   "personal.prefixError":
     "Nimm ein Zeichen, das kein Buchstabe, keine Ziffer und kein Leerzeichen ist.",

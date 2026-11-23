@@ -6,29 +6,40 @@ import {
   type QuietHours,
   type ReminderPlan,
 } from "plsremind";
-import { useState } from "react";
+import { useState, type FormEvent } from "react";
 import { usePlans, useProfile } from "../../hub/hooks.js";
 import { useHub } from "../../hub/session.js";
-import { useT } from "../../i18n/index.js";
 import { resetPlan, setPlan, setQuiet } from "../../hub/write.js";
+import { useT, type Key } from "../../i18n/index.js";
 import { useNotices } from "../../shell/notices.js";
-import { Button, Field, Input, Select, Toggle } from "../../ui/controls.js";
-import { useCheckedDraft, useDraft } from "../../ui/draft.js";
+import { durationWords, listWords } from "../../time/duration-words.js";
+import { Button, Field, Input, Segmented, Toggle } from "../../ui/controls.js";
+import { useDraft } from "../../ui/draft.js";
+import { Icon } from "../../ui/icon.js";
 import { Card } from "../../ui/layout.js";
 
 const priorities: readonly Priority[] = ["high", "normal", "low"];
-const followUps: readonly FollowUp[] = ["never", "daily", "twice_daily"];
+// The hub keeps at most this many times before a deadline.
+const mostBefore = 10;
 
-function durations(text: string): number[] | undefined {
-  const parts = text
-    .split(",")
-    .map((part) => part.trim())
-    .filter(Boolean);
+const sentences: Record<"due" | "before", Record<FollowUp, Key>> = {
+  due: { never: "plan.dueNever", daily: "plan.dueDaily", twice_daily: "plan.dueTwice" },
+  before: { never: "plan.beforeNever", daily: "plan.beforeDaily", twice_daily: "plan.beforeTwice" },
+};
+
+/** What a reminder plan does, in one sentence. */
+export function planSentence(plan: ReminderPlan, t: ReturnType<typeof useT>): string {
+  if (plan.before.length === 0) return t(sentences.due[plan.followUp]);
+  const before = listWords([...plan.before].sort((a, b) => b - a).map(durationWords));
+  return t(sentences.before[plan.followUp], { before });
+}
+
+function readTime(text: string): number | undefined {
   try {
-    const all = parts.map(parseDuration);
-    // Only what can be written out again is a duration the page can show.
-    all.forEach(formatDuration);
-    return all;
+    const ms = parseDuration(text.trim());
+    // Only what can be written out again is a time the hub takes.
+    formatDuration(ms);
+    return ms;
   } catch {
     return undefined;
   }
@@ -38,45 +49,87 @@ function PlanCard({ plan }: { plan: ReminderPlan }) {
   const t = useT();
   const hub = useHub();
   const { guard } = useNotices();
-  const before = useCheckedDraft(
-    plan.before.map(formatDuration).join(", "),
-    durations,
-    (parsed) => void guard(setPlan(hub, plan.priority, { before: parsed })),
-  );
+  const [adding, setAdding] = useState(false);
+  const [text, setText] = useState("");
+  const [error, setError] = useState<string>();
+  const title = t("personal.planOf", { priority: t(`priority.${plan.priority}`) });
+  const save = (before: number[]) => void guard(setPlan(hub, plan.priority, { before }));
+
+  const add = (event: FormEvent) => {
+    event.preventDefault();
+    const ms = readTime(text);
+    if (ms === undefined) return setError(t("plan.timeError"));
+    if (plan.before.includes(ms)) return setError(t("plan.timeTaken"));
+    if (plan.before.length >= mostBefore) return setError(t("plan.timeLimit"));
+    save([...plan.before, ms].sort((a, b) => b - a));
+    setText("");
+    setError(undefined);
+    setAdding(false);
+  };
+
   return (
-    <fieldset
-      className="card"
-      aria-label={t("personal.planOf", { priority: t(`priority.${plan.priority}`) })}
-    >
-      <legend className="label">
-        {t("personal.planOf", { priority: t(`priority.${plan.priority}`) })}
-      </legend>
-      <Field
-        label={t("item.overrideBefore")}
-        error={before.invalid ? t("item.overrideError") : undefined}
-      >
-        <Input placeholder="1d, 2h" {...before.field} />
-      </Field>
-      <Field label={t("personal.followUp")}>
-        <Select
+    <section className="card" aria-label={title}>
+      <div className="between">
+        <span className="strong">{title}</span>
+        {!plan.isDefault && (
+          <Button variant="ghost" onClick={() => void guard(resetPlan(hub, plan.priority))}>
+            {t("personal.planReset")}
+          </Button>
+        )}
+      </div>
+      <p className="text">{planSentence(plan, t)}</p>
+      <div className="field">
+        <span className="label">{t("plan.before")}</span>
+        <div className="chips">
+          <div role="list" className="chips" aria-label={t("plan.before")}>
+            {plan.before.map((ms) => (
+              <span role="listitem" className="chip" key={ms}>
+                {durationWords(ms)}
+                <button
+                  type="button"
+                  aria-label={t("plan.remove", { time: durationWords(ms) })}
+                  onClick={() => save(plan.before.filter((one) => one !== ms))}
+                >
+                  <Icon name="close" />
+                </button>
+              </span>
+            ))}
+          </div>
+          {plan.before.length === 0 && <span className="dim">{t("plan.none")}</span>}
+          {!adding && (
+            <button type="button" className="btn add" onClick={() => setAdding(true)}>
+              {t("plan.add")}
+            </button>
+          )}
+        </div>
+        {adding && (
+          <form className="line" onSubmit={add}>
+            <Field label={t("plan.newTime")} error={error}>
+              <Input
+                autoFocus
+                placeholder="2h"
+                value={text}
+                aria-invalid={error ? true : undefined}
+                onChange={(event) => setText(event.target.value)}
+              />
+            </Field>
+          </form>
+        )}
+      </div>
+      <div className="between">
+        <span>{t("personal.followUp")}</span>
+        <Segmented<FollowUp>
+          label={`${t("personal.followUp")}, ${title}`}
           value={plan.followUp}
-          onChange={(event) =>
-            void guard(setPlan(hub, plan.priority, { followUp: event.target.value as FollowUp }))
-          }
-        >
-          {followUps.map((one) => (
-            <option key={one} value={one}>
-              {t(`followUp.${one}`)}
-            </option>
-          ))}
-        </Select>
-      </Field>
-      {!plan.isDefault && (
-        <Button variant="ghost" onClick={() => void guard(resetPlan(hub, plan.priority))}>
-          {t("personal.planReset")}
-        </Button>
-      )}
-    </fieldset>
+          options={[
+            { value: "never", label: t("followUp.never") },
+            { value: "daily", label: t("followUp.daily") },
+            { value: "twice_daily", label: t("followUp.twice_daily") },
+          ]}
+          onChange={(followUp) => void guard(setPlan(hub, plan.priority, { followUp }))}
+        />
+      </div>
+    </section>
   );
 }
 
@@ -114,8 +167,11 @@ export function ReminderSettings() {
 
   return (
     <>
+      <p className="lead">{t("plan.lead")}</p>
       <Card title={t("personal.quiet")}>
-        <p className="text dim">{t("personal.quietText")}</p>
+        <p className="text dim">
+          {quiet ? t("plan.quietUntil", { end: quiet.end }) : t("personal.quietText")}
+        </p>
         <Toggle
           label={t("personal.quiet")}
           checked={quiet !== null}
@@ -126,6 +182,7 @@ export function ReminderSettings() {
 
       <section className="stack" aria-label={t("personal.plans")}>
         <h2 className="h2">{t("personal.plans")}</h2>
+        <p className="text dim">{t("plan.text")}</p>
         {priorities.map((priority) => {
           const plan = plans.find((one) => one.priority === priority);
           return plan ? <PlanCard key={priority} plan={plan} /> : null;
