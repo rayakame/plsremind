@@ -1,5 +1,6 @@
 # A second Discord bot next to the first, as its own app of the instance:
-#   docker compose -f compose.yaml -f examples/another-discord-bot.yaml --profile discord up -d
+#   cp examples/another-discord-bot.yaml compose.override.yaml
+#   docker compose --profile discord up -d
 # and add "discord-team:9091" to the targets of plsremind-discord in monitoring/scrape.yml.
 services:
   discord-team:

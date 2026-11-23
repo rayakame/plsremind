@@ -123,6 +123,7 @@ event.
 | `connection.updated` | `ConnectionUpdateEvent` | `connection` |
 | `delivery.created` | `DeliveryCreateEvent` | `delivery` |
 | `delivery.closed` | `DeliveryCloseEvent` | `delivery_id`, `status` |
+| `delivery.test` | `DeliveryTestEvent` | `test`; answer with `client.rest.report_test` |
 | `user.sync` | `UserSyncEvent` | one part of a user's state |
 | `user.gone` | `UserGoneEvent` | |
 

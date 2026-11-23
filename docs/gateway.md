@@ -323,7 +323,7 @@ with a short message that says it is a test, then report how it went:
 `{"status": "failed", "reason": "direct messages are closed"}`. The reason is shown to the
 user.
 
-A test is sent once, only to sessions that are connected at that moment, and never again
+A test is sent once, only to sessions that are connected when it goes out, and never again
 after a login or a resume. Do not try again later: answer within a minute or the hub
 gives up on it. An adapter that does not know the event ignores it, and the user sees that
 the test was not answered.
@@ -384,6 +384,9 @@ is closed with 4014.
 | `delivery.created` | `deliveries` | the delivery |
 | `delivery.closed` | `deliveries` | `{"id", "status"}` |
 | `delivery.test` | `deliveries` | `{"id", "user"}` |
+
+A later hub may add events. Skip a `t` you do not know and keep its `s` for resuming, as
+you would for any other event.
 
 ## Example
 

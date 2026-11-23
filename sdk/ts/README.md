@@ -73,7 +73,9 @@ of the event; every event type can also be imported by name, for example
 
 Events of the hub keep their gateway names: `item.created`, `item.updated`,
 `item.deleted`, `list.*`, `subitem.*`, `reminder.*`, `plan.updated`, `user.updated`,
-`connection.updated`, `delivery.created`, `delivery.closed`, `user.sync` and `user.gone`.
+`connection.updated`, `delivery.created`, `delivery.closed`, `delivery.test`, `user.sync`
+and `user.gone`. `delivery.test` asks you to show the user that you reach them; answer it
+with `client.rest.reportTest`. Names a later hub adds reach no handler and are dropped.
 A change event carries:
 
 | Field    | Meaning                                                             |

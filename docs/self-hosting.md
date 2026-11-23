@@ -135,9 +135,13 @@ through the API and the gateway only, and keeps a small SQLite file of its own.
    ```sh
    curl -b cookies.txt -X POST -H 'Content-Type: application/json' \
      -H 'Origin: https://todo.example.com' \
-     -d '{"name":"Discord","provider":"discord","allowed_intents":["users","lists","items","history","deliveries"]}' \
+     -d '{"name":"Discord","provider":"discord","allowed_intents":["users","lists","items","history","deliveries"],"install_url":"https://discord.com/oauth2/authorize?client_id=<Application ID>&integration_type=1&scope=applications.commands"}' \
      https://todo.example.com/api/v1/admin/connections
    ```
+
+   A bot that was added without its Application ID, for example before apps had an
+   install link, shows users no button: enter the ID once under Settings, Administration,
+   Apps.
 
 4. **Start the bot** next to the hub:
 
@@ -168,12 +172,14 @@ time, and older messages only catch up when someone clicks them. Nothing else de
 
 A second bot is a second app with its own Discord application, token and SQLite file.
 [`deploy/examples/another-discord-bot.yaml`](../deploy/examples/another-discord-bot.yaml)
-adds one next to the first:
+adds one next to the first. Copy it to `compose.override.yaml`, which Compose reads on its
+own, so that the bot is also rebuilt when you update:
 
 ```sh
+cp examples/another-discord-bot.yaml compose.override.yaml
 echo "DISCORD_TEAM_TOKEN=..." >> .env
 echo "PLSREMIND_DISCORD_TEAM_TOKEN=plsr_con_..." >> .env
-docker compose -f compose.yaml -f examples/another-discord-bot.yaml --profile discord up -d
+docker compose --profile discord up -d
 ```
 
 For the monitoring, add `discord-team:9091` to the targets of the `plsremind-discord` job
