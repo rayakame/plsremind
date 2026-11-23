@@ -331,11 +331,25 @@ func (c *Client) OAuthLink(t *testing.T, provider string) *Resp {
 	return c.env.OAuthFlow(t, provider, "intent=link", c.opts...)
 }
 
-// AuthError extracts the error code from a failed flow's redirect.
+// AuthError extracts the error code from a failed flow's redirect, whether it went
+// home or to the confirmation of a link.
 func (r *Resp) AuthError() string {
 	u, err := url.Parse(r.Header.Get("Location"))
 	if err != nil {
 		return ""
 	}
+	if strings.HasPrefix(u.Path, "/linked/") {
+		return u.Query().Get("error")
+	}
 	return u.Query().Get("auth_error")
+}
+
+// Linked reads the confirmation a link flow returns to: the provider, and the linked
+// identity or the error code.
+func (r *Resp) Linked() (provider, identity, code string) {
+	u, err := url.Parse(r.Header.Get("Location"))
+	if err != nil || !strings.HasPrefix(u.Path, "/linked/") {
+		return "", "", ""
+	}
+	return strings.TrimPrefix(u.Path, "/linked/"), u.Query().Get("identity"), u.Query().Get("error")
 }

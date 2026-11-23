@@ -1355,10 +1355,13 @@ paths:
         provider account is not known yet. With `intent=link` the provider account is added
         to the logged-in user.
 
-        Every outcome ends with a redirect to the dashboard. On failure the address carries
-        `?auth_error=` with one of `invalid_state`, `provider_error`, `login_disabled`,
-        `link_disabled`, `registration_closed`, `invalid_invite`, `identity_taken` or
-        `account_disabled`.
+        Every outcome ends with a redirect to the dashboard. A login ends at `/`; on failure the
+        address carries `?auth_error=` with one of `invalid_state`, `provider_error`,
+        `login_disabled`, `registration_closed`, `invalid_invite` or `account_disabled`. A link
+        ends at `/linked/{provider}` with `?identity=` and the id of the linked identity, or
+        on failure with `?error=` and one of `invalid_state`, `provider_error`, `link_disabled`
+        or `identity_taken`. A state the hub does not know belongs to no flow and ends at
+        `/?auth_error=invalid_state`.
       security: []
       parameters:
         - name: intent
@@ -1374,7 +1377,7 @@ paths:
             type: string
       responses:
         "302":
-          description: Redirect to the provider, or to the dashboard with `auth_error`.
+          description: Redirect to the provider, or to the dashboard with the error.
         default:
           $ref: "#/components/responses/Error"
   /auth/oauth/{provider}/callback:
@@ -1401,7 +1404,7 @@ paths:
             type: string
       responses:
         "302":
-          description: Redirect to the dashboard, with `auth_error` on failure.
+          description: Redirect to the dashboard, with the outcome.
         default:
           $ref: "#/components/responses/Error"
   /users/{user}/identities/{id}:
