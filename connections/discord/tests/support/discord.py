@@ -23,7 +23,7 @@ from plsremind_discord.views import common
 from tests.support import things
 
 CONFIG: typing.Final = Config(
-    discord_token="discord-secret",
+    discord_token="MTIzNDU2Nzg5MDEyMzQ1Njc4.discord.secret",
     hub_url="http://hub:8080",
     hub_token="plsr_con_secret",
     public_url="https://todo.example.com",

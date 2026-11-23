@@ -146,9 +146,10 @@ account in the dashboard under Settings, and get their reminders as direct messa
 | `PLSREMIND_PUBLIC_URL` | yes | The address of the dashboard, for the links in the bot's messages. |
 | `PLSREMIND_DISCORD_DB` | no | Where the bot keeps its SQLite file. In the image it is `/data/discord.db`, on a volume. |
 
-The file holds which reminders went out and which message shows which item. If it is lost,
-a reminder that was still waiting for its confirmation may arrive a second time, and
-older messages only catch up when someone clicks them. Nothing else depends on it.
+The file holds which reminders went out, which message shows which item and the DM
+channels of the accounts reminded in the last 30 days. If it is lost, the DM channels are
+opened again, a reminder that was still waiting for its confirmation may arrive a second
+time, and older messages only catch up when someone clicks them. Nothing else depends on it.
 
 ## Behind a reverse proxy
 
@@ -182,5 +183,6 @@ docker compose --profile discord up -d --build
 The hub's state lives in the PostgreSQL volume. Back it up with `pg_dump`, and keep
 `PLSREMIND_SECRET_KEY` with the backup. The Discord bot keeps its SQLite file on a volume
 of its own, which this backup does not cover. Restored without it, the bot works on, as
-described in its section: a reminder still waiting for its confirmation may arrive a
-second time, and older messages catch up only when someone clicks them.
+described in its section: it opens the DM channels again, a reminder still waiting for its
+confirmation may arrive a second time, and older messages catch up only when someone
+clicks them.

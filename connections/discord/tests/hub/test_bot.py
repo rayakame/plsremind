@@ -45,7 +45,13 @@ def now() -> datetime.datetime:
 
 
 def config(kit: kit_.Kit, token: str, tmp_path: pathlib.Path) -> Config:
-    return Config(discord_token="x", hub_url=kit.url, hub_token=token, public_url=kit.url, database=tmp_path / "bot.db")
+    return Config(
+        discord_token="MTIzNDU2Nzg5MDEyMzQ1Njc4.x.y",
+        hub_url=kit.url,
+        hub_token=token,
+        public_url=kit.url,
+        database=tmp_path / "bot.db",
+    )
 
 
 @pytest.fixture
@@ -80,6 +86,7 @@ async def running(kit: kit_.Kit, tmp_path: pathlib.Path) -> collections.abc.Asyn
         store=store,
         texts=discord.say(),
         clock=clock,
+        bot=123456789012345678,
         redraw=sync.redraw_soon,
     )
     gate = bot_module.Gate()
@@ -186,6 +193,7 @@ async def test_done_in_discord_reaches_the_hub_and_only_other_messages_are_redra
         item_id=item.id,
         shown_at=item.updated_at,
         messages=[Sent(555, CHANNEL, 1234), Sent(556, CHANNEL, 1234)],
+        bot_id=900,
         now=now(),
     )
     running.redraws.shows.update({555: (mia.id, item.id), 556: (mia.id, item.id)})
@@ -248,6 +256,7 @@ async def test_a_change_in_the_hub_redraws_the_message(running: Running) -> None
         item_id=item.id,
         shown_at=None,
         messages=[Sent(555, CHANNEL, 1234)],
+        bot_id=900,
         now=now(),
     )
     running.redraws.shows[555] = (mia.id, item.id)
@@ -271,6 +280,7 @@ async def test_a_user_who_switches_the_connection_off_is_forgotten(running: Runn
         item_id=item.id,
         shown_at=None,
         messages=[Sent(555, CHANNEL, 1234)],
+        bot_id=900,
         now=now(),
     )
     await mia.browser.call("PUT", f"/users/@me/connections/{running.connection}", {"enabled": False})

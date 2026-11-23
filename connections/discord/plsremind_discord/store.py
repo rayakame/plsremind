@@ -56,6 +56,7 @@ class Store:
         item_id: str,
         shown_at: datetime.datetime | None,
         messages: collections.abc.Sequence[Sent],
+        bot_id: int,
         now: datetime.datetime,
     ) -> None:
         async with self._write():
@@ -70,6 +71,9 @@ class Store:
                     item_id=item_id,
                     shown_at=_utc(shown_at),
                     sent_at=_utc(now),
+                )
+                await queries.keep_dm_channel(
+                    self._db, account_id=sent.account_id, bot_id=bot_id, channel_id=sent.channel_id
                 )
 
     async def knows_message(self, message_id: int) -> bool:
@@ -91,12 +95,29 @@ class Store:
 
     async def forget_user(self, user_id: str) -> None:
         async with self._write():
+            await queries.forget_user_dm_channels(self._db, user_id=user_id)
             await queries.forget_user(self._db, user_id=user_id)
+            await queries.purge_dm_channels(self._db)
+
+    async def dm_channel(self, bot_id: int, account_id: int) -> int | None:
+        return await queries.find_dm_channel(self._db, bot_id=bot_id, account_id=account_id)
+
+    async def forget_dm_channel(self, bot_id: int, account_id: int, channel_id: int) -> None:
+        async with self._write():
+            await queries.forget_dm_channel(self._db, bot_id=bot_id, account_id=account_id, channel_id=channel_id)
+
+    async def forget_account(self, user_id: str, account_id: int) -> None:
+        async with self._write():
+            await queries.forget_account_dm_channels(self._db, account_id=account_id)
+            await queries.forget_account_messages(self._db, user_id=user_id, account_id=account_id)
+            await queries.purge_dm_channels(self._db)
 
     async def purge(self, now: datetime.datetime) -> None:
         async with self._write():
             await queries.purge_deliveries(self._db, sent_at=_utc(now - _DELIVERIES_KEPT))
             await queries.purge_messages(self._db, sent_at=_utc(now - _MESSAGES_KEPT))
+            # A channel lasts as long as a message to its account is kept, so no write is needed per send.
+            await queries.purge_dm_channels(self._db)
 
     def _write(self) -> _Write:
         return _Write(self._db, self._writing)
@@ -113,7 +134,12 @@ class _Write:
     async def __aexit__(self, kind: type[BaseException] | None, *_: object) -> None:
         try:
             if kind is None:
-                await self._db.commit()
+                try:
+                    await self._db.commit()
+                except BaseException:
+                    # Left open, the transaction would be committed by the next write.
+                    await self._db.rollback()
+                    raise
             else:
                 await self._db.rollback()
         finally:

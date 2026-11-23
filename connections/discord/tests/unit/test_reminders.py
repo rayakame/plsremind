@@ -4,6 +4,7 @@ import asyncio
 import collections.abc
 import datetime
 import http
+import itertools
 import pathlib
 import sqlite3
 import typing
@@ -17,6 +18,7 @@ import pytest
 
 from plsremind_discord import reminders as reminders_module
 from plsremind_discord.reminders import Reminders
+from plsremind_discord.store import Sent
 from plsremind_discord.store import Store
 from plsremind_discord.views.reminder import ReminderView
 from tests.support import discord
@@ -26,6 +28,7 @@ from tests.support.fake_hub import FakeHub
 MIA = things.MIA
 ITEM = things.item(1, updated_at=datetime.datetime(2026, 11, 19, 9, 0, 0, 123456, tzinfo=datetime.UTC))
 CHANNEL = 7000
+BOT = 900
 
 
 def forbidden() -> hikari.ForbiddenError:
@@ -43,6 +46,12 @@ def broken() -> hikari.InternalServerError:
 def refused() -> hikari.BadRequestError:
     return hikari.BadRequestError(
         url="https://discord.test", headers={}, raw_body=b"", message="Invalid Form Body", code=50035
+    )
+
+
+def unknown_channel() -> hikari.NotFoundError:
+    return hikari.NotFoundError(
+        url="https://discord.test", headers={}, raw_body=b"", message="Unknown Channel", code=10003
     )
 
 
@@ -88,6 +97,7 @@ async def made(tmp_path: pathlib.Path) -> collections.abc.AsyncIterator[Made]:
         store=store,
         texts=discord.say(),
         clock=clock,
+        bot=BOT,
         redraw=lambda message, channel: redrawn.append((message, channel)),
         sleep=sleep,
     )
@@ -127,7 +137,7 @@ async def test_a_reminder_goes_out_is_recorded_and_then_confirmed(made: Made) ->
 
     assert order == ["send", "record", "confirm"]
     made.rest.create_dm_channel.assert_awaited_once_with(1234)
-    assert made.rest.create_message.await_args.args[0].id == CHANNEL + 1234
+    assert made.rest.create_message.await_args.args[0] == CHANNEL + 1234
     assert made.rest.create_message.await_args.kwargs["components"]
     assert made.hub.named("delivered") == [{"delivery": things.uid(9001)}]
     (row,) = await made.store.messages_for_item(ITEM.id)
@@ -135,6 +145,252 @@ async def test_a_reminder_goes_out_is_recorded_and_then_confirmed(made: Made) ->
     assert row.shown_at == ITEM.updated_at
     assert await made.store.knows_delivery(things.uid(9001))
     assert made.reminders.waiting == frozenset()
+
+
+async def test_later_reminders_to_an_account_reuse_its_dm_channel(made: Made) -> None:
+    await made.reminders.deliver(delivery())
+    await made.reminders.deliver(things.delivery(2, of=ITEM))
+    made.rest.create_dm_channel.assert_awaited_once_with(1234)
+    assert [call.args[0] for call in made.rest.create_message.await_args_list] == [CHANNEL + 1234] * 2
+    assert len(made.hub.named("delivered")) == 2
+
+
+NEW_CHANNEL = CHANNEL + 9999
+
+
+def unknown_on_the_old_channel(target: int, **_: object) -> mock.Mock:
+    if target == CHANNEL + 1234:
+        raise unknown_channel()
+    return mock.Mock(id=hikari.Snowflake(101))
+
+
+async def test_a_dm_channel_discord_no_longer_knows_is_opened_again(made: Made) -> None:
+    await made.reminders.deliver(delivery())
+    made.rest.create_dm_channel.side_effect = [mock.Mock(id=hikari.Snowflake(NEW_CHANNEL))]
+    made.rest.create_message.side_effect = unknown_on_the_old_channel
+    await made.reminders.deliver(things.delivery(2, of=ITEM))
+    assert made.rest.create_dm_channel.await_count == 2
+    rows = await made.store.messages_for_item(ITEM.id)
+    assert [row.channel_id for row in rows] == [CHANNEL + 1234, NEW_CHANNEL]
+    assert await made.store.dm_channel(BOT, 1234) == NEW_CHANNEL
+    assert len(made.hub.named("delivered")) == 2
+    assert made.hub.named("failed") == []
+
+
+async def test_a_dm_channel_that_stays_unknown_is_not_sent_to_twice(made: Made) -> None:
+    english = things.user(locale="en")
+    await made.reminders.deliver(delivery(to=english))
+    made.rest.create_message.side_effect = unknown_channel()
+    await made.reminders.deliver(things.delivery(2, of=ITEM, to=english))
+    assert made.rest.create_dm_channel.await_count == 2
+    assert made.rest.create_message.await_count == 2
+    assert str(made.hub.named("failed")[0]["reason"]).startswith("Discord did not accept")
+
+
+@pytest.mark.parametrize("trouble", [forbidden, refused, broken])
+async def test_other_trouble_on_a_kept_dm_channel_does_not_open_it_again(
+    made: Made, trouble: collections.abc.Callable[[], hikari.HTTPError]
+) -> None:
+    await made.reminders.deliver(delivery())
+    made.rest.create_message.side_effect = trouble()
+    await made.reminders.deliver(things.delivery(2, of=ITEM))
+    made.rest.create_dm_channel.assert_awaited_once_with(1234)
+
+
+async def test_a_dm_channel_that_could_not_be_opened_again_is_opened_on_the_next_try(made: Made) -> None:
+    await made.reminders.deliver(delivery())
+    made.rest.create_dm_channel.side_effect = [broken(), mock.Mock(id=hikari.Snowflake(NEW_CHANNEL))]
+    made.rest.create_message.side_effect = unknown_on_the_old_channel
+    await made.reminders.deliver(things.delivery(2, of=ITEM))
+    await discord.until(lambda: len(made.hub.named("delivered")) == 2)
+    targets = [call.args[0] for call in made.rest.create_message.await_args_list]
+    assert targets == [CHANNEL + 1234, CHANNEL + 1234, NEW_CHANNEL]
+
+
+@pytest.mark.parametrize("trouble", [forbidden, unknown_channel], ids=["forbidden", "not_found"])
+async def test_a_dm_channel_that_cannot_be_opened_again_counts_as_closed(
+    made: Made, trouble: collections.abc.Callable[[], hikari.HTTPError]
+) -> None:
+    english = things.user(locale="en")
+    await made.reminders.deliver(delivery(to=english))
+    made.rest.create_message.side_effect = unknown_channel()
+    made.rest.create_dm_channel.side_effect = trouble()
+    await made.reminders.deliver(things.delivery(2, of=ITEM, to=english))
+    assert str(made.hub.named("failed")[0]["reason"]).startswith("Discord did not accept")
+    assert await made.store.dm_channel(BOT, 1234) is None
+
+
+async def test_closed_dms_on_the_new_dm_channel_count_as_closed(made: Made) -> None:
+    english = things.user(locale="en")
+    await made.reminders.deliver(delivery(to=english))
+    made.rest.create_dm_channel.side_effect = [mock.Mock(id=hikari.Snowflake(NEW_CHANNEL))]
+
+    def answer(target: int, **_: object) -> mock.Mock:
+        raise unknown_channel() if target == CHANNEL + 1234 else forbidden()
+
+    made.rest.create_message.side_effect = answer
+    await made.reminders.deliver(things.delivery(2, of=ITEM, to=english))
+    assert str(made.hub.named("failed")[0]["reason"]).startswith("Discord did not accept")
+
+
+async def test_passing_trouble_on_the_new_dm_channel_opens_it_again_on_the_next_try(made: Made) -> None:
+    await made.reminders.deliver(delivery())
+
+    async def opened(_: int) -> mock.Mock:
+        return mock.Mock(id=hikari.Snowflake(NEW_CHANNEL))
+
+    made.rest.create_dm_channel.side_effect = opened
+    sent_on_the_new_one = 0
+
+    def answer(target: int, **_: object) -> mock.Mock:
+        nonlocal sent_on_the_new_one
+        if target == CHANNEL + 1234:
+            raise unknown_channel()
+        sent_on_the_new_one += 1
+        if sent_on_the_new_one == 1:
+            raise broken()
+        return mock.Mock(id=hikari.Snowflake(101))
+
+    made.rest.create_message.side_effect = answer
+    await made.reminders.deliver(things.delivery(2, of=ITEM))
+    await discord.until(lambda: len(made.hub.named("delivered")) == 2)
+    targets = [call.args[0] for call in made.rest.create_message.await_args_list]
+    assert targets == [CHANNEL + 1234, CHANNEL + 1234, NEW_CHANNEL, NEW_CHANNEL]
+    assert made.rest.create_dm_channel.await_count == 3
+    assert await made.store.dm_channel(BOT, 1234) == NEW_CHANNEL
+
+
+async def test_a_dm_channel_kept_before_a_restart_is_used_again(made: Made, tmp_path: pathlib.Path) -> None:
+    await made.reminders.deliver(delivery())
+    store = await Store.open(tmp_path / "discord.db")
+    restarted = Reminders(
+        hub=made.hub,
+        views=discord.views(made.hub, ReminderView),
+        rest=typing.cast("hikari.api.RESTClient", made.rest),
+        store=store,
+        texts=discord.say(),
+        clock=made.clock,
+        bot=BOT,
+        redraw=lambda message, channel: made.redrawn.append((message, channel)),
+    )
+    try:
+        await restarted.deliver(things.delivery(2, of=ITEM))
+    finally:
+        await restarted.close()
+        await store.close()
+    made.rest.create_dm_channel.assert_awaited_once_with(1234)
+    assert [call.args[0] for call in made.rest.create_message.await_args_list] == [CHANNEL + 1234] * 2
+
+
+async def test_a_dm_channel_kept_by_another_bot_is_not_used(made: Made) -> None:
+    await made.store.record(
+        delivery_id="elsewhere",
+        user_id=MIA,
+        item_id=ITEM.id,
+        shown_at=None,
+        messages=[Sent(555, CHANNEL + 5555, 1234)],
+        bot_id=BOT + 1,
+        now=things.NOW,
+    )
+    await made.reminders.deliver(delivery())
+    assert made.rest.create_message.await_args.args[0] == CHANNEL + 1234
+
+
+async def test_a_dm_channel_that_cannot_be_read_does_not_hold_a_reminder_up(
+    made: Made, caplog: pytest.LogCaptureFixture
+) -> None:
+    with mock.patch.object(made.store, "dm_channel", side_effect=sqlite3.OperationalError("disk I/O error")):
+        await made.reminders.deliver(delivery())
+    assert len(made.hub.named("delivered")) == 1
+    assert "disk I/O error" in caplog.text
+
+
+async def test_a_dm_channel_that_cannot_be_forgotten_in_the_store_is_still_replaced(made: Made) -> None:
+    await made.reminders.deliver(delivery())
+    made.rest.create_dm_channel.side_effect = [mock.Mock(id=hikari.Snowflake(NEW_CHANNEL))]
+    made.rest.create_message.side_effect = unknown_on_the_old_channel
+    forget = mock.AsyncMock(side_effect=sqlite3.OperationalError("disk I/O error"))
+    with mock.patch.object(made.store, "forget_dm_channel", forget):
+        await made.reminders.deliver(things.delivery(2, of=ITEM))
+    assert len(made.hub.named("delivered")) == 2
+    assert await made.store.dm_channel(BOT, 1234) == NEW_CHANNEL
+
+
+async def test_each_account_keeps_its_own_dm_channel(made: Made) -> None:
+    both = things.user(external_ids=("1234", "5678"))
+    made.hub.knows(both, ITEM)
+    await made.reminders.deliver(delivery(to=both))
+    await made.reminders.deliver(things.delivery(2, of=ITEM, to=both))
+    assert [call.args[0] for call in made.rest.create_dm_channel.await_args_list] == [1234, 5678]
+    targets = [call.args[0] for call in made.rest.create_message.await_args_list]
+    assert targets == [CHANNEL + 1234, CHANNEL + 5678] * 2
+
+
+async def test_two_reminders_that_find_the_dm_channel_gone_at_once_both_go_out_on_the_new_one(
+    made: Made, caplog: pytest.LogCaptureFixture
+) -> None:
+    await made.reminders.deliver(delivery())
+    both_failed = asyncio.Barrier(2)
+    failures = 0
+    ids = itertools.count(200)
+
+    async def answer(target: int, **_: object) -> mock.Mock:
+        nonlocal failures
+        if target == CHANNEL + 1234 and failures < 2:
+            failures += 1
+            await both_failed.wait()
+            raise unknown_channel()
+        return mock.Mock(id=hikari.Snowflake(next(ids)))
+
+    async def opened(_: int) -> mock.Mock:
+        await asyncio.sleep(0)
+        return mock.Mock(id=hikari.Snowflake(NEW_CHANNEL))
+
+    made.rest.create_message.side_effect = answer
+    made.rest.create_dm_channel.side_effect = opened
+    async with asyncio.timeout(2):
+        await asyncio.gather(
+            made.reminders.deliver(things.delivery(2, of=ITEM)),
+            made.reminders.deliver(things.delivery(3, of=ITEM)),
+        )
+    assert len(made.hub.named("delivered")) == 3
+    rows = await made.store.messages_for_item(ITEM.id)
+    assert [row.channel_id for row in rows] == [CHANNEL + 1234, NEW_CHANNEL, NEW_CHANNEL]
+    assert "could not be recorded" not in caplog.text
+
+
+async def test_a_late_failure_on_the_old_dm_channel_keeps_the_new_one(made: Made) -> None:
+    await made.reminders.deliver(delivery())
+    late_one_sending, others_done = asyncio.Event(), asyncio.Event()
+    ids = itertools.count(200)
+
+    async def answer(target: int, **_: object) -> mock.Mock:
+        if target == CHANNEL + 1234:
+            if not late_one_sending.is_set():
+                late_one_sending.set()
+                await others_done.wait()
+            raise unknown_channel()
+        return mock.Mock(id=hikari.Snowflake(next(ids)))
+
+    made.rest.create_message.side_effect = answer
+    made.rest.create_dm_channel.side_effect = [mock.Mock(id=hikari.Snowflake(NEW_CHANNEL))]
+    late = asyncio.create_task(made.reminders.deliver(things.delivery(2, of=ITEM)))
+    await asyncio.wait_for(late_one_sending.wait(), 2)
+    await made.reminders.deliver(things.delivery(3, of=ITEM))
+    others_done.set()
+    await late
+    await made.reminders.deliver(things.delivery(4, of=ITEM))
+    assert made.rest.create_dm_channel.await_count == 2
+    assert len(made.hub.named("delivered")) == 4
+    assert await made.store.dm_channel(BOT, 1234) == NEW_CHANNEL
+
+
+async def test_a_fresh_dm_channel_that_is_unknown_counts_as_closed(made: Made) -> None:
+    made.rest.create_message.side_effect = unknown_channel()
+    await made.reminders.deliver(delivery(to=things.user(locale="en")))
+    made.rest.create_dm_channel.assert_awaited_once_with(1234)
+    assert str(made.hub.named("failed")[0]["reason"]).startswith("Discord did not accept")
+    assert await made.store.dm_channel(BOT, 1234) is None
 
 
 async def test_a_delivery_that_went_out_before_is_only_confirmed(made: Made) -> None:
@@ -147,6 +403,7 @@ async def test_a_delivery_that_went_out_before_is_only_confirmed(made: Made) -> 
 async def test_closed_dms_are_reported_in_the_users_language(made: Made) -> None:
     made.rest.create_message.side_effect = forbidden()
     await made.reminders.deliver(delivery())
+    assert await made.store.dm_channel(BOT, 1234) is None
     (call,) = made.hub.named("failed")
     assert call["delivery"] == things.uid(9001)
     assert str(call["reason"]).startswith("Discord hat die Direktnachricht nicht angenommen")
@@ -238,6 +495,7 @@ def held(made: Made) -> Held:
         store=made.store,
         texts=discord.say(),
         clock=made.clock,
+        bot=BOT,
         redraw=lambda message, channel: made.redrawn.append((message, channel)),
         sleep=sleep,
     )
@@ -621,8 +879,8 @@ async def test_a_message_that_went_out_is_recorded_before_the_next_account_is_tr
     made.rest.create_message.side_effect = broken()
     await waiting.deliver(delivery(to=things.user(external_ids=("1234", "5678"))))
 
-    async def answer(target: mock.Mock, **_: object) -> mock.Mock:
-        if target.id == CHANNEL + 5678:
+    async def answer(target: int, **_: object) -> mock.Mock:
+        if target == CHANNEL + 5678:
             second.set()
             await let_go.wait()
         return mock.Mock(id=hikari.Snowflake(400))

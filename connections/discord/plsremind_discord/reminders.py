@@ -58,6 +58,7 @@ class Reminders:
         store: Store,
         texts: texts_.Texts,
         clock: Clock,
+        bot: int,
         redraw: collections.abc.Callable[[int, int], None],
         sleep: collections.abc.Callable[[float], collections.abc.Awaitable[None]] = asyncio.sleep,
     ) -> None:
@@ -67,6 +68,7 @@ class Reminders:
         self._store: typing.Final = store
         self._texts: typing.Final = texts
         self._clock: typing.Final = clock
+        self._bot: typing.Final = bot
         self._sleep: typing.Final = sleep
         self._redraw: typing.Final = redraw
         self._busy: set[plsremind.ID] = set()
@@ -191,10 +193,7 @@ class Reminders:
         passing = refused = False
         for account, (rendered, version) in views.items():
             try:
-                channel = await self._rest.create_dm_channel(account)
-                message = await self._rest.create_message(
-                    channel, **rendered, user_mentions=[account], role_mentions=False, mentions_everyone=False
-                )
+                channel, message = await self._post(account, rendered)
             except hikari.ForbiddenError, hikari.NotFoundError:
                 continue
             except hikari.ClientHTTPResponseError:
@@ -205,12 +204,51 @@ class Reminders:
                 _LOGGER.warning("delivery %s did not get through to Discord: %s", delivery.id, trouble)
                 passing = True
                 continue
-            one = Sent(message_id=int(message.id), channel_id=int(channel.id), account_id=account)
+            one = Sent(message_id=int(message.id), channel_id=channel, account_id=account)
             # At once, so that a stop before the next account cannot make this one go out twice.
             self._sent.add(delivery.id)
             await self._record(delivery, [one], version)
             sent.append(one)
         return _Sending(sent, passing=passing, refused=refused)
+
+    async def _post(self, account: int, rendered: ui.Rendered) -> tuple[int, hikari.Message]:
+        # Opening the DM channel for every reminder would double the requests at the busy hours.
+        kept = await self._kept(account)
+        stale: hikari.NotFoundError | None = None
+        if kept is not None:
+            try:
+                return kept, await self._message(kept, account, rendered)
+            except hikari.NotFoundError as unknown:
+                stale = unknown
+            await self._forget_channel(account, kept)
+            # Another reminder may have opened the channel anew meanwhile.
+            current = await self._kept(account)
+            if current is not None and current != kept:
+                return current, await self._message(current, account, rendered)
+        channel = int((await self._rest.create_dm_channel(account)).id)
+        # Discord gives back the same channel when it is opened again, and it would fail again.
+        if stale is not None and channel == kept:
+            raise stale
+        # Kept when the message is recorded, so that a channel lasts exactly as long as its messages.
+        return channel, await self._message(channel, account, rendered)
+
+    async def _kept(self, account: int) -> int | None:
+        try:
+            return await self._store.dm_channel(self._bot, account)
+        except Exception:
+            _LOGGER.exception("a kept DM channel could not be read")
+            return None
+
+    async def _forget_channel(self, account: int, channel: int) -> None:
+        try:
+            await self._store.forget_dm_channel(self._bot, account, channel)
+        except Exception:
+            _LOGGER.exception("a DM channel Discord no longer knows could not be forgotten")
+
+    async def _message(self, channel: int, account: int, rendered: ui.Rendered) -> hikari.Message:
+        return await self._rest.create_message(
+            channel, **rendered, user_mentions=[account], role_mentions=False, mentions_everyone=False
+        )
 
     def _accounts(self, delivery: plsremind.Delivery, *, first: bool) -> list[int]:
         if first:
@@ -226,6 +264,7 @@ class Reminders:
                 item_id=delivery.item.id,
                 shown_at=version,
                 messages=sent,
+                bot_id=self._bot,
                 now=self._clock.now(),
             )
         except Exception:
