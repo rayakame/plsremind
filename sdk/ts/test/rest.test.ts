@@ -342,3 +342,21 @@ test("the picture of a linked account has an address and comes as a blob", async
   expect(await picture.text()).toBe("png");
   expect(calls[0]!.url).toBe("https://hub.test/api/v1/users/@me/identities/i1/avatar");
 });
+
+test("login methods of a hub that does not say whether they link log in and do not link", async () => {
+  const { rest } = fake([
+    {
+      status: 200,
+      body: {
+        name: "hub",
+        version: "1",
+        gateway_url: "wss://hub.test/api/v1/gateway",
+        setup_required: false,
+        registration: "open",
+        login_methods: [{ key: "gh", type: "github", name: "GitHub" }],
+      },
+    },
+  ]);
+  const info = await rest.getInfo();
+  expect(info.loginMethods[0]).toMatchObject({ login: true, link: false });
+});

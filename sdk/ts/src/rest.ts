@@ -16,6 +16,7 @@ import type {
   ItemStatus,
   List,
   ListName,
+  LoginMethod,
   LoginProvider,
   LookupResult,
   ManualReminder,
@@ -221,8 +222,13 @@ export class RestClient {
     return url.toString();
   }
 
-  getInfo(options?: CallOptions): Promise<Info> {
-    return this.#request("GET", "/info", { options });
+  async getInfo(options?: CallOptions): Promise<Info> {
+    const info = await this.#request<Info>("GET", "/info", { options });
+    // Hubs from before login and link listed only the methods that log in.
+    const loginMethods = (info.loginMethods as readonly Partial<LoginMethod>[] | undefined)?.map(
+      (method) => ({ ...method, login: method.login ?? true, link: method.link ?? false }),
+    );
+    return loginMethods ? { ...info, loginMethods: loginMethods as LoginMethod[] } : info;
   }
 
   setup(account: NewPasswordAccount, options?: CallOptions): Promise<User> {
