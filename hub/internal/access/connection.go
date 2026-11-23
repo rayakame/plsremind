@@ -244,6 +244,10 @@ func setGrant(d *core.Deps) fiber.Handler {
 					return goneOr(err)
 				}
 			}
+			now := d.Now()
+			if err := delivery.SyncConnection(c.Context(), q, now, id, userID); err != nil {
+				return err
+			}
 			all, err := userConnections(c.Context(), q, userID)
 			if err != nil {
 				return err
@@ -259,11 +263,7 @@ func setGrant(d *core.Deps) fiber.Handler {
 			if !found {
 				return api.NotFound()
 			}
-			now := d.Now()
 			if err := events.Append(c.Context(), q, now, userID, auth.Actor(c), "connection.updated", out); err != nil {
-				return err
-			}
-			if err := delivery.SyncConnection(c.Context(), q, now, id, userID); err != nil {
 				return err
 			}
 			return events.SendSignal(c.Context(), q, events.Signal{Type: events.SignalGrant, UserID: &userID, ConnectionID: &id})
@@ -360,24 +360,32 @@ func createConnection(d *core.Deps) fiber.Handler {
 			return api.Validation(fields)
 		}
 		plain, hash := core.NewToken(core.PrefixConnection)
-		row, err := d.Q().CreateConnection(c.Context(), sqlc.CreateConnectionParams{
-			ID:             uuid.Must(uuid.NewV7()),
-			Name:           in.Name,
-			Description:    in.Description,
-			Provider:       in.Provider,
-			AllowedIntents: intents,
-			InstallUrl:     in.InstallURL,
-			TokenHash:      hash,
-			CreatedAt:      d.Now(),
+		var out Connection
+		// The token is only ever shown here, so nothing is kept unless the whole answer can be made.
+		err := store.Tx(c.Context(), d.Pool, func(q *sqlc.Queries) error {
+			row, err := q.CreateConnection(c.Context(), sqlc.CreateConnectionParams{
+				ID:             uuid.Must(uuid.NewV7()),
+				Name:           in.Name,
+				Description:    in.Description,
+				Provider:       in.Provider,
+				AllowedIntents: intents,
+				InstallUrl:     in.InstallURL,
+				TokenHash:      hash,
+				CreatedAt:      d.Now(),
+			})
+			if err != nil {
+				return err
+			}
+			reach, err := reachOf(c.Context(), q, &row.ID)
+			if err != nil {
+				return err
+			}
+			out = viewConnection(row, reach[row.ID])
+			return nil
 		})
 		if err != nil {
 			return err
 		}
-		reach, err := reachOf(c.Context(), d.Q(), &row.ID)
-		if err != nil {
-			return err
-		}
-		out := viewConnection(row, reach[row.ID])
 		out.Token = plain
 		return c.Status(http.StatusCreated).JSON(out)
 	}
@@ -490,25 +498,25 @@ func rotateToken(d *core.Deps) fiber.Handler {
 			return err
 		}
 		plain, hash := core.NewToken(core.PrefixConnection)
-		var row sqlc.Connection
+		var out Connection
 		err = store.Tx(c.Context(), d.Pool, func(q *sqlc.Queries) error {
-			row, err = q.SetConnectionToken(c.Context(), sqlc.SetConnectionTokenParams{ID: id, TokenHash: hash})
+			row, err := q.SetConnectionToken(c.Context(), sqlc.SetConnectionTokenParams{ID: id, TokenHash: hash})
 			if store.IsNotFound(err) {
 				return api.NotFound()
 			}
 			if err != nil {
 				return err
 			}
+			reach, err := reachOf(c.Context(), q, &id)
+			if err != nil {
+				return err
+			}
+			out = viewConnection(row, reach[id])
 			return events.NotifyConnection(c.Context(), q, id)
 		})
 		if err != nil {
 			return err
 		}
-		reach, err := reachOf(c.Context(), d.Q(), &id)
-		if err != nil {
-			return err
-		}
-		out := viewConnection(row, reach[id])
 		out.Token = plain
 		return c.JSON(out)
 	}

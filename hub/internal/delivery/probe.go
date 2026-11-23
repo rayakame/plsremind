@@ -48,10 +48,18 @@ func viewTest(row sqlc.ConnectionTest) Test {
 	return out
 }
 
-// TestFor loads a test that is still pending, with what its app needs to send it.
+// TestFor loads a test that is still to be sent, with what its app needs to send it. One whose
+// user has since switched the app off is not sent, and ends unanswered when its minute is up.
 func TestFor(ctx context.Context, q *sqlc.Queries, id uuid.UUID) (view TestView, connection uuid.UUID, pending bool, err error) {
 	row, err := q.GetConnectionTest(ctx, id)
-	if store.IsNotFound(err) || (err == nil && row.Status != "pending") {
+	if store.IsNotFound(err) || (err == nil && (row.Status != "pending" || row.SentAt != nil)) {
+		return TestView{}, uuid.Nil, false, nil
+	}
+	if err != nil {
+		return TestView{}, uuid.Nil, false, err
+	}
+	access, err := q.ConnectionTestAccess(ctx, sqlc.ConnectionTestAccessParams{UserID: row.UserID, ConnectionID: row.ConnectionID})
+	if store.IsNotFound(err) || (err == nil && !(access.Deliverable && access.Linked && access.Granted)) {
 		return TestView{}, uuid.Nil, false, nil
 	}
 	if err != nil {

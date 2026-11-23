@@ -5,8 +5,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
+
+	"github.com/rayakame/plsremind/hub/internal/events"
+	"github.com/rayakame/plsremind/hub/internal/store/sqlc"
 
 	"github.com/rayakame/plsremind/hub/internal/gateway"
 	"github.com/rayakame/plsremind/hub/internal/testkit"
@@ -222,4 +226,58 @@ func TestATestWhoseSignalWasLostStillGoesOutOnce(t *testing.T) {
 	gw.Expect(t, "delivery.test")
 	e.KillListener(t)
 	gw.ExpectQuiet(t)
+}
+
+func TestAnAnswerAfterTheMinuteIsRefused(t *testing.T) {
+	e := testkit.New(t)
+	bot := e.Connection(t, "discord")
+	mia := testkit.Linked(t, e, "mia", "111")
+	gw := e.Gateway(t, bot.Token, "deliveries")
+	id := startTest(t, mia, bot.ID).Get("id").String()
+	gw.Expect(t, "delivery.test")
+
+	e.Clock.Advance(61 * time.Second)
+	late := bot.Do(t, "PUT", "/deliveries/tests/"+id, J{"status": "delivered"})
+	require.Equal(t, 409, late.Status, string(late.Body))
+	require.Equal(t, "test_closed", late.Get("error.code").String())
+	e.Fire(t)
+	state := testState(t, mia, bot.ID, id)
+	require.Equal(t, "unanswered", state.Get("status").String())
+	require.Equal(t, "no_answer", state.Get("reason").String())
+}
+
+func TestATestIsNotSentForSomeoneWhoSwitchedTheAppOff(t *testing.T) {
+	e := testkit.New(t)
+	bot := e.Connection(t, "discord")
+	mia := testkit.Linked(t, e, "mia", "111")
+	tom := testkit.Linked(t, e, "tom", "222")
+	gw := e.Gateway(t, bot.Token, "deliveries")
+	for i, user := range []*testkit.Client{mia, tom} {
+		_, err := e.Pool.Exec(context.Background(),
+			`INSERT INTO connection_tests (id, user_id, connection_id, created_at) VALUES (gen_random_uuid(), $1, $2, $3)`,
+			user.UserID, bot.ID, e.Clock.Now().Add(time.Duration(i)*time.Millisecond))
+		require.NoError(t, err)
+	}
+	require.Equal(t, 200, mia.Do(t, "PUT", "/users/@me/connections/"+bot.ID, J{"enabled": false}).Status)
+
+	e.KillListener(t)
+	// Tests go out oldest first, so Mia's would come before Tom's.
+	frame := gw.Expect(t, "delivery.test")
+	require.Equal(t, tom.UserID, frame.Get("data.user.id").String())
+}
+
+func TestATestThatWentOutIsNotClosedWhenTheAppLeaves(t *testing.T) {
+	e := testkit.New(t)
+	bot := e.Connection(t, "discord")
+	mia := testkit.Linked(t, e, "mia", "111")
+	gw := e.Gateway(t, bot.Token, "deliveries")
+	id := startTest(t, mia, bot.ID).Get("id").String()
+	gw.Expect(t, "delivery.test")
+	gw.Close()
+
+	test := uuid.MustParse(id)
+	require.NoError(t, events.SendSignal(context.Background(), sqlc.New(e.Pool), events.Signal{Type: events.SignalTest, TestID: &test}))
+	require.Never(t, func() bool {
+		return testState(t, mia, bot.ID, id).Get("status").String() != "pending"
+	}, time.Second, 100*time.Millisecond)
 }

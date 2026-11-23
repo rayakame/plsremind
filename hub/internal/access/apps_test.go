@@ -114,3 +114,15 @@ func TestLastDeliveryIsTheNewestThatCounts(t *testing.T) {
 	require.Equal(t, "expired", appOf(t, mia, bot.ID).Get("last_delivery.status").String())
 	require.Equal(t, "null", appOf(t, tom, bot.ID).Get("last_delivery").Raw, "another user's deliveries do not show")
 }
+
+func TestSwitchingRemindersOffAnswersWithoutWhatItCancelled(t *testing.T) {
+	e := testkit.New(t)
+	bot := e.Connection(t, "discord")
+	mia := testkit.Linked(t, e, "mia", "111")
+	testkit.DueSoon(t, e, mia)
+	require.Equal(t, "pending", appOf(t, mia, bot.ID).Get("last_delivery.status").String())
+
+	off := mia.Do(t, "PUT", "/users/@me/connections/"+bot.ID, J{"remind": false})
+	require.Equal(t, 200, off.Status, string(off.Body))
+	require.Equal(t, "null", off.Get("last_delivery").Raw)
+}

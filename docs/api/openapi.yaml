@@ -1644,7 +1644,8 @@ paths:
       description: |
         Only the app the test was sent to can report on it, the same way it reports on a
         delivery. Reporting the same outcome twice is fine; a different outcome for a test
-        that already ended answers `409` with the code `test_closed`.
+        that already ended, or any answer more than a minute after the test began, answers
+        `409` with the code `test_closed`.
       security:
         - bearer: []
       requestBody:

@@ -110,9 +110,13 @@ func answerTest(d *core.Deps) fiber.Handler {
 			if err != nil {
 				return err
 			}
+			now := d.Now()
+			// Past its minute the test is over, even before the ticker has marked it so.
+			if row.Status == "pending" && !row.CreatedAt.After(now.Add(-testAnswerWithin)) {
+				return api.Conflict("test_closed", "The test is already unanswered.")
+			}
 			switch row.Status {
 			case "pending":
-				now := d.Now()
 				out, err = q.CloseConnectionTest(c.Context(), sqlc.CloseConnectionTestParams{ID: id, Status: status, Reason: reason, Now: &now})
 				return err
 			case status:
