@@ -74,6 +74,8 @@ services:
       - -storageDataPath=/storage
       # Without the bot its target never answers; once an hour in the log is enough to say so.
       - -promscrape.suppressScrapeErrorsDelay=1h
+      # So that a change to scrape.yml applies without a restart.
+      - -promscrape.configCheckInterval=1m
       # Lets Grafana list the alert rules and their state through this data source.
       - -vmalert.proxyURL=http://vmalert:8880
     volumes:

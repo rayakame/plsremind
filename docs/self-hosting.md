@@ -181,7 +181,8 @@ It adds three services:
   Discord refusing reminders, errors in the bot nobody foresaw. If you take the bot away
   for good, remove the `plsremind-discord` job from
   [`deploy/monitoring/scrape.yml`](../deploy/monitoring/scrape.yml), or its alert keeps
-  firing until its last scrape has left the 30 days.
+  firing until its last scrape has left the 30 days. VictoriaMetrics rereads the file
+  within a minute.
 - **Grafana** opens on `http://127.0.0.1:3000` (`PLSREMIND_GRAFANA_PORT` to change it)
   with the plsremind dashboard. Log in as `admin` with `PLSREMIND_GRAFANA_PASSWORD`; the
   password is set when Grafana first starts, so change it there afterwards. Grafana is
@@ -201,10 +202,12 @@ from there: a public address, or a service added in an override file, such as
 | `PLSREMIND_ALERTMANAGER_URL` | no | Where vmalert sends alerts. Without it they are only shown. |
 
 Prometheus, Grafana Alloy or any other tool that reads the Prometheus format works as
-well. It has to run in the compose network, since the metrics ports are not published, or
-you publish them yourself; [`deploy/monitoring/scrape.yml`](../deploy/monitoring/scrape.yml)
-then serves as its scrape configuration. The rules work as they are, and the dashboard asks
-which Prometheus data source to use.
+well. Inside the compose network,
+[`deploy/monitoring/scrape.yml`](../deploy/monitoring/scrape.yml) serves as its scrape
+configuration as it is. Outside it, publish the metrics ports yourself and replace `hub:9090`
+and `discord:9091` with the host's address and those ports, since the service names only
+resolve inside the network. The rules work as they are, and the dashboard asks which
+Prometheus data source to use.
 
 ## Behind a reverse proxy
 
