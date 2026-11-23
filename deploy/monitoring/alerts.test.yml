@@ -1,0 +1,73 @@
+# Cases for alerts.yml, run by deploy/smoke.sh with vmalert-tool unittest.
+rule_files:
+  - alerts.yml
+evaluation_interval: 1m
+
+tests:
+  - name: an instance without the bot stays quiet
+    interval: 1m
+    input_series:
+      - series: 'up{job="plsremind-discord",instance="discord:9091"}'
+        values: "0x60"
+    alert_rule_test:
+      - eval_time: 30m
+        groupname: plsremind
+        alertname: PlsremindBotDown
+        exp_alerts: []
+
+  - name: a bot that goes down stays reported through a long outage
+    interval: 1m
+    input_series:
+      - series: 'up{job="plsremind-discord",instance="discord:9091"}'
+        values: "1x10 0x600"
+    alert_rule_test:
+      - eval_time: 9m
+        groupname: plsremind
+        alertname: PlsremindBotDown
+        exp_alerts: []
+      - eval_time: 8h
+        groupname: plsremind
+        alertname: PlsremindBotDown
+        exp_alerts:
+          - exp_labels:
+              job: plsremind-discord
+              instance: discord:9091
+              severity: critical
+            exp_annotations:
+              summary: The Discord bot has not answered a scrape for two minutes.
+
+  - name: a ticker that stops is reported, one that keeps going is not
+    interval: 1m
+    input_series:
+      # vmalert-tool's clock starts at 2000-01-01, 946684800 in Unix time.
+      - series: 'plsremind_ticker_last_success_timestamp_seconds{job="plsremind-hub",instance="hub:9090"}'
+        values: "946684800+60x10 946685400x20"
+    alert_rule_test:
+      - eval_time: 9m
+        groupname: plsremind
+        alertname: PlsremindTickerStalled
+        exp_alerts: []
+      - eval_time: 25m
+        groupname: plsremind
+        alertname: PlsremindTickerStalled
+        exp_alerts:
+          - exp_labels:
+              job: plsremind-hub
+              instance: hub:9090
+              severity: critical
+            exp_annotations:
+              summary: The reminder ticker has not finished a round in two minutes, so no reminder goes out.
+
+  - name: half the tries failing on a quiet instance is no alarm
+    interval: 1m
+    input_series:
+      # One try that does not get through and one that does, every ten minutes.
+      - series: 'plsremind_discord_delivery_attempts_total{job="plsremind-discord",instance="discord:9091",result="passing"}'
+        values: "0+0.1x120"
+      - series: 'plsremind_discord_delivery_attempts_total{job="plsremind-discord",instance="discord:9091",result="sent"}'
+        values: "0+0.1x120"
+    alert_rule_test:
+      - eval_time: 90m
+        groupname: plsremind
+        alertname: PlsremindDiscordRefusing
+        exp_alerts: []

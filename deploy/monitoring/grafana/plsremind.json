@@ -21,7 +21,7 @@
       "id": 1,
       "datasource": {
         "type": "prometheus",
-        "uid": "victoriametrics"
+        "uid": "${datasource}"
       },
       "gridPos": {
         "h": 5,
@@ -41,7 +41,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "victoriametrics"
+            "uid": "${datasource}"
           },
           "expr": "sum by (alertname, severity) (ALERTS{alertstate=\"firing\"})",
           "refId": "A",
@@ -81,7 +81,7 @@
       "id": 3,
       "datasource": {
         "type": "prometheus",
-        "uid": "victoriametrics"
+        "uid": "${datasource}"
       },
       "gridPos": {
         "h": 4,
@@ -116,7 +116,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "victoriametrics"
+            "uid": "${datasource}"
           },
           "expr": "sum(plsremind_deliveries_open)",
           "refId": "A",
@@ -131,7 +131,7 @@
       "id": 4,
       "datasource": {
         "type": "prometheus",
-        "uid": "victoriametrics"
+        "uid": "${datasource}"
       },
       "gridPos": {
         "h": 4,
@@ -166,7 +166,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "victoriametrics"
+            "uid": "${datasource}"
           },
           "expr": "histogram_quantile(0.95, sum by (le) (rate(plsremind_reminder_lateness_seconds_bucket[10m])))",
           "refId": "A",
@@ -181,7 +181,7 @@
       "id": 5,
       "datasource": {
         "type": "prometheus",
-        "uid": "victoriametrics"
+        "uid": "${datasource}"
       },
       "gridPos": {
         "h": 4,
@@ -216,7 +216,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "victoriametrics"
+            "uid": "${datasource}"
           },
           "expr": "time() - max(plsremind_ticker_last_success_timestamp_seconds)",
           "refId": "A",
@@ -231,7 +231,7 @@
       "id": 6,
       "datasource": {
         "type": "prometheus",
-        "uid": "victoriametrics"
+        "uid": "${datasource}"
       },
       "gridPos": {
         "h": 4,
@@ -266,7 +266,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "victoriametrics"
+            "uid": "${datasource}"
           },
           "expr": "sum(plsremind_discord_deliveries_waiting)",
           "refId": "A",
@@ -281,7 +281,7 @@
       "id": 7,
       "datasource": {
         "type": "prometheus",
-        "uid": "victoriametrics"
+        "uid": "${datasource}"
       },
       "gridPos": {
         "h": 4,
@@ -316,7 +316,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "victoriametrics"
+            "uid": "${datasource}"
           },
           "expr": "max(plsremind_discord_hub_connected)",
           "refId": "A",
@@ -331,7 +331,7 @@
       "id": 8,
       "datasource": {
         "type": "prometheus",
-        "uid": "victoriametrics"
+        "uid": "${datasource}"
       },
       "gridPos": {
         "h": 4,
@@ -366,7 +366,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "victoriametrics"
+            "uid": "${datasource}"
           },
           "expr": "count by (version) (plsremind_build_info)",
           "refId": "A",
@@ -382,7 +382,7 @@
       "id": 9,
       "datasource": {
         "type": "prometheus",
-        "uid": "victoriametrics"
+        "uid": "${datasource}"
       },
       "gridPos": {
         "h": 8,
@@ -420,7 +420,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "victoriametrics"
+            "uid": "${datasource}"
           },
           "expr": "sum by (outcome) (rate(plsremind_reminders_total[5m]))",
           "legendFormat": "{{outcome}}",
@@ -435,7 +435,7 @@
       "id": 10,
       "datasource": {
         "type": "prometheus",
-        "uid": "victoriametrics"
+        "uid": "${datasource}"
       },
       "gridPos": {
         "h": 8,
@@ -473,7 +473,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "victoriametrics"
+            "uid": "${datasource}"
           },
           "expr": "histogram_quantile(0.5, sum by (le) (rate(plsremind_reminder_lateness_seconds_bucket[5m])))",
           "legendFormat": "median",
@@ -482,7 +482,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "victoriametrics"
+            "uid": "${datasource}"
           },
           "expr": "histogram_quantile(0.95, sum by (le) (rate(plsremind_reminder_lateness_seconds_bucket[5m])))",
           "legendFormat": "p95",
@@ -497,7 +497,7 @@
       "id": 11,
       "datasource": {
         "type": "prometheus",
-        "uid": "victoriametrics"
+        "uid": "${datasource}"
       },
       "gridPos": {
         "h": 8,
@@ -535,7 +535,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "victoriametrics"
+            "uid": "${datasource}"
           },
           "expr": "sum by (result) (rate(plsremind_deliveries_acknowledged_total[5m]))",
           "legendFormat": "{{result}}",
@@ -544,7 +544,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "victoriametrics"
+            "uid": "${datasource}"
           },
           "expr": "sum by (channel) (rate(plsremind_deliveries_expired_total[5m]))",
           "legendFormat": "expired on {{channel}}",
@@ -572,7 +572,7 @@
       "id": 13,
       "datasource": {
         "type": "prometheus",
-        "uid": "victoriametrics"
+        "uid": "${datasource}"
       },
       "gridPos": {
         "h": 8,
@@ -610,7 +610,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "victoriametrics"
+            "uid": "${datasource}"
           },
           "expr": "sum by (status) (rate(plsremind_http_requests_total[5m]))",
           "legendFormat": "{{status}}",
@@ -625,7 +625,7 @@
       "id": 14,
       "datasource": {
         "type": "prometheus",
-        "uid": "victoriametrics"
+        "uid": "${datasource}"
       },
       "gridPos": {
         "h": 8,
@@ -663,7 +663,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "victoriametrics"
+            "uid": "${datasource}"
           },
           "expr": "topk(5, histogram_quantile(0.95, sum by (le, route) (rate(plsremind_http_request_duration_seconds_bucket[5m]))))",
           "legendFormat": "{{route}}",
@@ -678,7 +678,7 @@
       "id": 15,
       "datasource": {
         "type": "prometheus",
-        "uid": "victoriametrics"
+        "uid": "${datasource}"
       },
       "gridPos": {
         "h": 8,
@@ -716,7 +716,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "victoriametrics"
+            "uid": "${datasource}"
           },
           "expr": "sum by (result) (rate(plsremind_ticker_runs_total[5m]))",
           "legendFormat": "{{result}}",
@@ -731,7 +731,7 @@
       "id": 16,
       "datasource": {
         "type": "prometheus",
-        "uid": "victoriametrics"
+        "uid": "${datasource}"
       },
       "gridPos": {
         "h": 8,
@@ -769,7 +769,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "victoriametrics"
+            "uid": "${datasource}"
           },
           "expr": "sum by (kind) (plsremind_gateway_sessions)",
           "legendFormat": "{{kind}}",
@@ -784,7 +784,7 @@
       "id": 17,
       "datasource": {
         "type": "prometheus",
-        "uid": "victoriametrics"
+        "uid": "${datasource}"
       },
       "gridPos": {
         "h": 8,
@@ -822,7 +822,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "victoriametrics"
+            "uid": "${datasource}"
           },
           "expr": "sum by (code) (rate(plsremind_gateway_closes_total[5m]))",
           "legendFormat": "{{code}}",
@@ -837,7 +837,7 @@
       "id": 18,
       "datasource": {
         "type": "prometheus",
-        "uid": "victoriametrics"
+        "uid": "${datasource}"
       },
       "gridPos": {
         "h": 8,
@@ -875,7 +875,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "victoriametrics"
+            "uid": "${datasource}"
           },
           "expr": "sum by (state) (plsremind_db_pool_connections)",
           "legendFormat": "{{state}}",
@@ -890,7 +890,7 @@
       "id": 19,
       "datasource": {
         "type": "prometheus",
-        "uid": "victoriametrics"
+        "uid": "${datasource}"
       },
       "gridPos": {
         "h": 8,
@@ -928,7 +928,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "victoriametrics"
+            "uid": "${datasource}"
           },
           "expr": "sum by (route) (rate(plsremind_http_requests_total{status=~\"5..\"}[5m]))",
           "legendFormat": "{{route}}",
@@ -939,11 +939,11 @@
     {
       "type": "timeseries",
       "title": "Waits for a database connection",
-      "description": "Requests for a connection that found none free. A steady rate means the pool is too small.",
+      "description": "Requests that found no connection free and waited for one to be released or made.",
       "id": 20,
       "datasource": {
         "type": "prometheus",
-        "uid": "victoriametrics"
+        "uid": "${datasource}"
       },
       "gridPos": {
         "h": 8,
@@ -981,7 +981,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "victoriametrics"
+            "uid": "${datasource}"
           },
           "expr": "sum(rate(plsremind_db_pool_empty_acquires_total[5m]))",
           "legendFormat": "had to wait",
@@ -991,12 +991,12 @@
     },
     {
       "type": "timeseries",
-      "title": "Time spent getting a connection",
-      "description": "",
+      "title": "Time spent waiting for a connection",
+      "description": "Seconds per second that requests waited because no connection was free.",
       "id": 21,
       "datasource": {
         "type": "prometheus",
-        "uid": "victoriametrics"
+        "uid": "${datasource}"
       },
       "gridPos": {
         "h": 8,
@@ -1034,10 +1034,10 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "victoriametrics"
+            "uid": "${datasource}"
           },
-          "expr": "sum(rate(plsremind_db_pool_acquire_seconds_total[5m]))",
-          "legendFormat": "seconds per second",
+          "expr": "sum(rate(plsremind_db_pool_acquire_wait_seconds_total[5m]))",
+          "legendFormat": "waited",
           "refId": "A"
         }
       ]
@@ -1062,7 +1062,7 @@
       "id": 23,
       "datasource": {
         "type": "prometheus",
-        "uid": "victoriametrics"
+        "uid": "${datasource}"
       },
       "gridPos": {
         "h": 8,
@@ -1100,7 +1100,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "victoriametrics"
+            "uid": "${datasource}"
           },
           "expr": "sum by (result) (rate(plsremind_discord_delivery_attempts_total[5m]))",
           "legendFormat": "{{result}}",
@@ -1115,7 +1115,7 @@
       "id": 24,
       "datasource": {
         "type": "prometheus",
-        "uid": "victoriametrics"
+        "uid": "${datasource}"
       },
       "gridPos": {
         "h": 8,
@@ -1153,7 +1153,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "victoriametrics"
+            "uid": "${datasource}"
           },
           "expr": "sum by (kind) (rate(plsremind_discord_interactions_total[5m]))",
           "legendFormat": "{{kind}}",
@@ -1168,7 +1168,7 @@
       "id": 25,
       "datasource": {
         "type": "prometheus",
-        "uid": "victoriametrics"
+        "uid": "${datasource}"
       },
       "gridPos": {
         "h": 8,
@@ -1206,7 +1206,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "victoriametrics"
+            "uid": "${datasource}"
           },
           "expr": "sum by (kind) (rate(plsremind_discord_interaction_failures_total[5m]))",
           "legendFormat": "{{kind}}",
@@ -1221,7 +1221,7 @@
       "id": 26,
       "datasource": {
         "type": "prometheus",
-        "uid": "victoriametrics"
+        "uid": "${datasource}"
       },
       "gridPos": {
         "h": 8,
@@ -1259,7 +1259,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "victoriametrics"
+            "uid": "${datasource}"
           },
           "expr": "sum by (result) (rate(plsremind_discord_redraws_total[5m]))",
           "legendFormat": "{{result}}",
@@ -1274,7 +1274,7 @@
       "id": 27,
       "datasource": {
         "type": "prometheus",
-        "uid": "victoriametrics"
+        "uid": "${datasource}"
       },
       "gridPos": {
         "h": 8,
@@ -1312,7 +1312,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "victoriametrics"
+            "uid": "${datasource}"
           },
           "expr": "sum(rate(plsremind_discord_dm_channels_opened_total[5m]))",
           "legendFormat": "opened",
@@ -1327,7 +1327,7 @@
       "id": 28,
       "datasource": {
         "type": "prometheus",
-        "uid": "victoriametrics"
+        "uid": "${datasource}"
       },
       "gridPos": {
         "h": 8,
@@ -1365,7 +1365,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "victoriametrics"
+            "uid": "${datasource}"
           },
           "expr": "max(plsremind_discord_discord_latency_seconds)",
           "legendFormat": "latency",
@@ -1380,7 +1380,7 @@
       "id": 29,
       "datasource": {
         "type": "prometheus",
-        "uid": "victoriametrics"
+        "uid": "${datasource}"
       },
       "gridPos": {
         "h": 8,
@@ -1418,7 +1418,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "victoriametrics"
+            "uid": "${datasource}"
           },
           "expr": "sum(rate(plsremind_discord_write_echo_timeouts_total[5m]))",
           "legendFormat": "timed out",
@@ -1428,7 +1428,20 @@
     }
   ],
   "templating": {
-    "list": []
+    "list": [
+      {
+        "name": "datasource",
+        "label": "Data source",
+        "type": "datasource",
+        "query": "prometheus",
+        "current": {
+          "text": "VictoriaMetrics",
+          "value": "victoriametrics"
+        },
+        "hide": 0,
+        "refresh": 1
+      }
+    ]
   },
   "annotations": {
     "list": []

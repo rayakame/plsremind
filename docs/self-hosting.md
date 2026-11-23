@@ -41,7 +41,8 @@ The hub now listens on port 8080 and applies its database migrations on every st
 | `PLSREMIND_METRICS_ADDR` | no | Where the hub serves `/metrics`, for example `:9090`. Off when empty. Compose sets it inside its network only. See [Monitoring](#monitoring). |
 | `PLSREMIND_PROXY_HEADER` | behind a proxy | Set to `X-Forwarded-For` whenever the hub runs behind a reverse proxy. Without it every visitor appears to come from the proxy and they all share one rate limit, so logging in fails for everyone once a few people try at the same time. The header is only trusted from loopback and private addresses. |
 
-Compose also reads `POSTGRES_PASSWORD` and `PLSREMIND_PORT` from `.env`. Set
+Compose also reads `POSTGRES_PASSWORD` and `PLSREMIND_PORT` from `.env`, and the variables
+of the monitoring profile listed under [Monitoring](#monitoring). Set
 `POSTGRES_PASSWORD` before the first start: the database keeps the password it was
 created with.
 
@@ -176,8 +177,11 @@ It adds three services:
 - **VictoriaMetrics** scrapes the hub and the bot every 15 seconds and keeps 30 days.
 - **vmalert** evaluates [`deploy/monitoring/alerts.yml`](../deploy/monitoring/alerts.yml):
   the hub or the bot down, the ticker stalled, reminders more than two minutes late,
-  server errors, expired deliveries, the bot not connected to the hub, Discord refusing
-  reminders.
+  server errors, expired deliveries to a connection, the bot not connected to the hub,
+  Discord refusing reminders, errors in the bot nobody foresaw. If you take the bot away
+  for good, remove the `plsremind-discord` job from
+  [`deploy/monitoring/scrape.yml`](../deploy/monitoring/scrape.yml), or its alert keeps
+  firing until its last scrape has left the 30 days.
 - **Grafana** opens on `http://127.0.0.1:3000` (`PLSREMIND_GRAFANA_PORT` to change it)
   with the plsremind dashboard. Log in as `admin` with `PLSREMIND_GRAFANA_PASSWORD`; the
   password is set when Grafana first starts, so change it there afterwards. Grafana is
@@ -185,12 +189,22 @@ It adds three services:
   from elsewhere. Its own telemetry, update checks and plugin downloads are off.
 
 Firing alerts show at the top of the dashboard and in Grafana's alert list. To have them
-sent, run an Alertmanager and set `PLSREMIND_ALERTMANAGER_URL`, for example to
-`http://alertmanager:9093`; vmalert then passes every alert on to it.
+sent, run an Alertmanager and set `PLSREMIND_ALERTMANAGER_URL`; vmalert then passes every
+alert on to it. vmalert runs inside the compose network, so the address must be reachable
+from there: a public address, or a service added in an override file, such as
+`http://alertmanager:9093`.
+
+| Variable | Required | Meaning |
+|---|---|---|
+| `PLSREMIND_GRAFANA_PASSWORD` | for the profile | The password of Grafana's `admin`. Grafana does not start without it. |
+| `PLSREMIND_GRAFANA_PORT` | no | The port Grafana is published on, on `127.0.0.1`. Defaults to `3000`. |
+| `PLSREMIND_ALERTMANAGER_URL` | no | Where vmalert sends alerts. Without it they are only shown. |
 
 Prometheus, Grafana Alloy or any other tool that reads the Prometheus format works as
-well: use [`deploy/monitoring/scrape.yml`](../deploy/monitoring/scrape.yml) as the scrape
-configuration, and the rules and the dashboard as they are.
+well. It has to run in the compose network, since the metrics ports are not published, or
+you publish them yourself; [`deploy/monitoring/scrape.yml`](../deploy/monitoring/scrape.yml)
+then serves as its scrape configuration. The rules work as they are, and the dashboard asks
+which Prometheus data source to use.
 
 ## Behind a reverse proxy
 

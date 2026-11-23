@@ -25,7 +25,6 @@ services:
       retries: 3
       # Migrations run before the hub listens; a long one must not count as a failure.
       start_period: 5m
-      start_interval: 2s
 
   db:
     image: postgres:18
@@ -73,6 +72,8 @@ services:
       - -promscrape.config=/etc/plsremind/scrape.yml
       - -retentionPeriod=30d
       - -storageDataPath=/storage
+      # Without the bot its target never answers; once an hour in the log is enough to say so.
+      - -promscrape.suppressScrapeErrorsDelay=1h
       # Lets Grafana list the alert rules and their state through this data source.
       - -vmalert.proxyURL=http://vmalert:8880
     volumes:
@@ -119,13 +120,13 @@ services:
       GF_PLUGINS_PLUGIN_ADMIN_ENABLED: "false"
       GF_SECURITY_DISABLE_GRAVATAR: "true"
       GF_SNAPSHOTS_EXTERNAL_ENABLED: "false"
-      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/plsremind.json
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /etc/grafana/dashboards/plsremind.json
     ports:
       - "127.0.0.1:${PLSREMIND_GRAFANA_PORT:-3000}:3000"
     volumes:
       - ./monitoring/grafana/datasource.yml:/etc/grafana/provisioning/datasources/plsremind.yml:ro
       - ./monitoring/grafana/dashboards.yml:/etc/grafana/provisioning/dashboards/plsremind.yml:ro
-      - ./monitoring/grafana/plsremind.json:/var/lib/grafana/dashboards/plsremind.json:ro
+      - ./monitoring/grafana/plsremind.json:/etc/grafana/dashboards/plsremind.json:ro
       - grafana:/var/lib/grafana
 
 volumes:

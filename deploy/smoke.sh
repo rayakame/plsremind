@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
-# Builds the image, starts a throwaway instance with the monitoring profile and walks
-# through first use: setup, creating an item, and a reminder that travels through the
-# gateway to the example adapter and back as confirmed, then finds that reminder in the
-# metrics. Exits non-zero on the first surprise.
+# Builds the image, starts a throwaway instance with monitoring and walks through first use:
+# setup, an item, a reminder that goes through the gateway to the example adapter and back,
+# then that reminder in the metrics. Exits non-zero on the first surprise.
 set -euo pipefail
 
 cd "$(dirname "$0")"
@@ -52,6 +51,9 @@ expect "the hub is ready" "$(curl -fsS "${PLSREMIND_PUBLIC_URL}/readyz")" ok
 docker compose run --rm --no-deps vmalert -rule=/etc/plsremind/alerts.yml -dryRun >/dev/null 2>&1 \
   || fail "the alert rules do not load"
 echo "ok  the alert rules load"
+docker run --rm -v "$PWD/monitoring:/rules:ro" victoriametrics/vmalert-tool:v1.156.0 unittest --files=/rules/alerts.test.yml >/dev/null 2>&1 \
+  || fail "the alert rules do not pass their cases in monitoring/alerts.test.yml"
+echo "ok  the alert rules pass their cases"
 expect "vmalert runs" "$(docker inspect -f '{{.State.Status}}' "$(docker compose ps -q vmalert)")" running
 
 expect "fresh instance needs setup" \
