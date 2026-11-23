@@ -93,6 +93,15 @@ func (h *Hub) sendUnsent(ctx context.Context) error {
 				return err
 			}
 		}
+		tests, err := delivery.UnsentTests(ctx, h.d.Q(), h.d.Now(), channel)
+		if err != nil {
+			return err
+		}
+		for _, id := range tests {
+			if err := h.sendTest(ctx, id); err != nil {
+				return err
+			}
+		}
 	}
 	return nil
 }
@@ -252,6 +261,10 @@ func (h *Hub) sendTest(ctx context.Context, id uuid.UUID) error {
 	})
 	if len(targets) == 0 {
 		return delivery.CloseTest(ctx, q, h.d.Now(), id, "unanswered", "not_connected")
+	}
+	claimed, err := delivery.ClaimTest(ctx, q, h.d.Now(), id)
+	if err != nil || !claimed {
+		return err
 	}
 	data := envelope{UserID: view.User.ID, Data: view}
 	for _, sess := range targets {

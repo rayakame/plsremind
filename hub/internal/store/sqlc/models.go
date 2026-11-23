@@ -38,6 +38,7 @@ type ConnectionTest struct {
 	Status       string
 	Reason       string
 	CreatedAt    time.Time
+	SentAt       *time.Time
 	ClosedAt     *time.Time
 }
 

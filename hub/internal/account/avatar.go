@@ -45,7 +45,6 @@ func originOf(raw string) string {
 	return u.Scheme + "://" + u.Host
 }
 
-// fetchPicture fetches an account's picture under the provider's policy.
 func fetchPicture(ctx context.Context, base *http.Client, policy avatarPolicy, raw string) (*picture, error) {
 	origin := originOf(raw)
 	trusted := origin != "" && origin == policy.origin
@@ -85,6 +84,8 @@ func guarded(base *http.Client, trusted bool) *http.Client {
 	if own, ok := base.Transport.(*http.Transport); ok {
 		transport = own.Clone()
 	}
+	// The transport lives for one picture; a kept connection would outlive it.
+	transport.DisableKeepAlives = true
 	if !trusted {
 		dialer := &net.Dialer{Timeout: pictureTimeout, Control: publicOnly}
 		transport.DialContext = dialer.DialContext

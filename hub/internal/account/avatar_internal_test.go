@@ -62,3 +62,11 @@ func TestOriginOf(t *testing.T) {
 	require.Equal(t, "http://127.0.0.1:8080", originOf("http://127.0.0.1:8080/x"))
 	require.Equal(t, "", originOf("::not a url"))
 }
+
+func TestAPictureLeavesNoConnectionBehind(t *testing.T) {
+	for _, trusted := range []bool{true, false} {
+		transport, ok := guarded(http.DefaultClient, trusted).Transport.(*http.Transport)
+		require.True(t, ok)
+		require.True(t, transport.DisableKeepAlives)
+	}
+}

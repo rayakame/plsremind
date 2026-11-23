@@ -40,3 +40,14 @@ SELECT DISTINCT ON (t.connection_id)
 FROM connection_tests t
 WHERE t.user_id = @user_id AND t.status IN ('delivered', 'failed')
 ORDER BY t.connection_id, t.closed_at DESC, t.id DESC;
+
+-- name: ClaimConnectionTest :execrows
+-- Marks a test as handed out, once, so that a test found again after missed signals is not sent twice.
+UPDATE connection_tests SET sent_at = @now
+WHERE id = @id AND status = 'pending' AND sent_at IS NULL;
+
+-- name: ListUnsentConnectionTests :many
+SELECT id FROM connection_tests
+WHERE connection_id = @connection_id AND status = 'pending' AND sent_at IS NULL AND created_at > @since
+ORDER BY created_at;
+

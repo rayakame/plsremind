@@ -88,6 +88,20 @@ func CloseTest(ctx context.Context, q *sqlc.Queries, now time.Time, id uuid.UUID
 	return err
 }
 
+// ClaimTest marks a pending test as handed out and reports whether this call was the one that did.
+func ClaimTest(ctx context.Context, q *sqlc.Queries, now time.Time, id uuid.UUID) (bool, error) {
+	n, err := q.ClaimConnectionTest(ctx, sqlc.ClaimConnectionTestParams{ID: id, Now: &now})
+	return n == 1, err
+}
+
+// UnsentTests lists the tests of a connection that were never handed out and can still be answered.
+func UnsentTests(ctx context.Context, q *sqlc.Queries, now time.Time, connection uuid.UUID) ([]uuid.UUID, error) {
+	return q.ListUnsentConnectionTests(ctx, sqlc.ListUnsentConnectionTestsParams{
+		ConnectionID: connection,
+		Since:        now.Add(-testAnswerWithin),
+	})
+}
+
 func expireTests(ctx context.Context, q *sqlc.Queries, now time.Time) error {
 	_, err := q.ExpireConnectionTests(ctx, sqlc.ExpireConnectionTestsParams{Now: &now, AnswerBy: now.Add(-testAnswerWithin)})
 	return err

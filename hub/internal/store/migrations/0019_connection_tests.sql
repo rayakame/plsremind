@@ -7,6 +7,7 @@ CREATE TABLE connection_tests (
         CHECK (status IN ('pending', 'delivered', 'failed', 'unanswered')),
     reason text NOT NULL DEFAULT '',
     created_at timestamptz NOT NULL,
+    sent_at timestamptz,
     closed_at timestamptz
 );
 CREATE INDEX connection_tests_user_idx ON connection_tests (user_id, connection_id, created_at DESC);

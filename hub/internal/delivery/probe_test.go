@@ -1,6 +1,7 @@
 package delivery_test
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -204,4 +205,21 @@ func TestOldTestsAreSwept(t *testing.T) {
 	e.Clock.Advance(2 * 24 * time.Hour)
 	e.Sweep(t)
 	require.Equal(t, 404, mia.Do(t, "GET", "/users/@me/connections/"+bot.ID+"/tests/"+id, nil).Status)
+}
+
+func TestATestWhoseSignalWasLostStillGoesOutOnce(t *testing.T) {
+	e := testkit.New(t)
+	bot := e.Connection(t, "discord")
+	mia := testkit.Linked(t, e, "mia", "111")
+	gw := e.Gateway(t, bot.Token, "deliveries")
+	_, err := e.Pool.Exec(context.Background(),
+		`INSERT INTO connection_tests (id, user_id, connection_id, created_at) VALUES (gen_random_uuid(), $1, $2, $3)`,
+		mia.UserID, bot.ID, e.Clock.Now())
+	require.NoError(t, err)
+	gw.ExpectQuiet(t)
+
+	e.KillListener(t)
+	gw.Expect(t, "delivery.test")
+	e.KillListener(t)
+	gw.ExpectQuiet(t)
 }

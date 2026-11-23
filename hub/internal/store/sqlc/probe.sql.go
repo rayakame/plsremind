@@ -12,10 +12,29 @@ import (
 	"github.com/google/uuid"
 )
 
+const claimConnectionTest = `-- name: ClaimConnectionTest :execrows
+UPDATE connection_tests SET sent_at = $1
+WHERE id = $2 AND status = 'pending' AND sent_at IS NULL
+`
+
+type ClaimConnectionTestParams struct {
+	Now *time.Time
+	ID  uuid.UUID
+}
+
+// Marks a test as handed out, once, so that a test found again after missed signals is not sent twice.
+func (q *Queries) ClaimConnectionTest(ctx context.Context, arg ClaimConnectionTestParams) (int64, error) {
+	result, err := q.db.Exec(ctx, claimConnectionTest, arg.Now, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const closeConnectionTest = `-- name: CloseConnectionTest :one
 UPDATE connection_tests SET status = $1, reason = $2, closed_at = $3
 WHERE id = $4 AND status = 'pending'
-RETURNING id, user_id, connection_id, status, reason, created_at, closed_at
+RETURNING id, user_id, connection_id, status, reason, created_at, sent_at, closed_at
 `
 
 type CloseConnectionTestParams struct {
@@ -40,6 +59,7 @@ func (q *Queries) CloseConnectionTest(ctx context.Context, arg CloseConnectionTe
 		&i.Status,
 		&i.Reason,
 		&i.CreatedAt,
+		&i.SentAt,
 		&i.ClosedAt,
 	)
 	return i, err
@@ -77,7 +97,7 @@ func (q *Queries) ConnectionTestAccess(ctx context.Context, arg ConnectionTestAc
 const createConnectionTest = `-- name: CreateConnectionTest :one
 INSERT INTO connection_tests (id, user_id, connection_id, created_at)
 VALUES ($1, $2, $3, $4)
-RETURNING id, user_id, connection_id, status, reason, created_at, closed_at
+RETURNING id, user_id, connection_id, status, reason, created_at, sent_at, closed_at
 `
 
 type CreateConnectionTestParams struct {
@@ -102,6 +122,7 @@ func (q *Queries) CreateConnectionTest(ctx context.Context, arg CreateConnection
 		&i.Status,
 		&i.Reason,
 		&i.CreatedAt,
+		&i.SentAt,
 		&i.ClosedAt,
 	)
 	return i, err
@@ -135,7 +156,7 @@ func (q *Queries) ExpireConnectionTests(ctx context.Context, arg ExpireConnectio
 }
 
 const getConnectionTest = `-- name: GetConnectionTest :one
-SELECT id, user_id, connection_id, status, reason, created_at, closed_at FROM connection_tests WHERE id = $1
+SELECT id, user_id, connection_id, status, reason, created_at, sent_at, closed_at FROM connection_tests WHERE id = $1
 `
 
 func (q *Queries) GetConnectionTest(ctx context.Context, id uuid.UUID) (ConnectionTest, error) {
@@ -148,13 +169,14 @@ func (q *Queries) GetConnectionTest(ctx context.Context, id uuid.UUID) (Connecti
 		&i.Status,
 		&i.Reason,
 		&i.CreatedAt,
+		&i.SentAt,
 		&i.ClosedAt,
 	)
 	return i, err
 }
 
 const getUserConnectionTest = `-- name: GetUserConnectionTest :one
-SELECT id, user_id, connection_id, status, reason, created_at, closed_at FROM connection_tests WHERE id = $1 AND user_id = $2 AND connection_id = $3
+SELECT id, user_id, connection_id, status, reason, created_at, sent_at, closed_at FROM connection_tests WHERE id = $1 AND user_id = $2 AND connection_id = $3
 `
 
 type GetUserConnectionTestParams struct {
@@ -173,6 +195,7 @@ func (q *Queries) GetUserConnectionTest(ctx context.Context, arg GetUserConnecti
 		&i.Status,
 		&i.Reason,
 		&i.CreatedAt,
+		&i.SentAt,
 		&i.ClosedAt,
 	)
 	return i, err
@@ -218,8 +241,39 @@ func (q *Queries) LastConnectionTests(ctx context.Context, userID uuid.UUID) ([]
 	return items, nil
 }
 
+const listUnsentConnectionTests = `-- name: ListUnsentConnectionTests :many
+SELECT id FROM connection_tests
+WHERE connection_id = $1 AND status = 'pending' AND sent_at IS NULL AND created_at > $2
+ORDER BY created_at
+`
+
+type ListUnsentConnectionTestsParams struct {
+	ConnectionID uuid.UUID
+	Since        time.Time
+}
+
+func (q *Queries) ListUnsentConnectionTests(ctx context.Context, arg ListUnsentConnectionTestsParams) ([]uuid.UUID, error) {
+	rows, err := q.db.Query(ctx, listUnsentConnectionTests, arg.ConnectionID, arg.Since)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []uuid.UUID
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const lockConnectionTest = `-- name: LockConnectionTest :one
-SELECT id, user_id, connection_id, status, reason, created_at, closed_at FROM connection_tests WHERE id = $1 FOR UPDATE
+SELECT id, user_id, connection_id, status, reason, created_at, sent_at, closed_at FROM connection_tests WHERE id = $1 FOR UPDATE
 `
 
 func (q *Queries) LockConnectionTest(ctx context.Context, id uuid.UUID) (ConnectionTest, error) {
@@ -232,6 +286,7 @@ func (q *Queries) LockConnectionTest(ctx context.Context, id uuid.UUID) (Connect
 		&i.Status,
 		&i.Reason,
 		&i.CreatedAt,
+		&i.SentAt,
 		&i.ClosedAt,
 	)
 	return i, err
