@@ -12,9 +12,12 @@ __all__: collections.abc.Sequence[str] = (
     "find_delivery",
     "find_dm_channel",
     "find_message",
+    "forget_account_dm_channels",
+    "forget_account_messages",
     "forget_dm_channel",
     "forget_message",
     "forget_user",
+    "forget_user_dm_channels",
     "keep_dm_channel",
     "messages_for_item",
     "messages_for_user",
@@ -96,20 +99,32 @@ DELETE FROM messages WHERE sent_at < ?
 """
 
 FIND_DM_CHANNEL: typing.Final[str] = """-- name: FindDmChannel :one
-SELECT channel_id FROM dm_channels WHERE account_id = ?
+SELECT channel_id FROM dm_channels WHERE bot_id = ? AND account_id = ?
 """
 
 KEEP_DM_CHANNEL: typing.Final[str] = """-- name: KeepDmChannel :exec
-INSERT INTO dm_channels (account_id, channel_id, opened_at) VALUES (?, ?, ?)
-ON CONFLICT (account_id) DO UPDATE SET channel_id = excluded.channel_id, opened_at = excluded.opened_at
+INSERT INTO dm_channels (bot_id, account_id, channel_id) VALUES (?, ?, ?)
+ON CONFLICT (bot_id, account_id) DO UPDATE SET channel_id = excluded.channel_id
 """
 
 FORGET_DM_CHANNEL: typing.Final[str] = """-- name: ForgetDmChannel :exec
-DELETE FROM dm_channels WHERE account_id = ? AND channel_id = ?
+DELETE FROM dm_channels WHERE bot_id = ? AND account_id = ? AND channel_id = ?
+"""
+
+FORGET_ACCOUNT_DM_CHANNELS: typing.Final[str] = """-- name: ForgetAccountDmChannels :exec
+DELETE FROM dm_channels WHERE account_id = ?
+"""
+
+FORGET_ACCOUNT_MESSAGES: typing.Final[str] = """-- name: ForgetAccountMessages :exec
+DELETE FROM messages WHERE user_id = ? AND account_id = ?
+"""
+
+FORGET_USER_DM_CHANNELS: typing.Final[str] = """-- name: ForgetUserDmChannels :exec
+DELETE FROM dm_channels WHERE account_id IN (SELECT account_id FROM messages WHERE user_id = ?)
 """
 
 PURGE_DM_CHANNELS: typing.Final[str] = """-- name: PurgeDmChannels :execrows
-DELETE FROM dm_channels WHERE opened_at < ?
+DELETE FROM dm_channels WHERE NOT EXISTS (SELECT 1 FROM messages WHERE messages.account_id = dm_channels.account_id)
 """
 
 
@@ -211,20 +226,32 @@ async def purge_messages(conn: aiosqlite.Connection, *, sent_at: datetime.dateti
     return (await conn.execute(PURGE_MESSAGES, (sent_at,))).rowcount
 
 
-async def find_dm_channel(conn: aiosqlite.Connection, *, account_id: int) -> int | None:
-    row = await (await conn.execute(FIND_DM_CHANNEL, (account_id,))).fetchone()
+async def find_dm_channel(conn: aiosqlite.Connection, *, bot_id: int, account_id: int) -> int | None:
+    row = await (await conn.execute(FIND_DM_CHANNEL, (bot_id, account_id))).fetchone()
     if row is None:
         return None
     return row[0]
 
 
-async def keep_dm_channel(conn: aiosqlite.Connection, *, account_id: int, channel_id: int, opened_at: datetime.datetime) -> None:
-    await conn.execute(KEEP_DM_CHANNEL, (account_id, channel_id, opened_at))
+async def keep_dm_channel(conn: aiosqlite.Connection, *, bot_id: int, account_id: int, channel_id: int) -> None:
+    await conn.execute(KEEP_DM_CHANNEL, (bot_id, account_id, channel_id))
 
 
-async def forget_dm_channel(conn: aiosqlite.Connection, *, account_id: int, channel_id: int) -> None:
-    await conn.execute(FORGET_DM_CHANNEL, (account_id, channel_id))
+async def forget_dm_channel(conn: aiosqlite.Connection, *, bot_id: int, account_id: int, channel_id: int) -> None:
+    await conn.execute(FORGET_DM_CHANNEL, (bot_id, account_id, channel_id))
 
 
-async def purge_dm_channels(conn: aiosqlite.Connection, *, opened_at: datetime.datetime) -> int:
-    return (await conn.execute(PURGE_DM_CHANNELS, (opened_at,))).rowcount
+async def forget_account_dm_channels(conn: aiosqlite.Connection, *, account_id: int) -> None:
+    await conn.execute(FORGET_ACCOUNT_DM_CHANNELS, (account_id,))
+
+
+async def forget_account_messages(conn: aiosqlite.Connection, *, user_id: str, account_id: int) -> None:
+    await conn.execute(FORGET_ACCOUNT_MESSAGES, (user_id, account_id))
+
+
+async def forget_user_dm_channels(conn: aiosqlite.Connection, *, user_id: str) -> None:
+    await conn.execute(FORGET_USER_DM_CHANNELS, (user_id,))
+
+
+async def purge_dm_channels(conn: aiosqlite.Connection) -> int:
+    return (await conn.execute(PURGE_DM_CHANNELS)).rowcount

@@ -101,10 +101,13 @@ class Sync:
 
     async def _drop_unlinked(self, user: plsremind.ID, linked: collections.abc.Collection[int]) -> None:
         # An account that was unlinked must not keep seeing what becomes of the user's items.
+        gone: set[int] = set()
         for row in await self._store.messages_for_user(user):
             if row.account_id not in linked:
                 self._call_off(row.message_id)
-                await self._store.forget_message(row.message_id)
+                gone.add(row.account_id)
+        for account in gone:
+            await self._store.forget_account(user, account)
 
     def _call_off(self, message: int) -> None:
         # A redraw already waiting would still show the item to whoever sees the message.

@@ -19,6 +19,7 @@ ITEM = "01930000-0000-7000-8000-00000000000a"
 OTHER_ITEM = "01930000-0000-7000-8000-00000000000b"
 MIA = "01930000-0000-7000-8000-000000000001"
 BEN = "01930000-0000-7000-8000-000000000002"
+BOT, OTHER_BOT = 900, 901
 
 
 @pytest.fixture
@@ -38,13 +39,14 @@ async def record(
     item: str = ITEM,
     now: datetime.datetime = NOW,
     stamp: datetime.datetime | None = None,
+    account: int = 1234,
 ) -> None:
     await store.record(
         delivery_id=delivery,
         user_id=user,
         item_id=item,
         shown_at=stamp,
-        messages=[Sent(message_id=message, channel_id=7, account_id=1234) for message in messages],
+        messages=[Sent(message_id=message, channel_id=7, account_id=account) for message in messages],
         now=now,
     )
 
@@ -192,28 +194,84 @@ async def test_age_counts_the_same_whatever_zone_a_time_came_in(store: Store) ->
     assert not await store.knows_delivery("d1")
 
 
-async def test_a_dm_channel_is_kept_and_replaced(store: Store) -> None:
-    assert await store.dm_channel(1234) is None
-    await store.keep_dm_channel(1234, 70, now=NOW)
-    await store.keep_dm_channel(5678, 80, now=NOW)
-    await store.keep_dm_channel(1234, 71, now=NOW)
-    assert [await store.dm_channel(account) for account in (1234, 5678)] == [71, 80]
+async def test_a_dm_channel_is_kept_per_bot_and_account_and_replaced(store: Store) -> None:
+    assert await store.dm_channel(BOT, 1234) is None
+    await store.keep_dm_channel(BOT, 1234, 70)
+    await store.keep_dm_channel(BOT, 5678, 80)
+    await store.keep_dm_channel(OTHER_BOT, 1234, 90)
+    await store.keep_dm_channel(BOT, 1234, 71)
+    found = [await store.dm_channel(bot, account) for bot, account in ((BOT, 1234), (BOT, 5678), (OTHER_BOT, 1234))]
+    assert found == [71, 80, 90]
 
 
 async def test_a_dm_channel_is_only_forgotten_while_it_is_the_one_named(store: Store) -> None:
-    await store.keep_dm_channel(1234, 71, now=NOW)
-    await store.forget_dm_channel(1234, 70)
-    assert await store.dm_channel(1234) == 71
-    await store.forget_dm_channel(1234, 71)
-    assert await store.dm_channel(1234) is None
+    await store.keep_dm_channel(BOT, 1234, 71)
+    await store.forget_dm_channel(BOT, 1234, 70)
+    assert await store.dm_channel(BOT, 1234) == 71
+    await store.forget_dm_channel(BOT, 1234, 71)
+    assert await store.dm_channel(BOT, 1234) is None
 
 
-async def test_dm_channels_opened_a_month_ago_are_purged(store: Store) -> None:
-    days = datetime.timedelta(days=1)
-    await store.keep_dm_channel(1, 10, now=NOW - 29 * days)
-    await store.keep_dm_channel(2, 20, now=NOW - 31 * days)
+async def test_dm_channels_go_once_their_account_has_no_messages_left(store: Store) -> None:
+    await record(store, "d1", 100, account=1234)
+    await store.keep_dm_channel(BOT, 1234, 70)
+    await store.keep_dm_channel(BOT, 5678, 80)
     await store.purge(NOW)
-    assert [await store.dm_channel(account) for account in (1, 2)] == [10, None]
+    assert [await store.dm_channel(BOT, account) for account in (1234, 5678)] == [70, None]
+    await store.purge(NOW + datetime.timedelta(days=31))
+    assert await store.dm_channel(BOT, 1234) is None
+
+
+async def test_forgetting_a_user_takes_the_dm_channels_of_their_accounts(store: Store) -> None:
+    await record(store, "d1", 100, account=1234)
+    await record(store, "d2", 300, user=BEN, account=5678)
+    await store.keep_dm_channel(BOT, 1234, 70)
+    await store.keep_dm_channel(BOT, 5678, 80)
+    await store.forget_user(MIA)
+    assert [await store.dm_channel(BOT, account) for account in (1234, 5678)] == [None, 80]
+
+
+async def test_forgetting_an_account_takes_the_users_messages_and_its_dm_channels(store: Store) -> None:
+    await record(store, "d1", 100, 101, account=1234)
+    await record(store, "d2", 200, account=5678)
+    await record(store, "d3", 300, user=BEN, account=1234)
+    await store.keep_dm_channel(BOT, 1234, 70)
+    await store.keep_dm_channel(OTHER_BOT, 1234, 90)
+    await store.keep_dm_channel(BOT, 5678, 80)
+    await store.forget_account(MIA, 1234)
+    assert [row.message_id for row in await store.messages_for_user(MIA)] == [200]
+    assert [row.message_id for row in await store.messages_for_user(BEN)] == [300], "the account may be Ben's now"
+    found = [await store.dm_channel(bot, account) for bot, account in ((BOT, 1234), (OTHER_BOT, 1234), (BOT, 5678))]
+    assert found == [None, None, 80]
+
+
+async def test_a_write_whose_commit_fails_is_not_carried_into_the_next_one(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = tmp_path / "discord.db"
+    store = await Store.open(path)
+    real = aiosqlite.Connection.commit
+    commits = 0
+
+    async def commit(connection: aiosqlite.Connection) -> None:
+        nonlocal commits
+        commits += 1
+        if commits == 1:
+            msg = "disk I/O error"
+            raise sqlite3.OperationalError(msg)
+        await real(connection)
+
+    monkeypatch.setattr(aiosqlite.Connection, "commit", commit)
+    with pytest.raises(sqlite3.OperationalError):
+        await record(store, "lost", 100)
+    await record(store, "kept", 200)
+    await store.close()
+    reopened = await Store.open(path)
+    try:
+        assert not await reopened.knows_delivery("lost")
+        assert await reopened.knows_delivery("kept")
+    finally:
+        await reopened.close()
 
 
 async def test_a_store_from_before_dm_channels_gains_them_and_keeps_its_rows(
@@ -233,8 +291,8 @@ async def test_a_store_from_before_dm_channels_gains_them_and_keeps_its_rows(
     second = await Store.open(path)
     try:
         assert await second.knows_delivery("d1")
-        await second.keep_dm_channel(1234, 70, now=NOW)
-        assert await second.dm_channel(1234) == 70
+        await second.keep_dm_channel(BOT, 1234, 70)
+        assert await second.dm_channel(BOT, 1234) == 70
     finally:
         await second.close()
     assert await version(path) == 2

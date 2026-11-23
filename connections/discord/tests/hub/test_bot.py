@@ -45,7 +45,13 @@ def now() -> datetime.datetime:
 
 
 def config(kit: kit_.Kit, token: str, tmp_path: pathlib.Path) -> Config:
-    return Config(discord_token="x", hub_url=kit.url, hub_token=token, public_url=kit.url, database=tmp_path / "bot.db")
+    return Config(
+        discord_token="MTIzNDU2Nzg5MDEyMzQ1Njc4.x.y",
+        hub_url=kit.url,
+        hub_token=token,
+        public_url=kit.url,
+        database=tmp_path / "bot.db",
+    )
 
 
 @pytest.fixture
@@ -80,6 +86,7 @@ async def running(kit: kit_.Kit, tmp_path: pathlib.Path) -> collections.abc.Asyn
         store=store,
         texts=discord.say(),
         clock=clock,
+        bot=123456789012345678,
         redraw=sync.redraw_soon,
     )
     gate = bot_module.Gate()

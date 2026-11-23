@@ -58,6 +58,7 @@ class Reminders:
         store: Store,
         texts: texts_.Texts,
         clock: Clock,
+        bot: int,
         redraw: collections.abc.Callable[[int, int], None],
         sleep: collections.abc.Callable[[float], collections.abc.Awaitable[None]] = asyncio.sleep,
     ) -> None:
@@ -67,6 +68,7 @@ class Reminders:
         self._store: typing.Final = store
         self._texts: typing.Final = texts
         self._clock: typing.Final = clock
+        self._bot: typing.Final = bot
         self._sleep: typing.Final = sleep
         self._redraw: typing.Final = redraw
         self._busy: set[plsremind.ID] = set()
@@ -74,7 +76,6 @@ class Reminders:
         self._refused: dict[plsremind.ID, str] = {}
         self._sent: set[plsremind.ID] = set()
         self._tries: dict[plsremind.ID, asyncio.Task[None]] = {}
-        self._channels: dict[int, int] = {}
         self._closing = False
 
     @property
@@ -213,45 +214,47 @@ class Reminders:
     async def _post(self, account: int, rendered: ui.Rendered) -> tuple[int, hikari.Message]:
         # Opening the DM channel for every reminder would double the requests at the busy hours.
         kept = await self._kept(account)
-        if kept is None:
-            channel = await self._open(account)
-            return channel, await self._message(channel, account, rendered)
-        try:
-            return kept, await self._message(kept, account, rendered)
-        except hikari.NotFoundError:
-            # Another reminder may have opened the channel anew meanwhile.
-            if self._channels.get(account) == kept:
-                del self._channels[account]
+        stale: hikari.NotFoundError | None = None
+        if kept is not None:
+            try:
+                return kept, await self._message(kept, account, rendered)
+            except hikari.NotFoundError as unknown:
+                stale = unknown
             await self._forget_channel(account, kept)
-            channel = self._channels.get(account) or await self._open(account)
-            # Discord gives back the same channel when it is opened again, and it would fail again.
-            if channel == kept:
-                raise
-        return channel, await self._message(channel, account, rendered)
+            # Another reminder may have opened the channel anew meanwhile.
+            current = await self._kept(account)
+            if current is not None and current != kept:
+                return current, await self._message(current, account, rendered)
+        channel = int((await self._rest.create_dm_channel(account)).id)
+        # Discord gives back the same channel when it is opened again, and it would fail again.
+        if stale is not None and channel == kept:
+            raise stale
+        try:
+            message = await self._message(channel, account, rendered)
+        except Exception as trouble:
+            # Any answer but 404 shows that the channel is there.
+            if not isinstance(trouble, hikari.NotFoundError):
+                await self._keep(account, channel)
+            raise
+        await self._keep(account, channel)
+        return channel, message
 
     async def _kept(self, account: int) -> int | None:
-        if account in self._channels:
-            return self._channels[account]
         try:
-            stored = await self._store.dm_channel(account)
+            return await self._store.dm_channel(self._bot, account)
         except Exception:
             _LOGGER.exception("a kept DM channel could not be read")
             return None
-        return None if stored is None else self._channels.setdefault(account, stored)
 
-    async def _open(self, account: int) -> int:
-        channel = int((await self._rest.create_dm_channel(account)).id)
-        self._channels[account] = channel
+    async def _keep(self, account: int, channel: int) -> None:
         try:
-            await self._store.keep_dm_channel(account, channel, now=self._clock.now())
+            await self._store.keep_dm_channel(self._bot, account, channel)
         except Exception:
-            # Kept in memory all the same; only after a restart would it be opened again.
             _LOGGER.exception("a DM channel could not be kept")
-        return channel
 
     async def _forget_channel(self, account: int, channel: int) -> None:
         try:
-            await self._store.forget_dm_channel(account, channel)
+            await self._store.forget_dm_channel(self._bot, account, channel)
         except Exception:
             _LOGGER.exception("a DM channel Discord no longer knows could not be forgotten")
 

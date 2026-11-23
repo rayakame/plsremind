@@ -4,6 +4,7 @@ import collections.abc
 import pathlib
 import typing
 
+import hikari
 import msgspec
 
 _REQUIRED: typing.Final = ("DISCORD_TOKEN", "PLSREMIND_URL", "PLSREMIND_TOKEN", "PLSREMIND_PUBLIC_URL")
@@ -33,6 +34,11 @@ class Config(msgspec.Struct, frozen=True, kw_only=True):
             if not values[name].startswith(("http://", "https://")):
                 msg = f"{name} must be an address that starts with http:// or https://."
                 raise ConfigError(msg)
+        try:
+            hikari.applications.get_token_id(values["DISCORD_TOKEN"])
+        except ValueError:
+            msg = "DISCORD_TOKEN must be the token of a Discord bot."
+            raise ConfigError(msg) from None
         return cls(
             discord_token=values["DISCORD_TOKEN"],
             hub_url=values["PLSREMIND_URL"].rstrip("/"),
@@ -40,6 +46,10 @@ class Config(msgspec.Struct, frozen=True, kw_only=True):
             public_url=values["PLSREMIND_PUBLIC_URL"].rstrip("/"),
             database=pathlib.Path(values[_DATABASE] or "discord.db"),
         )
+
+    @property
+    def bot_id(self) -> int:
+        return int(hikari.applications.get_token_id(self.discord_token))
 
     @property
     def gateway_url(self) -> str:

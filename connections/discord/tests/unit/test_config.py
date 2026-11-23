@@ -10,7 +10,7 @@ from plsremind_discord.config import Config
 from plsremind_discord.config import ConfigError
 
 FULL = {
-    "DISCORD_TOKEN": "discord-secret",
+    "DISCORD_TOKEN": "MTIzNDU2Nzg5MDEyMzQ1Njc4.discord.secret",
     "PLSREMIND_URL": "http://hub:8080/",
     "PLSREMIND_TOKEN": "plsr_con_secret",
     "PLSREMIND_PUBLIC_URL": "https://todo.example.com/",
@@ -19,7 +19,8 @@ FULL = {
 
 def test_a_complete_environment_is_read() -> None:
     config = Config.from_env(FULL)
-    assert config.discord_token == "discord-secret"
+    assert config.discord_token == "MTIzNDU2Nzg5MDEyMzQ1Njc4.discord.secret"
+    assert config.bot_id == 123456789012345678
     assert config.hub_url == "http://hub:8080"
     assert config.hub_token == "plsr_con_secret"
     assert config.public_url == "https://todo.example.com"
@@ -56,6 +57,11 @@ def test_an_empty_value_counts_as_missing(empty: str) -> None:
         Config.from_env({**FULL, "DISCORD_TOKEN": empty})
 
 
+def test_a_discord_token_that_names_no_bot_is_refused() -> None:
+    with pytest.raises(ConfigError, match="DISCORD_TOKEN"):
+        Config.from_env({**FULL, "DISCORD_TOKEN": "discord-secret"})
+
+
 @pytest.mark.parametrize("name", ["PLSREMIND_URL", "PLSREMIND_PUBLIC_URL"])
 def test_an_address_without_a_scheme_is_refused(name: str) -> None:
     with pytest.raises(ConfigError, match=name):
@@ -64,7 +70,7 @@ def test_an_address_without_a_scheme_is_refused(name: str) -> None:
 
 def test_the_tokens_stay_out_of_what_is_printed() -> None:
     shown = repr(Config.from_env(FULL)) + str(Config.from_env(FULL))
-    assert "discord-secret" not in shown
+    assert "discord.secret" not in shown
     assert "plsr_con_secret" not in shown
 
 

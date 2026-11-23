@@ -1,5 +1,7 @@
 CREATE TABLE dm_channels (
-    account_id integer PRIMARY KEY,
+    bot_id integer NOT NULL,
+    account_id integer NOT NULL,
     channel_id integer NOT NULL,
-    opened_at timestamp NOT NULL
+    PRIMARY KEY (bot_id, account_id)
 );
+CREATE INDEX messages_account_idx ON messages (account_id);
