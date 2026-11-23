@@ -48,37 +48,50 @@ func viewTest(row sqlc.ConnectionTest) Test {
 	return out
 }
 
-// TestFor loads a test that is still to be sent, with what its app needs to send it. One whose
-// minute is over, or whose user has since been disabled or switched the app off, is not sent.
-func TestFor(ctx context.Context, q *sqlc.Queries, now time.Time, id uuid.UUID) (view TestView, connection uuid.UUID, pending bool, err error) {
+// TestToSend reports which app a test goes to, as long as it was never handed out and its
+// minute is not over.
+func TestToSend(ctx context.Context, q *sqlc.Queries, now time.Time, id uuid.UUID) (connection uuid.UUID, ok bool, err error) {
 	row, err := q.GetConnectionTest(ctx, id)
-	if store.IsNotFound(err) || (err == nil && (row.Status != "pending" || row.SentAt != nil || !row.CreatedAt.After(now.Add(-testAnswerWithin)))) {
-		return TestView{}, uuid.Nil, false, nil
+	if store.IsNotFound(err) {
+		return uuid.Nil, false, nil
 	}
 	if err != nil {
-		return TestView{}, uuid.Nil, false, err
+		return uuid.Nil, false, err
+	}
+	return row.ConnectionID, row.SentAt == nil && answerable(row, now), nil
+}
+
+// TestFor builds what an app receives with a test, at the moment it is written. A test whose
+// minute is over, or whose user has since been disabled or switched the app off, is not sent.
+func TestFor(ctx context.Context, q *sqlc.Queries, now time.Time, id uuid.UUID) (view TestView, ok bool, err error) {
+	row, err := q.GetConnectionTest(ctx, id)
+	if store.IsNotFound(err) || (err == nil && !answerable(row, now)) {
+		return TestView{}, false, nil
+	}
+	if err != nil {
+		return TestView{}, false, err
 	}
 	access, err := q.ConnectionTestAccess(ctx, sqlc.ConnectionTestAccessParams{UserID: row.UserID, ConnectionID: row.ConnectionID})
 	if store.IsNotFound(err) || (err == nil && (!access.Deliverable || !access.Linked || !access.Granted)) {
-		return TestView{}, uuid.Nil, false, nil
+		return TestView{}, false, nil
 	}
 	if err != nil {
-		return TestView{}, uuid.Nil, false, err
+		return TestView{}, false, err
 	}
 	app, err := q.GetConnection(ctx, row.ConnectionID)
 	if err != nil {
-		return TestView{}, uuid.Nil, false, err
+		return TestView{}, false, err
 	}
 	user, err := q.GetUser(ctx, row.UserID)
 	if err != nil {
-		return TestView{}, uuid.Nil, false, err
+		return TestView{}, false, err
 	}
 	if user.Disabled {
-		return TestView{}, uuid.Nil, false, nil
+		return TestView{}, false, nil
 	}
 	ids, err := q.ListExternalIDs(ctx, sqlc.ListExternalIDsParams{UserID: user.ID, Provider: app.Provider})
 	if err != nil {
-		return TestView{}, uuid.Nil, false, err
+		return TestView{}, false, err
 	}
 	if ids == nil {
 		ids = []string{}
@@ -87,7 +100,11 @@ func TestFor(ctx context.Context, q *sqlc.Queries, now time.Time, id uuid.UUID) 
 		ID:   row.ID,
 		User: User{ID: user.ID, DisplayName: user.DisplayName, Timezone: user.Timezone, Locale: user.Locale, ExternalIDs: ids},
 	}
-	return view, row.ConnectionID, true, nil
+	return view, true, nil
+}
+
+func answerable(row sqlc.ConnectionTest, now time.Time) bool {
+	return row.Status == "pending" && row.CreatedAt.After(now.Add(-testAnswerWithin))
 }
 
 // CloseTest ends a test that is still pending; one that already ended stays as it is.
