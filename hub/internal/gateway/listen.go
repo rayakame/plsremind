@@ -249,7 +249,7 @@ func (h *Hub) deliver(ctx context.Context) {
 // sendTest hands a test to the sessions of its app, or ends it when no session is there to take it.
 func (h *Hub) sendTest(ctx context.Context, id uuid.UUID) error {
 	q := h.d.Q()
-	view, app, pending, err := delivery.TestFor(ctx, q, id)
+	view, app, pending, err := delivery.TestFor(ctx, q, h.d.Now(), id)
 	if err != nil || !pending {
 		return err
 	}

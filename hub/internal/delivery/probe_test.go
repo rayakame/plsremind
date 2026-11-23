@@ -277,7 +277,50 @@ func TestATestThatWentOutIsNotClosedWhenTheAppLeaves(t *testing.T) {
 
 	test := uuid.MustParse(id)
 	require.NoError(t, events.SendSignal(context.Background(), sqlc.New(e.Pool), events.Signal{Type: events.SignalTest, TestID: &test}))
-	require.Never(t, func() bool {
-		return testState(t, mia, bot.ID, id).Get("status").String() != "pending"
-	}, time.Second, 100*time.Millisecond)
+
+	// Signals are handled in order, so once this one is through the repeated one was handled.
+	other := e.Connection(t, "discord")
+	tom := testkit.Linked(t, e, "tom", "222")
+	watcher := e.Gateway(t, other.Token, "deliveries")
+	require.Equal(t, 201, startTest(t, tom, other.ID).Status)
+	watcher.Expect(t, "delivery.test")
+	require.Equal(t, "pending", testState(t, mia, bot.ID, id).Get("status").String())
+}
+
+func TestATestIsNotSentToSomeoneWhoWasDisabled(t *testing.T) {
+	e := testkit.New(t)
+	bot := e.Connection(t, "discord")
+	mia := testkit.Linked(t, e, "mia", "111")
+	tom := testkit.Linked(t, e, "tom", "222")
+	gw := e.Gateway(t, bot.Token, "deliveries")
+	for i, user := range []*testkit.Client{mia, tom} {
+		_, err := e.Pool.Exec(context.Background(),
+			`INSERT INTO connection_tests (id, user_id, connection_id, created_at) VALUES (gen_random_uuid(), $1, $2, $3)`,
+			user.UserID, bot.ID, e.Clock.Now().Add(time.Duration(i)*time.Millisecond))
+		require.NoError(t, err)
+	}
+	require.Equal(t, 200, e.Admin(t).Do(t, "PATCH", "/admin/users/"+mia.UserID, J{"disabled": true}).Status)
+
+	e.KillListener(t)
+	frame := gw.Expect(t, "delivery.test")
+	require.Equal(t, tom.UserID, frame.Get("data.user.id").String())
+}
+
+func TestATestWhoseMinuteIsOverIsNotSent(t *testing.T) {
+	e := testkit.New(t)
+	bot := e.Connection(t, "discord")
+	mia := testkit.Linked(t, e, "mia", "111")
+	tom := testkit.Linked(t, e, "tom", "222")
+	gw := e.Gateway(t, bot.Token, "deliveries")
+	old := uuid.Must(uuid.NewV7())
+	_, err := e.Pool.Exec(context.Background(),
+		`INSERT INTO connection_tests (id, user_id, connection_id, created_at) VALUES ($1, $2, $3, $4)`,
+		old, mia.UserID, bot.ID, e.Clock.Now().Add(-61*time.Second))
+	require.NoError(t, err)
+	require.NoError(t, events.SendSignal(context.Background(), sqlc.New(e.Pool), events.Signal{Type: events.SignalTest, TestID: &old}))
+
+	// Signals are handled in order, so the old test would come first.
+	require.Equal(t, 201, startTest(t, tom, bot.ID).Status)
+	frame := gw.Expect(t, "delivery.test")
+	require.Equal(t, tom.UserID, frame.Get("data.user.id").String())
 }
