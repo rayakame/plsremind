@@ -38,7 +38,7 @@ async function apps(path = "/settings/admin/apps") {
   made.route("GET", "/admin/connections", {
     status: 200,
     body: [
-      app("b", "Team", { reach: 2, install_url: discordInstallUrl(id) }),
+      app("b", "Team", { reach: 1, install_url: discordInstallUrl(id) }),
       app("x", "Script", { provider: "corp", install_url: "https://corp.example/setup" }),
       app("a", "plsremind", { reach: 4, last_used_at: "2026-11-10T10:00:00Z" }),
     ],
@@ -74,7 +74,7 @@ test("the apps are listed by kind and name with their reach", async () => {
   );
   expect(within(rows[1]!).getByText("Discord")).toBeTruthy();
   expect(within(rows[1]!).getByText(/^Reminds 4 users · last active/)).toBeTruthy();
-  expect(within(rows[2]!).getByText("Reminds 2 users · never used")).toBeTruthy();
+  expect(within(rows[2]!).getByText("Reminds 1 user · never used")).toBeTruthy();
   expect(within(rows[1]!).getByRole("link", { name: "Edit" }).getAttribute("href")).toBe(
     "/settings/admin/apps/a",
   );
@@ -98,7 +98,7 @@ test("a new Discord bot is made from its Application ID and shows its token once
   await userEvent.clear(appId);
   await userEvent.type(appId, id);
   await userEvent.click(screen.getByRole("button", { name: "Add bot and show its token" }));
-  const shown = within(await screen.findByRole("dialog"));
+  const shown = within(await screen.findByRole("dialog", { name: "Token of the app" }));
   expect((shown.getByLabelText("Token") as HTMLInputElement).value).toBe("plsr_con_secret");
   expect(shown.getByText(/docs\/self-hosting\.md/)).toBeTruthy();
   expect(made.sent("POST", "/admin/connections")[0]!.body).toEqual({
@@ -126,7 +126,8 @@ test("another app takes its kind from the providers or typed, and an optional ht
   expect(screen.getByText("Must be an https address.")).toBeTruthy();
   await userEvent.clear(screen.getByLabelText("Where users set it up"));
   await userEvent.click(screen.getByRole("button", { name: "Add app and show its token" }));
-  await screen.findByRole("dialog");
+  const shown = await screen.findByRole("dialog");
+  expect(shown.textContent).not.toContain("docs/self-hosting.md");
   expect(made.sent("POST", "/admin/connections")[0]!.body).toMatchObject({
     name: "Hook",
     provider: "corp",
@@ -187,4 +188,14 @@ test("an app with a link of another form shows the link itself", async () => {
     "https://corp.example/setup",
   );
   expect(screen.queryByLabelText("Application ID from the Discord Developer Portal")).toBeNull();
+});
+
+test("a list of apps that did not load can be asked for again", async () => {
+  const made = await renderApp({ path: "/settings/admin/apps", user: admin, info, hold: true });
+  made.route("GET", "/admin/connections", {
+    status: 500,
+    body: { error: { code: "internal", message: "no" } },
+  });
+  await act(() => made.connect());
+  expect(await screen.findByRole("button", { name: "Try again" })).toBeTruthy();
 });

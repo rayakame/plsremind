@@ -31,7 +31,7 @@ function Content(props: {
   const { page, apps } = props;
   switch (page) {
     case "security":
-      return <SecuritySettings />;
+      return <SecuritySettings apps={apps} />;
     case "reminders":
       return <ReminderSettings />;
     case "look":

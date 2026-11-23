@@ -1,8 +1,8 @@
-import type { Identity } from "plsremind";
+import type { Identity, UserConnection } from "plsremind";
 import { useState, type FormEvent } from "react";
 import { describeError, isSignedOut } from "../../hub/errors.js";
 import { useProfile } from "../../hub/hooks.js";
-import { useLoaded } from "../../hub/loaded.js";
+import { useLoaded, type Loaded } from "../../hub/loaded.js";
 import { useHub, useSessionStore } from "../../hub/session.js";
 import { useT } from "../../i18n/index.js";
 import { useNotices } from "../../shell/notices.js";
@@ -11,15 +11,14 @@ import { routes } from "../../shell/router.js";
 import { Dialog } from "../../ui/dialog.js";
 import { Card, Notice } from "../../ui/layout.js";
 import { LoadFailed } from "../../ui/load-failed.js";
-import { ConfirmDialog } from "../../ui/name-dialog.js";
 import { rememberLinkOrigin } from "../linked-origin.js";
-import { IdentityRow } from "./identity.js";
+import { IdentityRow, UnlinkDialog } from "./identity.js";
 
-function SignInMethods() {
+function SignInMethods(props: { identities: Loaded<Identity[]>; onUnlinked: () => void }) {
   const t = useT();
   const { client, info } = useHub();
   const { guard } = useNotices();
-  const identities = useLoaded((signal) => client.rest.listIdentities({ signal }), client);
+  const { identities } = props;
   const [unlinking, setUnlinking] = useState<Identity>();
   const nameOf = (provider: string) =>
     info.loginMethods.find((method) => method.key === provider)?.name ?? provider;
@@ -32,6 +31,7 @@ function SignInMethods() {
     setUnlinking(undefined);
     if ((await guard(client.rest.unlinkIdentity(identity.id).then(() => true))) === true) {
       identities.setData((before) => before?.filter((one) => one.id !== identity.id));
+      props.onUnlinked();
     }
   };
 
@@ -66,10 +66,8 @@ function SignInMethods() {
         </div>
       )}
       {unlinking && (
-        <ConfirmDialog
-          title={`${t("accounts.unlink")}: ${nameOf(unlinking.provider)}`}
-          text={t("accounts.unlinkText")}
-          confirm={t("accounts.unlink")}
+        <UnlinkDialog
+          provider={nameOf(unlinking.provider)}
           onConfirm={() => void unlink(unlinking)}
           onClose={() => setUnlinking(undefined)}
         />
@@ -78,11 +76,10 @@ function SignInMethods() {
   );
 }
 
-function PasswordCard() {
+function PasswordCard({ identities }: { identities: Loaded<Identity[]> }) {
   const t = useT();
   const { client } = useHub();
   const session = useSessionStore();
-  const identities = useLoaded((signal) => client.rest.listIdentities({ signal }), client);
   const [current, setCurrent] = useState("");
   const [username, setUsername] = useState("");
   const [next, setNext] = useState("");
@@ -171,9 +168,10 @@ function PasswordCard() {
   );
 }
 
-export function SecuritySettings() {
+export function SecuritySettings({ apps }: { apps: Loaded<UserConnection[]> }) {
   const t = useT();
   const { client } = useHub();
+  const identities = useLoaded((signal) => client.rest.listIdentities({ signal }), client);
   const session = useSessionStore();
   const { guard } = useNotices();
   const profile = useProfile();
@@ -186,8 +184,8 @@ export function SecuritySettings() {
 
   return (
     <>
-      <PasswordCard />
-      <SignInMethods />
+      <PasswordCard identities={identities} />
+      <SignInMethods identities={identities} onUnlinked={apps.reload} />
       <Card title={t("account.deleteTitle")}>
         <p className="text dim">{t("account.deleteText")}</p>
         <div className="line">

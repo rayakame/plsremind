@@ -4,6 +4,7 @@ import { useT } from "../../i18n/index.js";
 import { Avatar } from "../../ui/avatar.js";
 import { Button } from "../../ui/controls.js";
 import { Icon } from "../../ui/icon.js";
+import { ConfirmDialog } from "../../ui/name-dialog.js";
 
 /** One linked account: its picture, name, handle and provider, and a way to unlink it. */
 export function IdentityRow(props: { identity: Identity; provider: string; onUnlink: () => void }) {
@@ -28,5 +29,23 @@ export function IdentityRow(props: { identity: Identity; provider: string; onUnl
         {t("accounts.unlink")}
       </Button>
     </div>
+  );
+}
+
+/** Asks before an account is unlinked, the same way wherever that happens. */
+export function UnlinkDialog(props: {
+  provider: string;
+  onConfirm: () => void;
+  onClose: () => void;
+}) {
+  const t = useT();
+  return (
+    <ConfirmDialog
+      title={t("accounts.unlinkTitle", { name: props.provider })}
+      text={t("accounts.unlinkText")}
+      confirm={t("accounts.unlink")}
+      onConfirm={props.onConfirm}
+      onClose={props.onClose}
+    />
   );
 }

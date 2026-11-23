@@ -148,4 +148,7 @@ test("a picture that does not load gives way to initials", () => {
   cleanup();
   render(<Avatar name="mia" />);
   expect(screen.getByText("M")).toBeTruthy();
+  cleanup();
+  render(<Avatar name="Team Bot" square />);
+  expect(screen.getByText("T")).toBeTruthy();
 });

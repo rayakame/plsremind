@@ -7,14 +7,14 @@ import { routes } from "../shell/router.js";
 import { Avatar } from "../ui/avatar.js";
 import { Button } from "../ui/controls.js";
 import { Icon } from "../ui/icon.js";
-import { takeLinkOrigin } from "./linked-origin.js";
-import { useAppTest } from "./settings/app-test.js";
+import { rememberLinkOrigin, takeLinkOrigin } from "./linked-origin.js";
+import { isRunning, useAppTest } from "./settings/app-test.js";
 import { TestLine } from "./settings/apps.js";
 
 const errors: Readonly<Record<string, Key>> = {
   identity_taken: "linked.taken",
   link_disabled: "errors.link_disabled",
-  invalid_state: "errors.invalid_state",
+  invalid_state: "linked.invalidState",
   provider_error: "errors.provider_error",
 };
 
@@ -62,7 +62,7 @@ export default function LinkedPage({ provider }: { provider: string }) {
           <p className="text dim small">{t("linked.unchanged")}</p>
         </section>
         <div className="line">
-          <a className="btn primary" href={retry}>
+          <a className="btn primary" href={retry} onClick={() => rememberLinkOrigin(back)}>
             {t("linked.retry")}
           </a>
           <Link href={back} className="btn ghost">
@@ -132,6 +132,7 @@ export default function LinkedPage({ provider }: { provider: string }) {
               <span className="dim">{t("linked.testText")}</span>
               <Button
                 variant="ghost"
+                disabled={testable.some((app) => isRunning(tests.state(app.id)))}
                 onClick={() => testable.forEach((app) => void tests.start(app.id))}
               >
                 {t("linked.test")}

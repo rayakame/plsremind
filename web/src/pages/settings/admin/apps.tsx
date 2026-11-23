@@ -10,6 +10,7 @@ import { routes } from "../../../shell/router.js";
 import { Avatar } from "../../../ui/avatar.js";
 import { Button } from "../../../ui/controls.js";
 import { Card } from "../../../ui/layout.js";
+import { LoadFailed } from "../../../ui/load-failed.js";
 import { ConfirmDialog } from "../../../ui/name-dialog.js";
 import { formatMoment } from "../../item/labels.js";
 import { NotFound } from "../../not-found.js";
@@ -53,7 +54,7 @@ function AppList({ apps }: { apps: readonly Connection[] }) {
                   <span className="tag">{kindOf(app.provider)}</span>
                 </span>
                 <span className="dim small">
-                  {t("aapp.reach", {
+                  {t(app.reach === 1 ? "aapp.reachOne" : "aapp.reach", {
                     count: app.reach,
                     used: app.lastUsedAt
                       ? t("aapp.lastActive", { time: formatMoment(app.lastUsedAt, now) })
@@ -199,7 +200,7 @@ function NewApp(props: { kind: "discord" | "other"; onCreated: (app: Connection)
           title={t("aconn.token")}
           label={t("tokens.value")}
           value={token}
-          hint={t("aapp.tokenHint")}
+          hint={props.kind === "discord" ? t("aapp.tokenHint") : undefined}
           onClose={() => {
             setToken(undefined);
             navigate(list);
@@ -218,6 +219,7 @@ export function AdminApps({ rest }: { rest: string | undefined }) {
   if (rest === "new/discord" || rest === "new/other") {
     return <NewApp kind={rest === "new/discord" ? "discord" : "other"} onCreated={add} />;
   }
+  if (apps.failed) return <LoadFailed onRetry={apps.reload} />;
   if (!apps.data) return null;
   if (rest === undefined) return <AppList apps={apps.data} />;
   const app = apps.data.find((one) => one.id === rest);

@@ -91,6 +91,14 @@ function AuthError() {
   return null;
 }
 
+function decoded(part: string): string {
+  try {
+    return decodeURIComponent(part);
+  } catch {
+    return part;
+  }
+}
+
 function SignedIn() {
   const [path, navigate] = useLocation();
   const search = new URLSearchParams(useSearch());
@@ -106,7 +114,9 @@ function SignedIn() {
       <Preferences />
       {path.startsWith("/linked/") ? (
         <Suspense fallback={null}>
-          <LinkedPage provider={decodeURIComponent(path.slice("/linked/".length))} />
+          <Boundary>
+            <LinkedPage provider={decoded(path.slice("/linked/".length))} />
+          </Boundary>
         </Suspense>
       ) : (
         <SelectionProvider>

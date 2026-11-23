@@ -196,3 +196,77 @@ test("an instance without apps says so", async () => {
   await apps([]);
   expect(await screen.findByText("No app is set up on this instance yet.")).toBeTruthy();
 });
+
+test("a test whose answer cannot be fetched ends with a line that says so", async () => {
+  const app = await apps([wireApp({ id: "a" })]);
+  const test = {
+    id: "t1",
+    connection_id: "a",
+    status: "pending",
+    reason: "",
+    created_at: "2026-11-12T18:00:00Z",
+    closed_at: null,
+  };
+  app.route("POST", "/users/@me/connections/a/tests", { status: 201, body: test });
+  app.route("GET", "/users/@me/connections/a/tests/t1", {
+    status: 500,
+    body: { error: { code: "internal", message: "no" } },
+  });
+  await userEvent.click(card("plsremind").getByRole("button", { name: "Send test" }));
+  expect(
+    await card("plsremind").findByText(
+      "No answer came back. Try the test again.",
+      {},
+      { timeout: 6000 },
+    ),
+  ).toBeTruthy();
+  expect(
+    (card("plsremind").getByRole("button", { name: "Send test" }) as HTMLButtonElement).disabled,
+  ).toBe(false);
+}, 10_000);
+
+test("a provider that only links does not promise a sign-in", async () => {
+  const app = await renderApp({
+    path: "/settings/apps",
+    info: {
+      login_methods: [
+        { key: "discord", type: "discord", name: "Discord", login: false, link: true },
+      ],
+    },
+    hold: true,
+  });
+  app.route("GET", "/users/@me/connections", { status: 200, body: [wireApp({ id: "a" })] });
+  app.route("GET", "/users/@me/identities", { status: 200, body: [linked] });
+  await act(() => app.connect());
+  const account = within(await screen.findByRole("region", { name: "Your Discord account" }));
+  expect(
+    await account.findByText("Every Discord app of this instance recognises you by it."),
+  ).toBeTruthy();
+});
+
+test("the account card waits for the accounts and offers to load them again", async () => {
+  const app = await renderApp({ path: "/settings/apps", info, hold: true });
+  app.route("GET", "/users/@me/connections", { status: 200, body: [wireApp({ id: "a" })] });
+  app.route("GET", "/users/@me/identities", {
+    status: 500,
+    body: { error: { code: "internal", message: "no" } },
+  });
+  await act(() => app.connect());
+  const account = within(await screen.findByRole("region", { name: "Your Discord account" }));
+  expect(await account.findByRole("button", { name: "Try again" })).toBeTruthy();
+  expect(account.queryByText("Not linked yet")).toBeNull();
+});
+
+test("unlinking asks the same way as on the sign-in page", async () => {
+  const made = await apps([wireApp({ id: "a" })]);
+  made.route("DELETE", "/users/@me/identities/i2", { status: 204 });
+  await userEvent.click(
+    await card("Your Discord account").findByRole("button", { name: "Unlink" }),
+  );
+  const dialog = within(screen.getByRole("dialog", { name: "Unlink Discord" }));
+  expect(
+    dialog.getByText(
+      "You can then no longer sign in with it, and apps of this kind no longer recognise you.",
+    ),
+  ).toBeTruthy();
+});

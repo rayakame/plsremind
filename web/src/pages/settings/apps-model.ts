@@ -61,6 +61,8 @@ export interface Section {
   readonly provider: string;
   readonly name: string;
   readonly linkable: boolean;
+  /** Whether the account there also signs the user in. */
+  readonly login: boolean;
   readonly apps: readonly UserConnection[];
 }
 
@@ -79,6 +81,7 @@ export function sectionsOf(
         provider,
         name: method?.name ?? provider,
         linkable: method?.link ?? false,
+        login: method?.login ?? false,
         apps: [...members].sort((a, b) => a.name.localeCompare(b.name)),
       };
     })

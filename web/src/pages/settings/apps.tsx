@@ -10,10 +10,9 @@ import { Avatar } from "../../ui/avatar.js";
 import { Button, Segmented } from "../../ui/controls.js";
 import { Icon } from "../../ui/icon.js";
 import { LoadFailed } from "../../ui/load-failed.js";
-import { ConfirmDialog } from "../../ui/name-dialog.js";
 import { formatMoment } from "../item/labels.js";
 import { rememberLinkOrigin } from "../linked-origin.js";
-import { useAppTest, type TestState } from "./app-test.js";
+import { isRunning, useAppTest, type TestState } from "./app-test.js";
 import {
   accessOf,
   grantFor,
@@ -23,7 +22,7 @@ import {
   type Access,
   type Section,
 } from "./apps-model.js";
-import { IdentityRow } from "./identity.js";
+import { IdentityRow, UnlinkDialog } from "./identity.js";
 
 const accessWords: Record<"discord" | "other", Record<Access, Key>> = {
   discord: { none: "apps.none", use: "apps.commands", remind: "apps.commandsReminders" },
@@ -34,6 +33,7 @@ const accessWords: Record<"discord" | "other", Record<Access, Key>> = {
 export function TestLine({ state }: { state: TestState }) {
   const t = useT();
   if (state.status === "refused") return <div className="state bad">{state.message}</div>;
+  if (state.status === "lost") return <div className="state">{t("apps.testLost")}</div>;
   if (state.status === "starting" || state.status === "pending") {
     return <div className="state">{t("apps.testRunning")}</div>;
   }
@@ -101,7 +101,7 @@ function AppCard(props: {
   const discord = props.section.provider === "discord";
   const words = accessWords[discord ? "discord" : "other"];
   const failed = app.lastDelivery?.status === "failed";
-  const running = test?.status === "starting" || test?.status === "pending";
+  const running = isRunning(test);
   const canTest = app.linked && app.enabled && app.intents.includes("deliveries");
   const sees = app.intents
     .filter((intent) => intent !== "deliveries")
@@ -163,7 +163,7 @@ function AppCard(props: {
 
 function AccountCard(props: {
   section: Section;
-  identities: readonly Identity[];
+  identities: Loaded<Identity[]>;
   onUnlink: (identity: Identity) => void;
 }) {
   const t = useT();
@@ -179,13 +179,15 @@ function AccountCard(props: {
     </a>
   );
   const title = t("apps.account", { name: section.name });
+  const mine = props.identities.data?.filter((one) => one.provider === section.provider);
   return (
     <section className="card" aria-label={title}>
       <h3 className="label">{title}</h3>
-      {props.identities.length > 0 ? (
+      {props.identities.failed && <LoadFailed onRetry={props.identities.reload} />}
+      {mine === undefined ? null : mine.length > 0 ? (
         <>
           <div role="list" className="stack">
-            {props.identities.map((identity) => (
+            {mine.map((identity) => (
               <IdentityRow
                 key={identity.id}
                 identity={identity}
@@ -194,7 +196,11 @@ function AccountCard(props: {
               />
             ))}
           </div>
-          <p className="text dim">{t("apps.accountText", { name: section.name })}</p>
+          <p className="text dim">
+            {t(section.login ? "apps.accountText" : "apps.accountTextLinkOnly", {
+              name: section.name,
+            })}
+          </p>
           {section.linkable && <div className="line">{link("apps.linkAnother", false)}</div>}
         </>
       ) : (
@@ -241,11 +247,7 @@ export function AppsSettings({ apps }: { apps: Loaded<UserConnection[]> }) {
       {sections.map((section) => (
         <section key={section.provider} className="stack" aria-label={section.name}>
           <h2 className="h2">{section.name}</h2>
-          <AccountCard
-            section={section}
-            identities={(identities.data ?? []).filter((one) => one.provider === section.provider)}
-            onUnlink={setUnlinking}
-          />
+          <AccountCard section={section} identities={identities} onUnlink={setUnlinking} />
           {section.apps.map((app) => (
             <AppCard
               key={app.id}
@@ -259,10 +261,11 @@ export function AppsSettings({ apps }: { apps: Loaded<UserConnection[]> }) {
         </section>
       ))}
       {unlinking && (
-        <ConfirmDialog
-          title={t("accounts.unlink")}
-          text={t("accounts.unlinkText")}
-          confirm={t("accounts.unlink")}
+        <UnlinkDialog
+          provider={
+            info.loginMethods.find((method) => method.key === unlinking.provider)?.name ??
+            unlinking.provider
+          }
           onConfirm={() => void unlink(unlinking)}
           onClose={() => setUnlinking(undefined)}
         />

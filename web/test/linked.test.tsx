@@ -120,7 +120,7 @@ test("done leads back to where linking started", async () => {
 test.each([
   ["identity_taken", "This Discord account is already linked to another plsremind account."],
   ["link_disabled", "Linking this way is turned off."],
-  ["invalid_state", "Signing in took too long. Try again."],
+  ["invalid_state", "The link was started in another window or took too long."],
   ["provider_error", "The other service did not answer as expected."],
   ["something_new", "Something went wrong."],
 ])("the error %s is explained, and nothing was changed", async (code, text) => {
@@ -146,4 +146,39 @@ test("someone signed out signs in first and comes back", async () => {
   const app = await renderApp({ path: "/linked/discord?identity=i2", user: null, info });
   await waitFor(() => expect(app.path()).toMatch(/^\/login\?next=/));
   expect(decodeURIComponent(app.path())).toContain("/linked/discord?identity=i2");
+});
+
+test("the test button waits while its tests run", async () => {
+  const app = await linked("/linked/discord?identity=i2", [
+    wireApp({ id: "a", name: "plsremind" }),
+  ]);
+  const pending = {
+    id: "t1",
+    connection_id: "a",
+    status: "pending",
+    reason: "",
+    created_at: "2026-11-12T18:00:00Z",
+    closed_at: null,
+  };
+  app.route("POST", "/users/@me/connections/a/tests", { status: 201, body: pending });
+  app.route("GET", "/users/@me/connections/a/tests/t1", { status: 200, body: pending });
+  const button = await screen.findByRole("button", { name: "Send a test reminder" });
+  await userEvent.click(button);
+  await waitFor(() => expect((button as HTMLButtonElement).disabled).toBe(true));
+  await userEvent.click(button);
+  expect(app.sent("POST", /\/tests$/)).toHaveLength(1);
+});
+
+test("trying again remembers where linking started", async () => {
+  rememberLinkOrigin("/settings/apps");
+  await linked("/linked/discord?error=provider_error");
+  const retry = screen.getByRole("link", { name: "Try again" });
+  retry.addEventListener("click", (event) => event.preventDefault());
+  await userEvent.click(retry);
+  expect(sessionStorage.getItem("plsremind.linkFrom")).toMatch(/^\d+ \/settings\/apps$/);
+});
+
+test("a garbled address still shows the page", async () => {
+  await linked("/linked/%E0%A4%A?error=provider_error");
+  expect(screen.getByRole("heading", { level: 1, name: "That did not work" })).toBeTruthy();
 });

@@ -17,7 +17,7 @@ export function SecretDialog(props: {
   title: string;
   label: string;
   value: string;
-  hint?: string;
+  hint?: string | undefined;
   onClose: () => void;
 }) {
   const t = useT();

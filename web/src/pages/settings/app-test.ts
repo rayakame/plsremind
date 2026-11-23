@@ -5,13 +5,21 @@ import { useHub } from "../../hub/session.js";
 import { t } from "../../i18n/index.js";
 
 const pollEvery = 1000;
+// A few failed looks in a row mean the answer is out of reach for now.
+const mostMissed = 3;
 // The hub gives an app a minute to answer; a little more covers the round trip.
 const pollFor = 70_000;
 
 export type TestState =
   | { readonly status: "starting" }
   | { readonly status: "refused"; readonly message: string }
+  | { readonly status: "lost" }
   | ConnectionTest;
+
+/** Whether a test is still under way, so that another must wait. */
+export function isRunning(state: TestState | undefined): boolean {
+  return state?.status === "starting" || state?.status === "pending";
+}
 
 /** Starts tests of apps and follows each until the app answers, then calls done. */
 export function useAppTest(done: () => void) {
@@ -41,15 +49,20 @@ export function useAppTest(done: () => void) {
       }
       show(test);
       const until = Date.now() + pollFor;
-      while (test.status === "pending" && Date.now() < until && alive.current) {
+      let missed = 0;
+      while (test.status === "pending" && Date.now() < until && missed < mostMissed) {
         await new Promise((resolve) => setTimeout(resolve, pollEvery));
+        if (!alive.current) return;
         try {
           test = await client.rest.getConnectionTest(id, test.id);
+          missed = 0;
         } catch {
-          break;
+          missed += 1;
+          continue;
         }
         show(test);
       }
+      if (test.status === "pending") show({ status: "lost" });
       if (alive.current) done();
     },
     [client, done],

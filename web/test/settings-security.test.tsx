@@ -91,7 +91,11 @@ test("an account is unlinked after asking", async () => {
   const row = within((await methods().findAllByRole("listitem"))[0]!);
   await userEvent.click(row.getByRole("button", { name: "Unlink" }));
   const dialog = within(screen.getByRole("dialog"));
-  expect(dialog.getByText("You can then no longer sign in with it.")).toBeTruthy();
+  expect(
+    dialog.getByText(
+      "You can then no longer sign in with it, and apps of this kind no longer recognise you.",
+    ),
+  ).toBeTruthy();
   await userEvent.click(dialog.getByRole("button", { name: "Unlink" }));
   await waitFor(() => expect(app.sent("DELETE", "/users/@me/identities/i2")).toHaveLength(1));
   await waitFor(() => expect(screen.queryByRole("listitem")).toBeNull());
@@ -112,4 +116,20 @@ test("each part of the old personal page has its own page", async () => {
   await renderApp({ path: "/settings/reminders" });
   expect(await screen.findByRole("region", { name: "Quiet hours" })).toBeTruthy();
   expect(screen.queryByLabelText("Command prefix")).toBeNull();
+});
+
+test("the accounts are fetched once, and unlinking refreshes what the apps know", async () => {
+  const app = await security();
+  app.route("DELETE", "/users/@me/identities/i2", { status: 204 });
+  await methods().findAllByRole("listitem");
+  expect(app.sent("GET", "/users/@me/identities")).toHaveLength(1);
+  const before = app.sent("GET", "/users/@me/connections").length;
+  await userEvent.click(
+    within(methods().getAllByRole("listitem")[0]!).getByRole("button", { name: "Unlink" }),
+  );
+  const dialog = within(screen.getByRole("dialog", { name: "Unlink Discord" }));
+  await userEvent.click(dialog.getByRole("button", { name: "Unlink" }));
+  await waitFor(() =>
+    expect(app.sent("GET", "/users/@me/connections").length).toBeGreaterThan(before),
+  );
 });

@@ -1,9 +1,9 @@
 import { useState } from "react";
 
-function initials(name: string): string {
+function initials(name: string, count: number): string {
   const words = name.trim().split(/\s+/).filter(Boolean);
   return words
-    .slice(0, 2)
+    .slice(0, count)
     .map((word) => [...word][0]!.toUpperCase())
     .join("");
 }
@@ -24,7 +24,7 @@ export function Avatar(props: {
   }
   return (
     <span className={className} aria-hidden="true">
-      {initials(props.name)}
+      {initials(props.name, props.square ? 1 : 2)}
     </span>
   );
 }
