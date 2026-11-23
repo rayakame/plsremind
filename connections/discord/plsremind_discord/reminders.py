@@ -74,6 +74,7 @@ class Reminders:
         self._refused: dict[plsremind.ID, str] = {}
         self._sent: set[plsremind.ID] = set()
         self._tries: dict[plsremind.ID, asyncio.Task[None]] = {}
+        self._channels: dict[int, int] = {}
         self._closing = False
 
     @property
@@ -191,10 +192,7 @@ class Reminders:
         passing = refused = False
         for account, (rendered, version) in views.items():
             try:
-                channel = await self._rest.create_dm_channel(account)
-                message = await self._rest.create_message(
-                    channel, **rendered, user_mentions=[account], role_mentions=False, mentions_everyone=False
-                )
+                channel, message = await self._post(account, rendered)
             except hikari.ForbiddenError, hikari.NotFoundError:
                 continue
             except hikari.ClientHTTPResponseError:
@@ -205,12 +203,29 @@ class Reminders:
                 _LOGGER.warning("delivery %s did not get through to Discord: %s", delivery.id, trouble)
                 passing = True
                 continue
-            one = Sent(message_id=int(message.id), channel_id=int(channel.id), account_id=account)
+            one = Sent(message_id=int(message.id), channel_id=channel, account_id=account)
             # At once, so that a stop before the next account cannot make this one go out twice.
             self._sent.add(delivery.id)
             await self._record(delivery, [one], version)
             sent.append(one)
         return _Sending(sent, passing=passing, refused=refused)
+
+    async def _post(self, account: int, rendered: ui.Rendered) -> tuple[int, hikari.Message]:
+        # Opening the DM channel for every reminder would double the requests at the busy hours.
+        known = self._channels.get(account)
+        if known is not None:
+            try:
+                return known, await self._message(known, account, rendered)
+            except hikari.NotFoundError:
+                self._channels.pop(account, None)
+        channel = int((await self._rest.create_dm_channel(account)).id)
+        self._channels[account] = channel
+        return channel, await self._message(channel, account, rendered)
+
+    async def _message(self, channel: int, account: int, rendered: ui.Rendered) -> hikari.Message:
+        return await self._rest.create_message(
+            channel, **rendered, user_mentions=[account], role_mentions=False, mentions_everyone=False
+        )
 
     def _accounts(self, delivery: plsremind.Delivery, *, first: bool) -> list[int]:
         if first:

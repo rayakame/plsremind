@@ -46,6 +46,12 @@ def refused() -> hikari.BadRequestError:
     )
 
 
+def unknown_channel() -> hikari.NotFoundError:
+    return hikari.NotFoundError(
+        url="https://discord.test", headers={}, raw_body=b"", message="Unknown Channel", code=10003
+    )
+
+
 def channel(account: int) -> mock.Mock:
     return mock.Mock(id=hikari.Snowflake(CHANNEL + account))
 
@@ -127,7 +133,7 @@ async def test_a_reminder_goes_out_is_recorded_and_then_confirmed(made: Made) ->
 
     assert order == ["send", "record", "confirm"]
     made.rest.create_dm_channel.assert_awaited_once_with(1234)
-    assert made.rest.create_message.await_args.args[0].id == CHANNEL + 1234
+    assert made.rest.create_message.await_args.args[0] == CHANNEL + 1234
     assert made.rest.create_message.await_args.kwargs["components"]
     assert made.hub.named("delivered") == [{"delivery": things.uid(9001)}]
     (row,) = await made.store.messages_for_item(ITEM.id)
@@ -135,6 +141,64 @@ async def test_a_reminder_goes_out_is_recorded_and_then_confirmed(made: Made) ->
     assert row.shown_at == ITEM.updated_at
     assert await made.store.knows_delivery(things.uid(9001))
     assert made.reminders.waiting == frozenset()
+
+
+async def test_later_reminders_to_an_account_reuse_its_dm_channel(made: Made) -> None:
+    await made.reminders.deliver(delivery())
+    await made.reminders.deliver(things.delivery(2, of=ITEM))
+    made.rest.create_dm_channel.assert_awaited_once_with(1234)
+    assert [call.args[0] for call in made.rest.create_message.await_args_list] == [CHANNEL + 1234] * 2
+    assert len(made.hub.named("delivered")) == 2
+
+
+async def test_a_dm_channel_discord_no_longer_knows_is_opened_again(made: Made) -> None:
+    await made.reminders.deliver(delivery())
+    replies = iter([unknown_channel(), mock.Mock(id=hikari.Snowflake(101))])
+
+    def answer(*_: object, **__: object) -> object:
+        reply = next(replies)
+        if isinstance(reply, Exception):
+            raise reply
+        return reply
+
+    made.rest.create_message.side_effect = answer
+    await made.reminders.deliver(things.delivery(2, of=ITEM))
+    assert made.rest.create_dm_channel.await_count == 2
+    assert len(made.hub.named("delivered")) == 2
+    assert made.hub.named("failed") == []
+
+
+async def test_two_reminders_that_find_the_dm_channel_gone_at_once_both_open_it_again(made: Made) -> None:
+    await made.reminders.deliver(delivery())
+    both_failed = asyncio.Barrier(2)
+    failed: set[int] = set()
+
+    async def answer(target: int, **_: object) -> mock.Mock:
+        if target == CHANNEL + 1234 and len(failed) < 2:
+            failed.add(len(failed))
+            await both_failed.wait()
+            raise unknown_channel()
+        return mock.Mock(id=hikari.Snowflake(200 + len(failed)))
+
+    async def opened(account: int) -> mock.Mock:
+        await asyncio.sleep(0)
+        return channel(account)
+
+    made.rest.create_message.side_effect = answer
+    made.rest.create_dm_channel.side_effect = opened
+    await asyncio.gather(
+        made.reminders.deliver(things.delivery(2, of=ITEM)),
+        made.reminders.deliver(things.delivery(3, of=ITEM)),
+    )
+    assert len(made.hub.named("delivered")) == 3
+    assert made.hub.named("failed") == []
+
+
+async def test_a_fresh_dm_channel_that_is_unknown_counts_as_closed(made: Made) -> None:
+    made.rest.create_message.side_effect = unknown_channel()
+    await made.reminders.deliver(delivery(to=things.user(locale="en")))
+    made.rest.create_dm_channel.assert_awaited_once_with(1234)
+    assert str(made.hub.named("failed")[0]["reason"]).startswith("Discord did not accept")
 
 
 async def test_a_delivery_that_went_out_before_is_only_confirmed(made: Made) -> None:
@@ -621,8 +685,8 @@ async def test_a_message_that_went_out_is_recorded_before_the_next_account_is_tr
     made.rest.create_message.side_effect = broken()
     await waiting.deliver(delivery(to=things.user(external_ids=("1234", "5678"))))
 
-    async def answer(target: mock.Mock, **_: object) -> mock.Mock:
-        if target.id == CHANNEL + 5678:
+    async def answer(target: int, **_: object) -> mock.Mock:
+        if target == CHANNEL + 5678:
             second.set()
             await let_go.wait()
         return mock.Mock(id=hikari.Snowflake(400))
