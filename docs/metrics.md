@@ -61,5 +61,14 @@ variable named in the log.
 | Metric | Type | Labels | Meaning |
 |---|---|---|---|
 | `plsremind_discord_build_info` | gauge | `version` | Always 1; tells which version runs. |
+| `plsremind_discord_delivery_attempts_total` | counter | `result` | Tries to send a reminder: `sent`, `closed` (DMs closed), `refused` (Discord would not take the message), `no_account` (no Discord account linked), `passing` (trouble that is tried again), `unreadable` (the item could not be read yet). |
+| `plsremind_discord_deliveries_waiting` | gauge | | Deliveries that are tried again later. |
+| `plsremind_discord_dm_channels_opened_total` | counter | | DM channels the bot had to open; a kept one is used again. |
+| `plsremind_discord_interactions_total` | counter | `kind` | Interactions from Discord: `command`, `component` (a click), `modal` or `autocomplete`. |
+| `plsremind_discord_interaction_failures_total` | counter | `kind` | Interactions that failed unexpectedly. A click while the bot starts or by an unlinked account is not a failure. |
+| `plsremind_discord_redraws_total` | counter | `result` | Reminder messages drawn again after a change: `redrawn`, `forgotten` (the message is gone or out of reach) or `failed`. |
+| `plsremind_discord_write_echo_timeouts_total` | counter | | Writes of the bot whose event did not come back from the gateway within two seconds. |
+| `plsremind_discord_hub_connected` | gauge | | 1 while the bot is connected to the hub. |
+| `plsremind_discord_discord_latency_seconds` | gauge | | Heartbeat latency to Discord; missing until the first heartbeat came back. |
 
 The process (`process_*`) and the Python version (`python_info`) are included.

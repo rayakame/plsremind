@@ -11,6 +11,7 @@ import typing
 import plsremind
 
 from plsremind_discord.config import Config
+from plsremind_discord.metrics import Metrics
 from plsremind_discord.timeparse import Day
 from plsremind_discord.timeparse import Moment
 
@@ -47,8 +48,9 @@ class _Written(typing.NamedTuple):
 class Hub:
     """The bot's only way to the hub."""
 
-    def __init__(self, client: plsremind.Client) -> None:
+    def __init__(self, client: plsremind.Client, metrics: Metrics) -> None:
         self.client = client
+        self._metrics: typing.Final = metrics
         self.ready = asyncio.Event()
         self._users: dict[int, plsremind.ID] = {}
         self._accounts: dict[plsremind.ID, tuple[int, ...]] = {}
@@ -258,6 +260,8 @@ class Hub:
             result = await write(nonce)
             # Counted from the answer, so that a write the hub took long over is still waited for.
             await asyncio.wait({heard}, timeout=ECHO)
+            if not heard.done():
+                self._metrics.echo_timeouts.inc()
             return result, heard.done() and not heard.cancelled() and heard.exception() is None
         finally:
             heard.cancel()
@@ -338,6 +342,6 @@ def origin_of(nonce: str | None) -> int | None:
     return int(head) if head.isdecimal() and head != "0" else None
 
 
-def connect(config: Config) -> Hub:
+def connect(config: Config, metrics: Metrics) -> Hub:
     client = plsremind.Client(config.hub_url, token=config.hub_token, intents=INTENTS, gateway_url=config.gateway_url)
-    return Hub(client)
+    return Hub(client, metrics)

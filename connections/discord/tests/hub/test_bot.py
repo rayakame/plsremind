@@ -14,6 +14,7 @@ from plsremind_discord import bot as bot_module
 from plsremind_discord import hub as hub_
 from plsremind_discord.clock import Clock
 from plsremind_discord.config import Config
+from plsremind_discord.metrics import Metrics
 from plsremind_discord.reminders import Reminders
 from plsremind_discord.store import Sent
 from plsremind_discord.store import Store
@@ -58,7 +59,8 @@ def config(kit: kit_.Kit, token: str, tmp_path: pathlib.Path) -> Config:
 async def running(kit: kit_.Kit, tmp_path: pathlib.Path) -> collections.abc.AsyncIterator[Running]:
     mia = await kit.person("mia")
     connection, token = await kit.connection()
-    hub = hub_.connect(config(kit, token, tmp_path))
+    metrics = Metrics()
+    hub = hub_.connect(config(kit, token, tmp_path), metrics)
     store = await Store.open(tmp_path / "bot.db")
     rest = mock.Mock(spec=hikari.api.RESTClient)
     numbers = iter(range(100, 1000))
@@ -78,8 +80,9 @@ async def running(kit: kit_.Kit, tmp_path: pathlib.Path) -> collections.abc.Asyn
     async def at_once(_: float) -> None:
         return
 
-    sync = Sync(hub=hub, views=redraws, store=store, sleep=at_once)
+    sync = Sync(hub=hub, views=redraws, store=store, sleep=at_once, metrics=metrics)
     reminders = Reminders(
+        metrics=metrics,
         hub=hub,
         views=views,
         rest=typing.cast("hikari.api.RESTClient", rest),
@@ -330,7 +333,7 @@ async def test_an_item_of_someone_else_cannot_be_reached_through_a_user(kit: kit
 
 async def test_a_personal_token_is_refused(kit: kit_.Kit, tmp_path: pathlib.Path) -> None:
     owner = await kit.person("solo", remind=True)
-    hub = hub_.connect(config(kit, owner.token, tmp_path))
+    hub = hub_.connect(config(kit, owner.token, tmp_path), Metrics())
     with pytest.raises(hub_.HubError, match="discord"):
         await hub.start()
     assert not hub.ready.is_set()

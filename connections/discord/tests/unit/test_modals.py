@@ -16,6 +16,7 @@ import pytest
 from plsremind_discord import hub as hub_module
 from plsremind_discord import modals
 from plsremind_discord import patience
+from plsremind_discord.metrics import Metrics
 from plsremind_discord.store import Sent
 from plsremind_discord.store import Store
 from plsremind_discord.submits import Modals
@@ -39,6 +40,7 @@ class Made(typing.NamedTuple):
     modals: Modals
     hub: FakeHub
     store: Store
+    metrics: Metrics
 
 
 def edit_of(item: plsremind.Item, back: tuple[plsremind.ID | None, int] = (None, 0)) -> str:
@@ -52,11 +54,18 @@ async def made(tmp_path: pathlib.Path) -> collections.abc.AsyncIterator[Made]:
     hub.knows(things.user(), ITEM)
     store = await Store.open(tmp_path / "discord.db")
     views = discord.views(hub, ReminderView, Notice, DetailView, OverviewView)
+    metrics = Metrics()
     built = Modals(
-        hub=hub, views=views, store=store, texts=discord.say(), clock=discord.FixedClock(), config=discord.CONFIG
+        hub=hub,
+        views=views,
+        store=store,
+        texts=discord.say(),
+        clock=discord.FixedClock(),
+        config=discord.CONFIG,
+        metrics=metrics,
     )
     try:
-        yield Made(built, hub, store)
+        yield Made(built, hub, store, metrics)
     finally:
         await store.close()
 
@@ -390,6 +399,7 @@ async def test_a_modal_that_fails_for_a_reason_nobody_foresaw_is_answered_and_lo
     assert (kind, hidden) == (CREATE, True)
     assert "Das hat nicht geklappt" in text
     assert "boom" in caplog.text
+    assert discord.counted(made.metrics, "plsremind_discord_interaction_failures_total", kind="modal") == 1
 
 
 @pytest.mark.parametrize("due", ["", "bald"], ids=["the redraw", "the refusal"])

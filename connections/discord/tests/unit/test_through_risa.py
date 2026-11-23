@@ -16,6 +16,7 @@ import risa
 from plsremind_discord import bot
 from plsremind_discord import patience
 from plsremind_discord.commands import common as commands_
+from plsremind_discord.metrics import Metrics
 from plsremind_discord.store import Sent
 from plsremind_discord.store import Store
 from plsremind_discord.sync import Sync
@@ -50,7 +51,7 @@ async def made(tmp_path: pathlib.Path) -> collections.abc.AsyncIterator[Made]:
     store = await Store.open(tmp_path / "discord.db")
     views = discord.views(hub, Notice, ReminderView, OverviewView, DetailView, store=store)
     tools = commands_.Tools(
-        hub=hub, texts=discord.say(), clock=discord.FixedClock(), config=discord.CONFIG, views=views
+        hub=hub, texts=discord.say(), clock=discord.FixedClock(), config=discord.CONFIG, views=views, metrics=Metrics()
     )
     views.di.registry_for(risa.Contexts.DEFAULT).register_value(commands_.Tools, tools)
     views.error_handler(bot.click_failed)
@@ -181,7 +182,7 @@ async def test_a_change_made_elsewhere_redraws_the_message_discord_holds(made: M
     async def at_once(_: float) -> None:
         return
 
-    sync = Sync(hub=made.hub, views=made.views, store=store, sleep=at_once)
+    sync = Sync(hub=made.hub, views=made.views, store=store, sleep=at_once, metrics=Metrics())
     renamed = msgspec.structs.replace(ITEM, title="Final report", updated_at=NOW)
     made.hub.their_items[MIA][ITEM.id] = renamed
     try:
@@ -218,7 +219,7 @@ async def test_a_message_that_shows_something_else_by_now_is_forgotten_instead_o
     async def at_once(_: float) -> None:
         return
 
-    sync = Sync(hub=made.hub, views=made.views, store=store, sleep=at_once)
+    sync = Sync(hub=made.hub, views=made.views, store=store, sleep=at_once, metrics=Metrics())
     renamed = msgspec.structs.replace(ITEM, title="Final report", updated_at=NOW)
     try:
         await sync.item_changed(

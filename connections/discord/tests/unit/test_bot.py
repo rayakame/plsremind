@@ -21,6 +21,7 @@ import risa
 
 from plsremind_discord import bot
 from plsremind_discord.commands import common as commands_
+from plsremind_discord.metrics import Metrics
 from plsremind_discord.store import Store
 from plsremind_discord.views import common
 from plsremind_discord.views.common import Notice
@@ -52,7 +53,9 @@ def a_hub() -> FakeHub:
 
 def tools(hub: FakeHub) -> commands_.Tools:
     views = discord.views(hub, Notice, ReminderView, OverviewView, DetailView)
-    return commands_.Tools(hub=hub, texts=discord.say(), clock=discord.FixedClock(), config=discord.CONFIG, views=views)
+    return commands_.Tools(
+        hub=hub, texts=discord.say(), clock=discord.FixedClock(), config=discord.CONFIG, views=views, metrics=Metrics()
+    )
 
 
 def test_without_its_settings_the_bot_says_what_is_missing(
@@ -69,7 +72,7 @@ def test_without_its_settings_the_bot_says_what_is_missing(
 async def test_the_bot_is_put_together_without_intents_and_with_everything_it_listens_to(store: Store) -> None:
     hub = a_hub()
     config = msgspec.structs.replace(discord.CONFIG, discord_token=TOKEN)
-    parts = await bot.build(config, store, hub)
+    parts = await bot.build(config, store, hub, Metrics())
 
     assert parts.discord.intents == hikari.Intents.NONE
     heard = {call.args[0] for call in typing.cast("mock.Mock", hub.client).subscribe.call_args_list}
@@ -178,7 +181,10 @@ async def test_on_the_way_out_what_waits_for_discord_is_let_go_unheard() -> None
 async def test_a_click_that_fails_is_answered_in_private(failure: Exception, said: str) -> None:
     ctx = discord.click()
     pipeline = risa.ExecutionPipeline([risa.Failure(failure, risa.FailureStage.HANDLER)])
-    assert await bot.click_failed(pipeline, typing.cast("risa.ComponentContext", ctx), tools(a_hub())) is True
+    given = tools(a_hub())
+    assert await bot.click_failed(pipeline, typing.cast("risa.ComponentContext", ctx), given) is True
+    expected = 0 if isinstance(failure, common.NotYoursError) else 1
+    assert discord.counted(given.metrics, "plsremind_discord_interaction_failures_total", kind="component") == expected
     sent = ctx.respond.await_args.kwargs
     assert sent["ephemeral"] is True
     built = [builder.build()[0] for builder in sent["components"]]
@@ -225,11 +231,13 @@ def failed(ctx: mock.Mock) -> lightbulb.exceptions.ExecutionPipelineFailedExcept
 
 async def test_a_command_that_fails_is_answered_and_logged(caplog: pytest.LogCaptureFixture) -> None:
     ctx = discord.command()
-    assert await bot.command_failed(failed(ctx), tools(a_hub())) is True
+    given = tools(a_hub())
+    assert await bot.command_failed(failed(ctx), given) is True
     hidden, text = discord.replied(ctx)
     assert hidden is True
     assert "Das hat nicht geklappt" in text
     assert "a command failed" in caplog.text
+    assert discord.counted(given.metrics, "plsremind_discord_interaction_failures_total", kind="command") == 1
     assert "boom" in caplog.text
 
 
@@ -507,3 +515,23 @@ async def test_a_delivery_closed_while_waiting_for_discord_is_not_sent(*, close_
     later = things.delivery(2)
     await heard[plsremind.DeliveryCreateEvent](plsremind.DeliveryCreateEvent(user_id=things.MIA, delivery=later))
     reminders.deliver.assert_awaited_once_with(later)
+
+
+@pytest.mark.parametrize(
+    ("interaction", "kind"),
+    [
+        (hikari.CommandInteraction, "command"),
+        (hikari.ComponentInteraction, "component"),
+        (hikari.ModalInteraction, "modal"),
+        (hikari.AutocompleteInteraction, "autocomplete"),
+    ],
+)
+async def test_every_interaction_is_counted_by_kind(
+    store: Store, interaction: type[hikari.PartialInteraction], kind: str
+) -> None:
+    metrics = Metrics()
+    parts = await bot.build(msgspec.structs.replace(discord.CONFIG, discord_token=TOKEN), store, a_hub(), metrics)
+    event = hikari.InteractionCreateEvent(shard=mock.Mock(), interaction=mock.Mock(spec=interaction))
+    parts.discord.event_manager.dispatch(event)
+    await discord.until(lambda: discord.counted(metrics, "plsremind_discord_interactions_total", kind=kind) == 1)
+    assert parts.metrics is metrics

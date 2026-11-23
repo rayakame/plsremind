@@ -75,3 +75,37 @@ def test_the_bot_is_ready_only_when_both_sides_are_there(
     if gate_open:
         gate.open()
     assert bot.ready(gate, status, discord_alive=discord_alive) is expected
+
+
+def test_every_counted_outcome_starts_at_zero() -> None:
+    metrics = Metrics()
+    for result in ("sent", "closed", "refused", "no_account", "passing", "unreadable"):
+        assert metrics.registry.get_sample_value("plsremind_discord_delivery_attempts_total", {"result": result}) == 0
+    for kind in ("command", "component", "modal", "autocomplete"):
+        assert metrics.registry.get_sample_value("plsremind_discord_interactions_total", {"kind": kind}) == 0
+        assert metrics.registry.get_sample_value("plsremind_discord_interaction_failures_total", {"kind": kind}) == 0
+    for result in ("redrawn", "forgotten", "failed"):
+        assert metrics.registry.get_sample_value("plsremind_discord_redraws_total", {"result": result}) == 0
+    assert metrics.registry.get_sample_value("plsremind_discord_dm_channels_opened_total") == 0
+    assert metrics.registry.get_sample_value("plsremind_discord_write_echo_timeouts_total") == 0
+    assert "_created" not in metrics.render().decode()
+
+
+def test_the_connection_and_the_latency_are_read_at_each_scrape() -> None:
+    metrics = Metrics()
+    connected, latency = False, float("nan")
+    metrics.watch(connected=lambda: connected, latency=lambda: latency)
+    body = metrics.render().decode()
+    assert "plsremind_discord_hub_connected 0.0" in body
+    assert "plsremind_discord_discord_latency_seconds" not in body, "no heartbeat yet, so nothing to say"
+    connected, latency = True, 0.25
+    body = metrics.render().decode()
+    assert "plsremind_discord_hub_connected 1.0" in body
+    assert "plsremind_discord_discord_latency_seconds 0.25" in body
+
+
+def test_the_waiting_deliveries_are_read_at_each_scrape() -> None:
+    metrics = Metrics()
+    waiting = 3
+    metrics.deliveries_waiting.set_function(lambda: waiting)
+    assert "plsremind_discord_deliveries_waiting 3.0" in metrics.render().decode()

@@ -15,8 +15,10 @@ from plsremind_discord import hub as hub_module
 from plsremind_discord.config import Config
 from plsremind_discord.hub import Hub
 from plsremind_discord.hub import HubError
+from plsremind_discord.metrics import Metrics
 from plsremind_discord.timeparse import Day
 from plsremind_discord.timeparse import Moment
+from tests.support import discord
 from tests.support import things
 from tests.support.fake_hub import FakeHub
 
@@ -27,6 +29,7 @@ ITEM = things.item(1)
 class Made(typing.NamedTuple):
     hub: Hub
     client: mock.Mock
+    metrics: Metrics
 
 
 def connection(provider: str = "discord") -> plsremind.Principal:
@@ -47,7 +50,8 @@ def made() -> Made:
     client.cache.get_users.return_value = ()
     client.cache.get_item.return_value = None
     client.cache.get_lists.return_value = (things.a_list(),)
-    return Made(Hub(typing.cast("plsremind.Client", client)), client)
+    metrics = Metrics()
+    return Made(Hub(typing.cast("plsremind.Client", client), metrics), client, metrics)
 
 
 def learn(made: Made, user: plsremind.ConnectionUser) -> None:
@@ -344,6 +348,7 @@ async def test_a_report_that_never_comes_is_waited_for_only_so_long(made: Made, 
     assert 0.15 < asyncio.get_running_loop().time() - started < 0.5
     await asyncio.sleep(0)
     assert gateway.waits == []
+    assert discord.counted(made.metrics, "plsremind_discord_write_echo_timeouts_total") == 1
 
 
 async def test_a_failed_write_leaves_no_wait_behind(made: Made, gateway: Gateway) -> None:
@@ -447,7 +452,7 @@ def test_the_client_asks_for_what_the_bot_needs_and_goes_to_the_gateway_beside_t
         database=things.DATABASE,
     )
     with mock.patch.object(plsremind, "Client") as client:
-        hub_module.connect(config)
+        hub_module.connect(config, Metrics())
     client.assert_called_once_with(
         "http://hub:8080", token="plsr_con_x", intents=hub_module.INTENTS, gateway_url="ws://hub:8080/api/v1/gateway"
     )

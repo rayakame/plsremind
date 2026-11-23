@@ -18,6 +18,7 @@ from plsremind_discord import texts
 from plsremind_discord.clock import Clock
 from plsremind_discord.config import Config
 from plsremind_discord.hub import Hub
+from plsremind_discord.metrics import Metrics
 from plsremind_discord.store import Store
 from plsremind_discord.views import common
 from tests.support import things
@@ -224,3 +225,8 @@ def followed_up(responder: mock.Mock) -> tuple[bool, str]:
     call = responder.execute.await_args
     built = [builder.build()[0] for builder in call.kwargs.get("components", [])]
     return call.kwargs.get("flags") == hikari.MessageFlag.EPHEMERAL, "\n".join(payload_texts(built))
+
+
+def counted(metrics: Metrics, name: str, **labels: str) -> float:
+    """The value of one sample in the bot's registry, 0 when it is not there."""
+    return metrics.registry.get_sample_value(name, labels) or 0.0

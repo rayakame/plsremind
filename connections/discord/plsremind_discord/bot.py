@@ -35,6 +35,12 @@ from plsremind_discord.views.overview import OverviewView
 from plsremind_discord.views.reminder import ReminderView
 
 PURGE_EVERY: typing.Final = 3600.0
+_KINDS: typing.Final[dict[type[hikari.PartialInteraction], str]] = {
+    hikari.CommandInteraction: "command",
+    hikari.ComponentInteraction: "component",
+    hikari.ModalInteraction: "modal",
+    hikari.AutocompleteInteraction: "autocomplete",
+}
 _MISCONFIGURED: typing.Final = 2
 _LOGGER: typing.Final = logging.getLogger("plsremind_discord")
 
@@ -49,7 +55,7 @@ class Parts(typing.NamedTuple):
     metrics: Metrics
 
 
-async def build(config: Config, store: Store, hub: hub_.Hub) -> Parts:
+async def build(config: Config, store: Store, hub: hub_.Hub, metrics: Metrics) -> Parts:
     """Put the bot together. Nothing connects yet."""
     clock, texts = Clock(), texts_.Texts(texts_.provider())
     # Interactions arrive without any intent, and nothing here needs hikari's cache.
@@ -62,7 +68,7 @@ async def build(config: Config, store: Store, hub: hub_.Hub) -> Parts:
         discord, localization_provider=texts_.provider(), default_locale=hikari.Locale.EN_US
     )
     views = risa.client_from_lightbulb(commands, auto_defer=risa.AutoDefer.UPDATE)
-    tools = commands_.Tools(hub=hub, texts=texts, clock=clock, config=config, views=views)
+    tools = commands_.Tools(hub=hub, texts=texts, clock=clock, config=config, views=views, metrics=metrics)
     registry = commands.di.registry_for(lightbulb.di.Contexts.DEFAULT)
     registry.register_value(hub_.Hub, hub)
     registry.register_value(Config, config)
@@ -77,7 +83,7 @@ async def build(config: Config, store: Store, hub: hub_.Hub) -> Parts:
     for loader in every.LOADERS:
         await loader.add_to_client(commands)
 
-    sync = Sync(hub=hub, views=views, store=store)
+    sync = Sync(hub=hub, views=views, store=store, metrics=metrics)
     reminders = Reminders(
         hub=hub,
         views=views,
@@ -86,13 +92,26 @@ async def build(config: Config, store: Store, hub: hub_.Hub) -> Parts:
         texts=texts,
         clock=clock,
         bot=config.bot_id,
+        metrics=metrics,
         redraw=sync.redraw_soon,
     )
-    modals = Modals(hub=hub, views=views, store=store, texts=texts, clock=clock, config=config)
+    modals = Modals(hub=hub, views=views, store=store, texts=texts, clock=clock, config=config, metrics=metrics)
     discord.subscribe(hikari.ModalInteractionCreateEvent, modals.submitted)
+
+    async def counted(event: hikari.InteractionCreateEvent) -> None:  # ruff: ignore[unused-async]
+        for cls, kind in _KINDS.items():
+            if isinstance(event.interaction, cls):
+                metrics.interactions.labels(kind).inc()
+                return
+
+    discord.subscribe(hikari.InteractionCreateEvent, counted)
+    metrics.watch(
+        connected=lambda: hub.client.status is plsremind.ClientStatus.CONNECTED,
+        latency=lambda: discord.heartbeat_latency,
+    )
     gate = Gate()
     listen(hub.client, reminders=reminders, sync=sync, gate=gate)
-    return Parts(discord, commands, views, reminders, sync, gate, Metrics())
+    return Parts(discord, commands, views, reminders, sync, gate, metrics)
 
 
 class Gate:
@@ -177,6 +196,7 @@ async def click_failed(pipeline: risa.ExecutionPipeline, ctx: risa.ComponentCont
     elif pipeline.find(common.NotYoursError) is not None:
         text, link, label = common.unlinked(say, locale, tools.config)
     else:
+        tools.metrics.interaction_failures.labels("component").inc()
         for failure in pipeline.failures:
             _LOGGER.error("a click failed at the %s", failure.stage, exc_info=failure.error)
         text = say("error.failed", locale)
@@ -192,6 +212,7 @@ async def command_failed(
     failure: lightbulb.exceptions.ExecutionPipelineFailedException, tools: commands_.Tools
 ) -> bool:
     _LOGGER.error("a command failed", exc_info=failure)
+    tools.metrics.interaction_failures.labels("command").inc()
     ctx = failure.context
     locale = texts_.locale_for(None, str(ctx.interaction.locale))
     # If the command had already answered, there is nothing left to say it with.
@@ -209,8 +230,9 @@ async def main(config: Config) -> int:
 
 
 async def _serve(config: Config, store: Store) -> int:
-    hub = hub_.connect(config)
-    parts = await build(config, store, hub)
+    metrics = Metrics()
+    hub = hub_.connect(config, metrics)
+    parts = await build(config, store, hub, metrics)
     loop = asyncio.get_running_loop()
     stopped: asyncio.Future[str | None] = loop.create_future()
 

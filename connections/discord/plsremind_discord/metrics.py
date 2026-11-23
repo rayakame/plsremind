@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import collections.abc
+import math
 import typing
 
 import aiohttp.web
 import prometheus_client
+import prometheus_client.metrics_core
+import prometheus_client.registry
 
 from plsremind_discord.about import __version__
 
@@ -13,6 +16,7 @@ class Metrics:
     """The bot's own registry and what is registered in it."""
 
     def __init__(self) -> None:
+        prometheus_client.disable_created_metrics()
         self.registry: typing.Final = prometheus_client.CollectorRegistry()
         prometheus_client.ProcessCollector(registry=self.registry)
         prometheus_client.PlatformCollector(registry=self.registry)
@@ -23,9 +27,74 @@ class Metrics:
             registry=self.registry,
         )
         info.labels(version=__version__).set(1)
+        self.attempts: typing.Final = self._counter(
+            "plsremind_discord_delivery_attempts_total",
+            "Tries to send a reminder, by result.",
+            result=("sent", "closed", "refused", "no_account", "passing", "unreadable"),
+        )
+        self.deliveries_waiting: typing.Final = prometheus_client.Gauge(
+            "plsremind_discord_deliveries_waiting", "Deliveries that are tried again later.", registry=self.registry
+        )
+        self.dm_channels_opened: typing.Final = prometheus_client.Counter(
+            "plsremind_discord_dm_channels_opened_total", "DM channels the bot had to open.", registry=self.registry
+        )
+        kinds = ("command", "component", "modal", "autocomplete")
+        self.interactions: typing.Final = self._counter(
+            "plsremind_discord_interactions_total", "Interactions from Discord, by kind.", kind=kinds
+        )
+        self.interaction_failures: typing.Final = self._counter(
+            "plsremind_discord_interaction_failures_total",
+            "Interactions that failed unexpectedly, by kind.",
+            kind=kinds,
+        )
+        self.redraws: typing.Final = self._counter(
+            "plsremind_discord_redraws_total",
+            "Reminder messages drawn again after a change, by result.",
+            result=("redrawn", "forgotten", "failed"),
+        )
+        self.echo_timeouts: typing.Final = prometheus_client.Counter(
+            "plsremind_discord_write_echo_timeouts_total",
+            "Writes of the bot whose event did not come back in time.",
+            registry=self.registry,
+        )
+
+    def watch(
+        self, *, connected: collections.abc.Callable[[], bool], latency: collections.abc.Callable[[], float]
+    ) -> None:
+        """Report the hub connection and Discord's heartbeat latency at each scrape."""
+        self.registry.register(_Connection(connected, latency))
 
     def render(self) -> bytes:
         return prometheus_client.generate_latest(self.registry)
+
+    def _counter(self, name: str, documentation: str, **labels: tuple[str, ...]) -> prometheus_client.Counter:
+        ((label, values),) = labels.items()
+        counter = prometheus_client.Counter(name, documentation, [label], registry=self.registry)
+        # Present from the start, so that a rate over a value that has not happened yet is 0, not empty.
+        for value in values:
+            counter.labels(value)
+        return counter
+
+
+class _Connection(prometheus_client.registry.Collector):
+    def __init__(
+        self, connected: collections.abc.Callable[[], bool], latency: collections.abc.Callable[[], float]
+    ) -> None:
+        self._connected: typing.Final = connected
+        self._latency: typing.Final = latency
+
+    def collect(self) -> collections.abc.Iterator[prometheus_client.metrics_core.Metric]:
+        yield prometheus_client.metrics_core.GaugeMetricFamily(
+            "plsremind_discord_hub_connected",
+            "1 while the bot is connected to the hub.",
+            value=float(self._connected()),
+        )
+        latency = self._latency()
+        # hikari reports NaN until the first heartbeat came back.
+        if not math.isnan(latency):
+            yield prometheus_client.metrics_core.GaugeMetricFamily(
+                "plsremind_discord_discord_latency_seconds", "Heartbeat latency to Discord.", value=latency
+            )
 
 
 async def serve(

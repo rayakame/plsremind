@@ -14,6 +14,7 @@ import plsremind
 import pytest
 import risa
 
+from plsremind_discord.metrics import Metrics
 from plsremind_discord.store import Sent
 from plsremind_discord.store import Store
 from plsremind_discord.sync import QUIET
@@ -67,6 +68,7 @@ class Made(typing.NamedTuple):
     store: Store
     slept: list[float]
     quiet: asyncio.Event
+    metrics: Metrics
 
 
 @pytest.fixture
@@ -83,9 +85,10 @@ async def made(tmp_path: pathlib.Path) -> collections.abc.AsyncIterator[Made]:
         slept.append(seconds)
         await quiet.wait()
 
-    sync = Sync(hub=hub, views=views, store=store, sleep=sleep)
+    metrics = Metrics()
+    sync = Sync(hub=hub, views=views, store=store, sleep=sleep, metrics=metrics)
     try:
-        yield Made(sync, hub, views, store, slept, quiet)
+        yield Made(sync, hub, views, store, slept, quiet, metrics)
     finally:
         await sync.close()
         await store.close()
@@ -223,6 +226,7 @@ async def test_a_message_that_can_no_longer_be_drawn_is_forgotten(made: Made, en
     await made.sync.item_changed(updated(renamed(ITEM), ITEM))
     await settled(made)
     assert await made.store.messages_for_item(ITEM.id) == []
+    assert discord.counted(made.metrics, "plsremind_discord_redraws_total", result="forgotten") == 1
 
 
 async def test_any_other_trouble_keeps_the_message(made: Made, caplog: pytest.LogCaptureFixture) -> None:
@@ -232,6 +236,7 @@ async def test_any_other_trouble_keeps_the_message(made: Made, caplog: pytest.Lo
     await settled(made)
     assert len(await made.store.messages_for_item(ITEM.id)) == 1
     assert "message 100 could not be redrawn" in caplog.text
+    assert discord.counted(made.metrics, "plsremind_discord_redraws_total", result="failed") == 1
 
 
 async def test_a_change_during_a_redraw_causes_exactly_one_more(made: Made) -> None:
@@ -414,3 +419,10 @@ async def test_a_message_forgotten_while_a_list_change_reads_its_item_is_not_red
         await changing
         await settled(made)
     assert made.views.redrawn == []
+
+
+async def test_a_redraw_is_counted(made: Made) -> None:
+    await sent(made, 100)
+    await made.sync.item_changed(updated(renamed(ITEM), ITEM))
+    await settled(made)
+    assert discord.counted(made.metrics, "plsremind_discord_redraws_total", result="redrawn") == 1

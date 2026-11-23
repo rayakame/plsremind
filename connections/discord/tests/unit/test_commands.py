@@ -21,6 +21,7 @@ from plsremind_discord.commands import every
 from plsremind_discord.commands import message
 from plsremind_discord.commands import remind
 from plsremind_discord.commands import todos
+from plsremind_discord.metrics import Metrics
 from plsremind_discord.views.common import Notice
 from plsremind_discord.views.detail import DetailView
 from plsremind_discord.views.overview import OverviewView
@@ -54,6 +55,7 @@ def the(hub: FakeHub) -> common.Tools:
         clock=CLOCK,
         config=discord.CONFIG,
         views=discord.views(hub, Notice, OverviewView, DetailView),
+        metrics=Metrics(),
     )
 
 

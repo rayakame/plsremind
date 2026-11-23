@@ -17,6 +17,7 @@ from plsremind_discord import timeparse
 from plsremind_discord.clock import Clock
 from plsremind_discord.config import Config
 from plsremind_discord.hub import Hub
+from plsremind_discord.metrics import Metrics
 from plsremind_discord.views import common as views_
 from plsremind_discord.views import overview
 from plsremind_discord.views.common import Notice
@@ -43,6 +44,7 @@ class Tools(msgspec.Struct, frozen=True, kw_only=True):
     clock: Clock
     config: Config
     views: risa.Client
+    metrics: Metrics
 
 
 class Asking(msgspec.Struct, frozen=True, kw_only=True):
