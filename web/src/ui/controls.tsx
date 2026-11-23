@@ -93,9 +93,10 @@ export function Segmented<T extends string>(props: {
   options: readonly { value: T; label: string }[];
   onChange: (value: T) => void;
   disabled?: boolean | undefined;
+  describedBy?: string | undefined;
 }) {
   return (
-    <div className="seg" role="group" aria-label={props.label}>
+    <div className="seg" role="group" aria-label={props.label} aria-describedby={props.describedBy}>
       {props.options.map((option) => (
         <button
           key={option.value}

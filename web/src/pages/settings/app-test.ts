@@ -4,7 +4,11 @@ import { describeError } from "../../hub/errors.js";
 import { useHub } from "../../hub/session.js";
 import { t } from "../../i18n/index.js";
 
-const pollEvery = 1000;
+/** How long to wait before looking at a test again: often at first, then less, to spare the rate limit. */
+export function pollDelay(round: number): number {
+  return round < 5 ? 1000 : 3000;
+}
+
 // A few failed looks in a row mean the answer is out of reach for now.
 const mostMissed = 3;
 // The hub gives an app a minute to answer; a little more covers the round trip.
@@ -50,8 +54,12 @@ export function useAppTest(done: () => void) {
       show(test);
       const until = Date.now() + pollFor;
       let missed = 0;
-      while (test.status === "pending" && Date.now() < until && missed < mostMissed) {
-        await new Promise((resolve) => setTimeout(resolve, pollEvery));
+      for (
+        let round = 0;
+        test.status === "pending" && Date.now() < until && missed < mostMissed;
+        round++
+      ) {
+        await new Promise((resolve) => setTimeout(resolve, pollDelay(round)));
         if (!alive.current) return;
         try {
           test = await client.rest.getConnectionTest(id, test.id);

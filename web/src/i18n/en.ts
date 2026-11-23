@@ -315,6 +315,7 @@ export const en = {
   "apps.notLinkedText": "Without an account at {name} none of these apps can tell it is you.",
   "apps.cannotLink": "An admin has to turn on linking for {name} first.",
   "apps.linkFirst": "Link your {name} account first to choose.",
+  "apps.linkFirstNone": "You can choose once an admin turns on linking for {name}.",
   "apps.may": "What the app may do",
   "apps.mayOf": "What {name} may do",
   "apps.none": "Nothing",

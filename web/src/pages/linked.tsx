@@ -111,11 +111,10 @@ export default function LinkedPage({ provider }: { provider: string }) {
                   <Avatar name={app.name} square />
                   <span className="fill stack0">
                     <span className="strong">{app.name}</span>
-                    {test ? (
-                      <TestLine state={test} />
-                    ) : (
-                      app.description && <span className="dim small">{app.description}</span>
+                    {!test && app.description && (
+                      <span className="dim small">{app.description}</span>
                     )}
+                    <span role="status">{test && <TestLine state={test} />}</span>
                   </span>
                   {app.installUrl && (
                     <a className="btn" href={app.installUrl} target="_blank" rel="noreferrer">

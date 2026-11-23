@@ -143,7 +143,11 @@ test("apps of any kind are added and every user sees them grouped", async ({ bro
   await page.getByRole("dialog").getByRole("button", { name: "Done" }).click();
   await expect(page.getByRole("listitem").filter({ hasText: bot })).toBeVisible();
 
-  await page.goto("/settings/apps");
+  await page
+    .getByRole("navigation", { name: "Settings" })
+    .getByRole("link", { name: "Apps", exact: true })
+    .first()
+    .click();
   // This instance has no Discord sign-in, so the section is named after the key.
   const discord = page.getByRole("region", { name: "discord", exact: true });
   await expect(discord.getByRole("region", { name: bot })).toBeVisible();

@@ -6,7 +6,7 @@ import {
   type QuietHours,
   type ReminderPlan,
 } from "plsremind";
-import { useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import { usePlans, useProfile } from "../../hub/hooks.js";
 import { useHub } from "../../hub/session.js";
 import { resetPlan, setPlan, setQuiet } from "../../hub/write.js";
@@ -52,8 +52,29 @@ function PlanCard({ plan }: { plan: ReminderPlan }) {
   const [adding, setAdding] = useState(false);
   const [text, setText] = useState("");
   const [error, setError] = useState<string>();
+  const addButton = useRef<HTMLButtonElement>(null);
+  // The button a removed chip or a closed field leaves focus to; without it focus falls to the page.
+  const [refocus, setRefocus] = useState(false);
+  useEffect(() => {
+    if (refocus && !adding) {
+      addButton.current?.focus();
+      setRefocus(false);
+    }
+  }, [refocus, adding]);
   const title = t("personal.planOf", { priority: t(`priority.${plan.priority}`) });
   const save = (before: number[]) => void guard(setPlan(hub, plan.priority, { before }));
+  const close = () => {
+    setText("");
+    setError(undefined);
+    setAdding(false);
+    setRefocus(true);
+  };
+  const escape = (event: KeyboardEvent) => {
+    if (event.key !== "Escape") return;
+    event.preventDefault();
+    event.stopPropagation();
+    close();
+  };
 
   const add = (event: FormEvent) => {
     event.preventDefault();
@@ -62,9 +83,7 @@ function PlanCard({ plan }: { plan: ReminderPlan }) {
     if (plan.before.includes(ms)) return setError(t("plan.timeTaken"));
     if (plan.before.length >= mostBefore) return setError(t("plan.timeLimit"));
     save([...plan.before, ms].sort((a, b) => b - a));
-    setText("");
-    setError(undefined);
-    setAdding(false);
+    close();
   };
 
   return (
@@ -88,7 +107,10 @@ function PlanCard({ plan }: { plan: ReminderPlan }) {
                 <button
                   type="button"
                   aria-label={t("plan.remove", { time: durationWords(ms) })}
-                  onClick={() => save(plan.before.filter((one) => one !== ms))}
+                  onClick={() => {
+                    save(plan.before.filter((one) => one !== ms));
+                    setRefocus(true);
+                  }}
                 >
                   <Icon name="close" />
                 </button>
@@ -97,7 +119,12 @@ function PlanCard({ plan }: { plan: ReminderPlan }) {
           </div>
           {plan.before.length === 0 && <span className="dim">{t("plan.none")}</span>}
           {!adding && (
-            <button type="button" className="btn add" onClick={() => setAdding(true)}>
+            <button
+              ref={addButton}
+              type="button"
+              className="btn add"
+              onClick={() => setAdding(true)}
+            >
               {t("plan.add")}
             </button>
           )}
@@ -111,6 +138,7 @@ function PlanCard({ plan }: { plan: ReminderPlan }) {
                 value={text}
                 aria-invalid={error ? true : undefined}
                 onChange={(event) => setText(event.target.value)}
+                onKeyDown={escape}
               />
             </Field>
           </form>

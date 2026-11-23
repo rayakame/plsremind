@@ -99,3 +99,19 @@ test("quiet hours say when what falls into them arrives", async () => {
   expect(await screen.findByText(/fall into it arrive at 07:00\./)).toBeTruthy();
   expect(app.path()).toBe("/settings/reminders");
 });
+
+test("the focus stays near the chips, and Escape puts the new time away", async () => {
+  await reminders();
+  const high = plan("High");
+  await userEvent.click(high.getByRole("button", { name: "Remove 2 hours" }));
+  expect(document.activeElement).not.toBe(document.body);
+  await userEvent.click(plan("Low").getByRole("button", { name: "Add a time" }));
+  await userEvent.keyboard("{Escape}");
+  expect(plan("Low").queryByLabelText("New time before the deadline")).toBeNull();
+  expect(document.activeElement).toBe(plan("Low").getByRole("button", { name: "Add a time" }));
+  await userEvent.click(plan("Low").getByRole("button", { name: "Add a time" }));
+  await userEvent.type(plan("Low").getByLabelText("New time before the deadline"), "3h{Enter}");
+  await waitFor(() =>
+    expect(document.activeElement).toBe(plan("Low").getByRole("button", { name: "Add a time" })),
+  );
+});

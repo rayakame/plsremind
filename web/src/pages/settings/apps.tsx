@@ -1,5 +1,5 @@
 import type { Identity, UserConnection } from "plsremind";
-import { useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { useLoaded, type Loaded } from "../../hub/loaded.js";
 import { useNow } from "../../hub/now.js";
 import { useHub } from "../../hub/session.js";
@@ -97,6 +97,7 @@ function AppCard(props: {
   const { client } = useHub();
   const { guard } = useNotices();
   const [busy, setBusy] = useState(false);
+  const hintId = useId();
   const { app, test } = props;
   const discord = props.section.provider === "discord";
   const words = accessWords[discord ? "discord" : "other"];
@@ -136,7 +137,9 @@ function AppCard(props: {
         )}
       </div>
       <div className="between">
-        {test ? <TestLine state={test} /> : <StatusLine app={app} />}
+        <div role="status" className="fill">
+          {test ? <TestLine state={test} /> : <StatusLine app={app} />}
+        </div>
         {canTest && (
           <Button variant={failed ? undefined : "ghost"} disabled={running} onClick={props.onTest}>
             {t("apps.test")}
@@ -149,12 +152,17 @@ function AppCard(props: {
           label={t("apps.mayOf", { name: app.name })}
           value={accessOf(app)}
           disabled={busy || !app.linked}
+          describedBy={app.linked ? undefined : hintId}
           options={levelsOf(app).map((level) => ({ value: level, label: t(words[level]) }))}
           onChange={(access) => void choose(access)}
         />
       </div>
       {!app.linked && (
-        <p className="text dim small">{t("apps.linkFirst", { name: props.section.name })}</p>
+        <p className="text dim small" id={hintId}>
+          {t(props.section.linkable ? "apps.linkFirst" : "apps.linkFirstNone", {
+            name: props.section.name,
+          })}
+        </p>
       )}
       {sees && <p className="text dim small">{t("apps.sees", { what: sees })}</p>}
     </section>
@@ -227,6 +235,11 @@ export function AppsSettings({ apps }: { apps: Loaded<UserConnection[]> }) {
   const identities = useLoaded((signal) => client.rest.listIdentities({ signal }), client);
   const tests = useAppTest(apps.reload);
   const [unlinking, setUnlinking] = useState<Identity>();
+  const loadedBefore = useRef(apps.data !== undefined);
+  useEffect(() => {
+    // The list was loaded when settings opened; what changed since, here or elsewhere, shows now.
+    if (loadedBefore.current) apps.reload();
+  }, [apps.reload]);
   const sections = sectionsOf(apps.data ?? [], info.loginMethods);
 
   const unlink = async (identity: Identity) => {

@@ -270,3 +270,53 @@ test("unlinking asks the same way as on the sign-in page", async () => {
     ),
   ).toBeTruthy();
 });
+
+test("the Apps page asks again when it is opened from another settings page", async () => {
+  const app = await renderApp({
+    path: "/settings/profile",
+    info,
+    hold: true,
+  });
+  app.route("GET", "/users/@me/connections", { status: 200, body: [wireApp({ id: "a" })] });
+  app.route("GET", "/users/@me/identities", { status: 200, body: [linked] });
+  await act(() => app.connect());
+  await screen.findByRole("heading", { level: 1, name: "Profile" });
+  const before = app.sent("GET", "/users/@me/connections").length;
+  await userEvent.click(
+    within(screen.getByRole("navigation", { name: "Settings" })).getByRole("link", {
+      name: "Apps",
+    }),
+  );
+  await waitFor(() =>
+    expect(app.sent("GET", "/users/@me/connections").length).toBeGreaterThan(before),
+  );
+});
+
+test("how an app is doing is announced as it changes", async () => {
+  const app = await apps([wireApp({ id: "a" })]);
+  app.route("POST", "/users/@me/connections/a/tests", {
+    status: 201,
+    body: {
+      id: "t1",
+      connection_id: "a",
+      status: "unanswered",
+      reason: "no_answer",
+      created_at: "2026-11-12T18:00:00Z",
+      closed_at: "2026-11-12T18:01:00Z",
+    },
+  });
+  const status = card("plsremind").getByRole("status");
+  expect(status.textContent).toBe("No reminder through this app yet.");
+  await userEvent.click(card("plsremind").getByRole("button", { name: "Send test" }));
+  await waitFor(() => expect(status.textContent).toBe("The app did not answer the test."));
+});
+
+test("an app whose kind cannot be linked says why it cannot be chosen", async () => {
+  await apps(
+    [wireApp({ id: "x", name: "Script", provider: "example", linked: false, enabled: false })],
+    [],
+  );
+  const group = card("Script").getByRole("group");
+  const hint = document.getElementById(group.getAttribute("aria-describedby")!)!;
+  expect(hint.textContent).toBe("You can choose once an admin turns on linking for example.");
+});

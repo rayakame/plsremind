@@ -326,6 +326,7 @@ export const de: Texts = {
   "apps.notLinkedText": "Ohne Konto bei {name} kann dich keine dieser Apps erkennen.",
   "apps.cannotLink": "Ein Admin muss das Verknüpfen bei {name} erst einschalten.",
   "apps.linkFirst": "Verknüpf zuerst dein {name}-Konto, dann kannst du wählen.",
+  "apps.linkFirstNone": "Wählen kannst du, sobald ein Admin das Verknüpfen bei {name} einschaltet.",
   "apps.may": "Was die App darf",
   "apps.mayOf": "Was {name} darf",
   "apps.none": "Nichts",
