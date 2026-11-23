@@ -223,6 +223,7 @@ class Reminders:
             if self._channels.get(account) == kept:
                 del self._channels[account]
             channel = self._channels.get(account) or await self._open(account)
+            # Discord gives back the same channel when it is opened again, and it would fail again.
             if channel == kept:
                 raise
         return channel, await self._message(channel, account, rendered)
