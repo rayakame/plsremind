@@ -1,0 +1,85 @@
+# Prometheus alerting rules, as vmalert and Prometheus read them.
+groups:
+  - name: plsremind
+    rules:
+      - alert: PlsremindHubDown
+        expr: up{job="plsremind-hub"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: The hub has not answered a scrape for two minutes.
+
+      - alert: PlsremindTickerStalled
+        expr: time() - plsremind_ticker_last_success_timestamp_seconds > 120
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: The reminder ticker has not finished a round in two minutes, so no reminder goes out.
+
+      # Over a handful of reminders at least, so that one late one on a quiet instance is no alarm.
+      - alert: PlsremindRemindersLate
+        expr: >-
+          histogram_quantile(0.95, sum by (le) (rate(plsremind_reminder_lateness_seconds_bucket[10m]))) > 120
+          and sum(increase(plsremind_reminder_lateness_seconds_count[10m])) >= 5
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: Reminders go out more than two minutes late.
+
+      - alert: PlsremindHubErrors
+        expr: >-
+          sum(rate(plsremind_http_requests_total{status=~"5.."}[5m]))
+          / sum(rate(plsremind_http_requests_total[5m])) > 0.05
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: More than five percent of the hub's requests end in a server error.
+
+      # Connections only: a personal token's adapter on a laptop that is off for a day is nothing to wake anyone for.
+      - alert: PlsremindDeliveriesExpired
+        expr: increase(plsremind_deliveries_expired_total{channel="connection"}[1h]) > 0
+        labels:
+          severity: warning
+        annotations:
+          summary: Deliveries to a connection expired because it confirmed none of them within a day.
+
+      # Only once the bot has been up within the retention, so that an instance without it stays quiet.
+      - alert: PlsremindBotDown
+        expr: up{job="plsremind-discord"} == 0 and max_over_time(up{job="plsremind-discord"}[30d]) == 1
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: The Discord bot has not answered a scrape for two minutes.
+
+      - alert: PlsremindBotNotConnected
+        expr: plsremind_discord_hub_connected == 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: The Discord bot has not been connected to the hub for five minutes.
+
+      - alert: PlsremindDiscordRefusing
+        expr: >-
+          sum(rate(plsremind_discord_delivery_attempts_total{result=~"refused|passing"}[15m]))
+          / sum(rate(plsremind_discord_delivery_attempts_total[15m])) > 0.2
+          and sum(increase(plsremind_discord_delivery_attempts_total[15m])) >= 10
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: More than a fifth of the bot's tries to send a reminder do not get through.
+
+      - alert: PlsremindBotErrors
+        expr: >-
+          sum(increase(plsremind_discord_delivery_attempts_total{result="error"}[15m]))
+          + sum(increase(plsremind_discord_interaction_failures_total[15m])) > 0
+        labels:
+          severity: warning
+        annotations:
+          summary: The Discord bot ran into errors nobody foresaw; its log says which.

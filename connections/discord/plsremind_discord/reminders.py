@@ -18,6 +18,7 @@ from plsremind_discord import texts as texts_
 from plsremind_discord.clock import Clock
 from plsremind_discord.hub import Hub
 from plsremind_discord.hub import accounts_of
+from plsremind_discord.metrics import Metrics
 from plsremind_discord.store import Sent
 from plsremind_discord.store import Store
 from plsremind_discord.views import common
@@ -59,6 +60,7 @@ class Reminders:
         texts: texts_.Texts,
         clock: Clock,
         bot: int,
+        metrics: Metrics,
         redraw: collections.abc.Callable[[int, int], None],
         sleep: collections.abc.Callable[[float], collections.abc.Awaitable[None]] = asyncio.sleep,
     ) -> None:
@@ -69,6 +71,7 @@ class Reminders:
         self._texts: typing.Final = texts
         self._clock: typing.Final = clock
         self._bot: typing.Final = bot
+        self._metrics: typing.Final = metrics
         self._sleep: typing.Final = sleep
         self._redraw: typing.Final = redraw
         self._busy: set[plsremind.ID] = set()
@@ -77,6 +80,7 @@ class Reminders:
         self._sent: set[plsremind.ID] = set()
         self._tries: dict[plsremind.ID, asyncio.Task[None]] = {}
         self._closing = False
+        metrics.deliveries_waiting.set_function(lambda: len(self._tries))
 
     @property
     def waiting(self) -> frozenset[plsremind.ID]:
@@ -150,6 +154,7 @@ class Reminders:
         except Exception:
             # Whatever it was, the reminder must not be lost over it.
             _LOGGER.exception("delivery %s could not be handled and is tried again", delivery.id)
+            self._metrics.attempts.labels("error").inc()
             outcome = _Outcome.PASSING
         finally:
             self._busy.discard(delivery.id)
@@ -168,6 +173,7 @@ class Reminders:
         locale = texts_.locale_for(delivery.user, None)
         accounts = self._accounts(delivery, first=first)
         if not accounts:
+            self._metrics.attempts.labels("no_account").inc()
             return await self._report(delivery.id, self._texts("delivery.no_account", locale))
         views: dict[int, _Drawn] = {}
         for account in accounts:
@@ -176,15 +182,19 @@ class Reminders:
             if view.shown is None or view.shown.item is None:
                 # The user or the item is out of reach this moment; if it stays so, the hub withdraws the delivery.
                 _LOGGER.info("delivery %s waits until its item can be read", delivery.id)
+                self._metrics.attempts.labels("unreadable").inc()
                 return _Outcome.PASSING
             views[account] = _Drawn(rendered, view.shown.version)
         return await self._conclude(delivery, await self._send(delivery, views), locale)
 
     async def _conclude(self, delivery: plsremind.Delivery, sending: _Sending, locale: hikari.Locale) -> _Outcome:
         if sending.sent:
+            self._metrics.attempts.labels("sent").inc()
             return await self._confirm(delivery.id)
         if sending.passing:
+            self._metrics.attempts.labels("passing").inc()
             return _Outcome.PASSING
+        self._metrics.attempts.labels("refused" if sending.refused else "closed").inc()
         reason = "delivery.refused" if sending.refused else "delivery.closed_dms"
         return await self._report(delivery.id, self._texts(reason, locale))
 
@@ -226,6 +236,7 @@ class Reminders:
             if current is not None and current != kept:
                 return current, await self._message(current, account, rendered)
         channel = int((await self._rest.create_dm_channel(account)).id)
+        self._metrics.dm_channels_opened.inc()
         # Discord gives back the same channel when it is opened again, and it would fail again.
         if stale is not None and channel == kept:
             raise stale

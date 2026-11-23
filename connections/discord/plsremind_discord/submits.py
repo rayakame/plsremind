@@ -21,6 +21,7 @@ from plsremind_discord.config import Config
 from plsremind_discord.hub import UNCHANGED
 from plsremind_discord.hub import Hub
 from plsremind_discord.hub import Unchanged
+from plsremind_discord.metrics import Metrics
 from plsremind_discord.store import Store
 from plsremind_discord.views import common
 from plsremind_discord.views.common import Notice
@@ -69,7 +70,15 @@ class Modals:
     """Answers the modals the bot opened once someone sends one off."""
 
     def __init__(
-        self, *, hub: Hub, views: risa.Client, store: Store, texts: texts_.Texts, clock: Clock, config: Config
+        self,
+        *,
+        hub: Hub,
+        views: risa.Client,
+        store: Store,
+        texts: texts_.Texts,
+        clock: Clock,
+        config: Config,
+        metrics: Metrics,
     ) -> None:
         self._hub: typing.Final = hub
         self._views: typing.Final = views
@@ -77,6 +86,7 @@ class Modals:
         self._texts: typing.Final = texts
         self._clock: typing.Final = clock
         self._config: typing.Final = config
+        self._metrics: typing.Final = metrics
 
     async def submitted(self, event: hikari.ModalInteractionCreateEvent) -> None:
         interaction = event.interaction
@@ -121,6 +131,7 @@ class Modals:
         except hikari.HikariError:
             raise
         except Exception:
+            self._metrics.interaction_failures.labels("modal").inc()
             _LOGGER.exception("a modal failed")
             await reply.say(self._texts("error.failed", locale))
 

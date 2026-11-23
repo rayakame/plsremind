@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Builds the image, starts a throwaway instance and walks through first use:
-# setup, creating an item, and a reminder that travels through the gateway to the
-# example adapter and back as confirmed. Exits non-zero on the first surprise.
+# Builds the image, starts a throwaway instance with monitoring and walks through first use:
+# setup, an item, a reminder that goes through the gateway to the example adapter and back,
+# then that reminder in the metrics. Exits non-zero on the first surprise.
 set -euo pipefail
 
 cd "$(dirname "$0")"
@@ -9,7 +9,11 @@ export COMPOSE_PROJECT_NAME=plsremind-smoke
 export PLSREMIND_PORT="${PLSREMIND_PORT:-18080}"
 export PLSREMIND_PUBLIC_URL="http://localhost:${PLSREMIND_PORT}"
 export PLSREMIND_SECRET_KEY="$(openssl rand -base64 32)"
+export PLSREMIND_GRAFANA_PORT="${PLSREMIND_GRAFANA_PORT:-13000}"
+export PLSREMIND_GRAFANA_PASSWORD="$(openssl rand -hex 16)"
+export COMPOSE_PROFILES=monitoring
 base="${PLSREMIND_PUBLIC_URL}/api/v1"
+grafana="http://localhost:${PLSREMIND_GRAFANA_PORT}"
 jar="$(mktemp)"
 
 adapter_pid=""
@@ -24,7 +28,7 @@ trap cleanup EXIT
 
 fail() {
   echo "smoke: $1" >&2
-  docker compose logs hub >&2 || true
+  docker compose logs hub victoriametrics vmalert grafana >&2 || true
   exit 1
 }
 
@@ -40,6 +44,17 @@ for _ in $(seq 1 30); do
   curl -fsS "$base/info" >/dev/null 2>&1 && break
   sleep 1
 done
+
+expect "the hub reports itself healthy" "$(docker inspect -f '{{.State.Health.Status}}' "$(docker compose ps -q hub)")" healthy
+expect "the hub is alive" "$(curl -fsS "${PLSREMIND_PUBLIC_URL}/healthz")" ok
+expect "the hub is ready" "$(curl -fsS "${PLSREMIND_PUBLIC_URL}/readyz")" ok
+docker compose run --rm --no-deps vmalert -rule=/etc/plsremind/alerts.yml -dryRun >/dev/null 2>&1 \
+  || fail "the alert rules do not load"
+echo "ok  the alert rules load"
+docker run --rm -v "$PWD/monitoring:/rules:ro" victoriametrics/vmalert-tool:v1.156.0 unittest --files=/rules/alerts.test.yml >/dev/null 2>&1 \
+  || fail "the alert rules do not pass their cases in monitoring/alerts.test.yml"
+echo "ok  the alert rules pass their cases"
+expect "vmalert runs" "$(docker inspect -f '{{.State.Status}}' "$(docker compose ps -q vmalert)")" running
 
 expect "fresh instance needs setup" \
   "$(curl -fsS "$base/info" | grep -o '"setup_required":[a-z]*')" '"setup_required":true'
@@ -102,5 +117,21 @@ adapter_pid=""
 expect "the adapter was reminded" "$(grep -c 'smoke reminder' "$adapter_log")" 1
 expect "the hub recorded the confirmation" \
   "$(curl -fsS -b "$jar" "$base/users/@me/reminder-log" | grep -o '"status":"delivered"')" '"status":"delivered"'
+
+# What VictoriaMetrics has, asked through Grafana's data source, which checks that one too.
+query() {
+  curl -fsS -u "admin:${PLSREMIND_GRAFANA_PASSWORD}" --get \
+    --data-urlencode "query=$1" "${grafana}/api/datasources/proxy/uid/victoriametrics/api/v1/query"
+}
+scraped=""
+for _ in $(seq 1 60); do
+  scraped="$(query 'sum(plsremind_reminders_total{outcome="fired"})' 2>/dev/null | grep -o '"value":\[[^]]*\]' || true)"
+  [ -n "$scraped" ] && [ "${scraped##*,}" != '"0"]' ] && break
+  sleep 2
+done
+expect "the fired reminder shows in the metrics" "${scraped##*,}" '"1"]'
+expect "the hub is scraped" "$(query 'up{job="plsremind-hub"}' | grep -o '"value":\[[^]]*\]' | sed 's/.*,//')" '"1"]'
+expect "the dashboard is there" \
+  "$(curl -fsS -u "admin:${PLSREMIND_GRAFANA_PASSWORD}" "${grafana}/api/search?query=plsremind" | grep -o '"uid":"plsremind"')" '"uid":"plsremind"'
 
 echo "smoke: all good"

@@ -249,6 +249,17 @@ func (q *Queries) CloseDelivery(ctx context.Context, arg CloseDeliveryParams) (D
 	return i, err
 }
 
+const countOpenDeliveries = `-- name: CountOpenDeliveries :one
+SELECT count(*) FROM deliveries WHERE status = 'pending'
+`
+
+func (q *Queries) CountOpenDeliveries(ctx context.Context) (int64, error) {
+	row := q.db.QueryRow(ctx, countOpenDeliveries)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const deleteOldReminderLog = `-- name: DeleteOldReminderLog :exec
 DELETE FROM reminder_log WHERE fired_at <= $1
 `

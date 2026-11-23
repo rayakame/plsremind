@@ -1,0 +1,11 @@
+# Read by VictoriaMetrics, in the Prometheus format; any Prometheus-compatible scraper takes it as it is.
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: plsremind-hub
+    static_configs:
+      - targets: ["hub:9090"]
+  - job_name: plsremind-discord
+    static_configs:
+      - targets: ["discord:9091"]

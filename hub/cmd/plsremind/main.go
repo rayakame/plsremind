@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -16,6 +18,7 @@ import (
 
 	"github.com/rayakame/plsremind/hub/internal/core"
 	"github.com/rayakame/plsremind/hub/internal/delivery"
+	"github.com/rayakame/plsremind/hub/internal/metrics"
 	"github.com/rayakame/plsremind/hub/internal/server"
 	"github.com/rayakame/plsremind/hub/internal/store"
 )
@@ -24,6 +27,17 @@ import (
 const tickEvery = 5 * time.Second
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "health" {
+		// The image has no shell or curl, so its healthcheck runs the binary itself.
+		listen := os.Getenv("PLSREMIND_LISTEN_ADDR")
+		if listen == "" {
+			listen = ":8080"
+		}
+		if !probe(readyURL(listen)) {
+			os.Exit(1)
+		}
+		return
+	}
 	if err := run(); err != nil {
 		slog.Error("plsremind stopped", "err", err)
 		os.Exit(1)
@@ -48,12 +62,19 @@ func run() error {
 	defer pool.Close()
 
 	d := &core.Deps{
-		Cfg:  cfg,
-		Pool: pool,
-		Now:  time.Now,
-		HTTP: &http.Client{Timeout: 10 * time.Second},
+		Cfg:     cfg,
+		Pool:    pool,
+		Now:     time.Now,
+		HTTP:    &http.Client{Timeout: 10 * time.Second},
+		Metrics: metrics.New(server.Version),
 	}
 	srv := server.New(d)
+	// Once the server has registered what it reports, so that no scrape finds it half done.
+	if cfg.MetricsAddr != "" {
+		if err := metrics.Start(ctx, cfg.MetricsAddr, d.Metrics); err != nil {
+			return fmt.Errorf("PLSREMIND_METRICS_ADDR: %w", err)
+		}
+	}
 	app := srv.App
 	srv.Gateway.Start(ctx)
 
@@ -65,7 +86,7 @@ func run() error {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				if err := delivery.RunOnce(ctx, d); err != nil && ctx.Err() == nil {
+				if err := d.Metrics.Tick(ctx, func() error { return delivery.RunOnce(ctx, d) }); err != nil && ctx.Err() == nil {
 					slog.Error("fire reminders", "err", err)
 				}
 			}
@@ -97,4 +118,26 @@ func run() error {
 	}()
 	slog.Info("listening", "addr", cfg.ListenAddr, "version", server.Version)
 	return app.Listen(cfg.ListenAddr, fiber.ListenConfig{DisableStartupMessage: true})
+}
+
+func readyURL(listen string) string {
+	host, port, err := net.SplitHostPort(listen)
+	if err != nil {
+		return "http://" + listen + "/readyz"
+	}
+	// Fiber listens on IPv4 only, so 127.0.0.1 reaches a hub that listens on every address.
+	if ip := net.ParseIP(host); host == "" || (ip != nil && ip.IsUnspecified()) {
+		host = "127.0.0.1"
+	}
+	return "http://" + net.JoinHostPort(host, port) + "/readyz"
+}
+
+func probe(url string) bool {
+	client := http.Client{Timeout: 3 * time.Second}
+	res, err := client.Get(url)
+	if err != nil {
+		return false
+	}
+	res.Body.Close()
+	return res.StatusCode == http.StatusOK
 }

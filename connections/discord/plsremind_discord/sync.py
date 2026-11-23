@@ -13,6 +13,7 @@ import risa
 from plsremind_discord.hub import Hub
 from plsremind_discord.hub import accounts_of
 from plsremind_discord.hub import origin_of
+from plsremind_discord.metrics import Metrics
 from plsremind_discord.store import Store
 from plsremind_discord.views.reminder import ReminderView
 
@@ -38,12 +39,14 @@ class Sync:
         hub: Hub,
         views: Opens,
         store: Store,
+        metrics: Metrics,
         sleep: collections.abc.Callable[[float], collections.abc.Awaitable[None]] = asyncio.sleep,
     ) -> None:
         self._hub: typing.Final = hub
         self._views: typing.Final = views
         self._store: typing.Final = store
         self._sleep: typing.Final = sleep
+        self._metrics: typing.Final = metrics
         self._asked: dict[int, int] = {}
         self._tasks: dict[int, asyncio.Task[None]] = {}
 
@@ -145,9 +148,12 @@ class Sync:
             async with self._views.open(channel, message, ReminderView) as view:
                 pass
         except risa.MessageOutdatedError, hikari.NotFoundError, hikari.ForbiddenError:
+            self._metrics.redraws.labels("forgotten").inc()
             await self._store.forget_message(message)
             return
         except Exception:
+            self._metrics.redraws.labels("failed").inc()
             _LOGGER.exception("message %s could not be redrawn", message)
             return
+        self._metrics.redraws.labels("redrawn").inc()
         await self._store.stamp(message, view.shown.version if view.shown is not None else None)

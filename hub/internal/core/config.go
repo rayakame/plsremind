@@ -16,6 +16,8 @@ type Config struct {
 	// ProxyHeader names the header a reverse proxy puts the client address in.
 	ProxyHeader string
 	SecretKey   [32]byte
+	// MetricsAddr is where /metrics is served; empty means nowhere.
+	MetricsAddr string
 }
 
 // LoadConfig reads the configuration from PLSREMIND_* environment variables.
@@ -25,6 +27,7 @@ func LoadConfig() (Config, error) {
 		PublicURL:   strings.TrimRight(os.Getenv("PLSREMIND_PUBLIC_URL"), "/"),
 		ListenAddr:  os.Getenv("PLSREMIND_LISTEN_ADDR"),
 		ProxyHeader: os.Getenv("PLSREMIND_PROXY_HEADER"),
+		MetricsAddr: os.Getenv("PLSREMIND_METRICS_ADDR"),
 	}
 	if cfg.ListenAddr == "" {
 		cfg.ListenAddr = ":8080"

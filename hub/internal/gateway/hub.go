@@ -39,6 +39,23 @@ func NewHub(d *core.Deps) *Hub {
 	return &Hub{d: d, sessions: map[string]*Session{}, byUser: map[uuid.UUID]map[*Session]struct{}{}, listening: make(chan struct{}), outbox: make(chan outgoing, 4096), sweep: make(chan struct{}, 1)}
 }
 
+// Attached counts the sessions with a client connected, by the kind of credential behind them.
+func (h *Hub) Attached() map[string]int {
+	h.mu.Lock()
+	all := make([]*Session, 0, len(h.sessions))
+	for _, s := range h.sessions {
+		all = append(all, s)
+	}
+	h.mu.Unlock()
+	counts := map[string]int{"personal_token": 0, "connection": 0, "session": 0}
+	for _, s := range all {
+		if s.attached() {
+			counts[auth.ActorFrom(s.principal).Kind]++
+		}
+	}
+	return counts
+}
+
 // Start runs the hub's background work until Shutdown.
 func (h *Hub) Start(ctx context.Context) {
 	ctx, h.cancel = context.WithCancel(ctx)

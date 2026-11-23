@@ -9,6 +9,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/rayakame/plsremind/hub/internal/api"
+	"github.com/rayakame/plsremind/hub/internal/metrics"
 	"github.com/rayakame/plsremind/hub/internal/store/sqlc"
 )
 
@@ -25,6 +26,8 @@ type Deps struct {
 	RateAnon *api.Limiter
 
 	Gateway GatewayConfig
+
+	Metrics *metrics.Metrics
 
 	// ReadTimeout and IdleTimeout bound plain HTTP requests. Zero means the defaults.
 	ReadTimeout time.Duration

@@ -38,9 +38,11 @@ The hub now listens on port 8080 and applies its database migrations on every st
 | `PLSREMIND_PUBLIC_URL` | yes | The address users reach the hub at, without a trailing slash. Login redirects and the browser security check depend on it being exact. |
 | `PLSREMIND_SECRET_KEY` | yes | 32 random bytes, base64 encoded. |
 | `PLSREMIND_LISTEN_ADDR` | no | Defaults to `:8080`. |
+| `PLSREMIND_METRICS_ADDR` | no | Where the hub serves `/metrics`, for example `:9090`. Off when empty. Compose sets it inside its network only. See [Monitoring](#monitoring). |
 | `PLSREMIND_PROXY_HEADER` | behind a proxy | Set to `X-Forwarded-For` whenever the hub runs behind a reverse proxy. Without it every visitor appears to come from the proxy and they all share one rate limit, so logging in fails for everyone once a few people try at the same time. The header is only trusted from loopback and private addresses. |
 
-Compose also reads `POSTGRES_PASSWORD` and `PLSREMIND_PORT` from `.env`. Set
+Compose also reads `POSTGRES_PASSWORD` and `PLSREMIND_PORT` from `.env`, and the variables
+of the monitoring profile listed under [Monitoring](#monitoring). Set
 `POSTGRES_PASSWORD` before the first start: the database keeps the password it was
 created with.
 
@@ -145,11 +147,67 @@ account in the dashboard under Settings, and get their reminders as direct messa
 | `PLSREMIND_URL` | yes | Where the bot reaches the hub. Compose sets it to `http://hub:8080`. |
 | `PLSREMIND_PUBLIC_URL` | yes | The address of the dashboard, for the links in the bot's messages. |
 | `PLSREMIND_DISCORD_DB` | no | Where the bot keeps its SQLite file. In the image it is `/data/discord.db`, on a volume. |
+| `PLSREMIND_DISCORD_METRICS_ADDR` | no | `host:port` for the bot's `/metrics`, `/healthz` and `/readyz`, for example `0.0.0.0:9091`. Off when empty. Compose sets it inside its network only. |
 
 The file holds which reminders went out, which message shows which item and the DM
 channels of the accounts reminded in the last 30 days. If it is lost, the DM channels are
 opened again, a reminder that was still waiting for its confirmation may arrive a second
 time, and older messages only catch up when someone clicks them. Nothing else depends on it.
+
+## Monitoring
+
+The hub and the bot can expose metrics in the Prometheus format, and the hub answers
+`/healthz` and `/readyz` on its public port. [`docs/metrics.md`](metrics.md) lists every
+metric. Nothing is sent anywhere by the services themselves, no label names a user or an
+item, and the compose file keeps the metrics ports inside its own network.
+
+The compose file uses `/readyz` as the hub's healthcheck, and the Discord bot starts only
+once the hub is healthy.
+
+For a dashboard and alerts, set a password for Grafana and start the `monitoring`
+profile, alone or beside `discord`. Without the password Grafana does not start:
+
+```sh
+echo "PLSREMIND_GRAFANA_PASSWORD=$(openssl rand -hex 16)" >> .env
+docker compose --profile monitoring up -d
+```
+
+It adds three services:
+
+- **VictoriaMetrics** scrapes the hub and the bot every 15 seconds and keeps 30 days.
+- **vmalert** evaluates [`deploy/monitoring/alerts.yml`](../deploy/monitoring/alerts.yml):
+  the hub or the bot down, the ticker stalled, reminders more than two minutes late,
+  server errors, expired deliveries to a connection, the bot not connected to the hub,
+  Discord refusing reminders, errors in the bot nobody foresaw. If you take the bot away
+  for good, remove the `plsremind-discord` job from
+  [`deploy/monitoring/scrape.yml`](../deploy/monitoring/scrape.yml), or its alert keeps
+  firing until its last scrape has left the 30 days. VictoriaMetrics rereads the file
+  within a minute.
+- **Grafana** opens on `http://127.0.0.1:3000` (`PLSREMIND_GRAFANA_PORT` to change it)
+  with the plsremind dashboard. Log in as `admin` with `PLSREMIND_GRAFANA_PASSWORD`; the
+  password is set when Grafana first starts, so change it there afterwards. Grafana is
+  only reachable from the machine itself; put it behind your reverse proxy to reach it
+  from elsewhere. Its own telemetry, update checks and plugin downloads are off.
+
+Firing alerts show at the top of the dashboard and in Grafana's alert list. To have them
+sent, run an Alertmanager and set `PLSREMIND_ALERTMANAGER_URL`; vmalert then passes every
+alert on to it. vmalert runs inside the compose network, so the address must be reachable
+from there: a public address, or a service added in an override file, such as
+`http://alertmanager:9093`.
+
+| Variable | Required | Meaning |
+|---|---|---|
+| `PLSREMIND_GRAFANA_PASSWORD` | for the profile | The password of Grafana's `admin`. Grafana does not start without it. |
+| `PLSREMIND_GRAFANA_PORT` | no | The port Grafana is published on, on `127.0.0.1`. Defaults to `3000`. |
+| `PLSREMIND_ALERTMANAGER_URL` | no | Where vmalert sends alerts. Without it they are only shown. |
+
+Prometheus, Grafana Alloy or any other tool that reads the Prometheus format works as
+well. Inside the compose network,
+[`deploy/monitoring/scrape.yml`](../deploy/monitoring/scrape.yml) serves as its scrape
+configuration as it is. Outside it, publish the metrics ports yourself and replace `hub:9090`
+and `discord:9091` with the host's address and those ports, since the service names only
+resolve inside the network. The rules work as they are, and the dashboard asks which
+Prometheus data source to use.
 
 ## Behind a reverse proxy
 
@@ -172,10 +230,11 @@ git pull
 docker compose up -d --build
 ```
 
-With the Discord bot, name its profile, or the bot keeps running its old image:
+Name the profiles you use, or their services keep running their old images. With the
+Discord bot and the monitoring, for example:
 
 ```sh
-docker compose --profile discord up -d --build
+docker compose --profile discord --profile monitoring up -d --build
 ```
 
 ## Backups

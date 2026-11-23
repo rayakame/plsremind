@@ -2,6 +2,7 @@
 package server
 
 import (
+	"context"
 	"strings"
 	"time"
 
@@ -14,6 +15,7 @@ import (
 	"github.com/rayakame/plsremind/hub/internal/core"
 	"github.com/rayakame/plsremind/hub/internal/delivery"
 	"github.com/rayakame/plsremind/hub/internal/gateway"
+	"github.com/rayakame/plsremind/hub/internal/metrics"
 	"github.com/rayakame/plsremind/hub/internal/reminder"
 	"github.com/rayakame/plsremind/hub/internal/todo"
 )
@@ -38,6 +40,10 @@ type Server struct {
 
 func New(d *core.Deps) *Server {
 	d.Gateway = d.Gateway.WithDefaults()
+	if d.Metrics == nil {
+		d.Metrics = metrics.New(Version)
+	}
+	d.Metrics.CountOpenDeliveries(func(ctx context.Context) (int64, error) { return d.Q().CountOpenDeliveries(ctx) })
 	if d.ReadTimeout == 0 {
 		d.ReadTimeout = 30 * time.Second
 	}
@@ -76,6 +82,10 @@ func New(d *core.Deps) *Server {
 		d.RateAnon = api.NewLimiter(20, time.Minute, d.Now)
 	}
 
+	app.Use(measure(d.Metrics))
+	// Outside the API, so that neither a login nor the rate limit stands between a probe and the answer.
+	registerHealth(app, d.Pool)
+
 	root := app.Group("/api/v1", rejectNUL, auth.Middleware(d), api.RateLimit(d.Now, func(c fiber.Ctx) (*api.Limiter, string) {
 		// Logging in and signing up are always counted per address. Otherwise anyone
 		// with an account could guess passwords on their own credential's larger budget.
@@ -103,6 +113,8 @@ func New(d *core.Deps) *Server {
 	delivery.Register(root, user, d)
 	hub := gateway.NewHub(d)
 	hub.Register(root)
+	d.Metrics.CountSessions(hub.Attached)
+	d.Metrics.WatchPool(d.Pool.Stat)
 
 	app.Use("/api", func(fiber.Ctx) error { return fiber.ErrNotFound })
 	app.Get("/*", WebHandler(embeddedWeb(), d.Cfg.PublicURL))

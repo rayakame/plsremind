@@ -17,6 +17,7 @@ import plsremind
 import pytest
 
 from plsremind_discord import reminders as reminders_module
+from plsremind_discord.metrics import Metrics
 from plsremind_discord.reminders import Reminders
 from plsremind_discord.store import Sent
 from plsremind_discord.store import Store
@@ -67,6 +68,7 @@ class Made(typing.NamedTuple):
     clock: discord.FixedClock
     slept: list[float]
     redrawn: list[tuple[int, int]]
+    metrics: Metrics
 
 
 @pytest.fixture
@@ -90,7 +92,9 @@ async def made(tmp_path: pathlib.Path) -> collections.abc.AsyncIterator[Made]:
         clock.moment += datetime.timedelta(seconds=seconds)
 
     redrawn: list[tuple[int, int]] = []
+    metrics = Metrics()
     reminders = Reminders(
+        metrics=metrics,
         hub=hub,
         views=discord.views(hub, ReminderView, clock=clock),
         rest=typing.cast("hikari.api.RESTClient", rest),
@@ -102,7 +106,7 @@ async def made(tmp_path: pathlib.Path) -> collections.abc.AsyncIterator[Made]:
         sleep=sleep,
     )
     try:
-        yield Made(reminders, hub, rest, store, clock, slept, redrawn)
+        yield Made(reminders, hub, rest, store, clock, slept, redrawn, metrics)
     finally:
         await reminders.close()
         await store.close()
@@ -145,6 +149,8 @@ async def test_a_reminder_goes_out_is_recorded_and_then_confirmed(made: Made) ->
     assert row.shown_at == ITEM.updated_at
     assert await made.store.knows_delivery(things.uid(9001))
     assert made.reminders.waiting == frozenset()
+    assert discord.counted(made.metrics, "plsremind_discord_delivery_attempts_total", result="sent") == 1
+    assert discord.counted(made.metrics, "plsremind_discord_dm_channels_opened_total") == 1
 
 
 async def test_later_reminders_to_an_account_reuse_its_dm_channel(made: Made) -> None:
@@ -153,6 +159,7 @@ async def test_later_reminders_to_an_account_reuse_its_dm_channel(made: Made) ->
     made.rest.create_dm_channel.assert_awaited_once_with(1234)
     assert [call.args[0] for call in made.rest.create_message.await_args_list] == [CHANNEL + 1234] * 2
     assert len(made.hub.named("delivered")) == 2
+    assert discord.counted(made.metrics, "plsremind_discord_dm_channels_opened_total") == 1
 
 
 NEW_CHANNEL = CHANNEL + 9999
@@ -264,6 +271,7 @@ async def test_a_dm_channel_kept_before_a_restart_is_used_again(made: Made, tmp_
     await made.reminders.deliver(delivery())
     store = await Store.open(tmp_path / "discord.db")
     restarted = Reminders(
+        metrics=made.metrics,
         hub=made.hub,
         views=discord.views(made.hub, ReminderView),
         rest=typing.cast("hikari.api.RESTClient", made.rest),
@@ -408,6 +416,7 @@ async def test_closed_dms_are_reported_in_the_users_language(made: Made) -> None
     assert call["delivery"] == things.uid(9001)
     assert str(call["reason"]).startswith("Discord hat die Direktnachricht nicht angenommen")
     assert made.hub.named("delivered") == []
+    assert discord.counted(made.metrics, "plsremind_discord_delivery_attempts_total", result="closed") == 1
     assert not await made.store.knows_delivery(things.uid(9001))
     assert made.slept == []
 
@@ -454,6 +463,7 @@ async def test_a_user_without_a_discord_account_is_reported(made: Made) -> None:
         {"delivery": things.uid(9001), "reason": "Es ist kein Discord-Konto verknüpft."}
     ]
     made.rest.create_dm_channel.assert_not_called()
+    assert discord.counted(made.metrics, "plsremind_discord_delivery_attempts_total", result="no_account") == 1
 
 
 @pytest.mark.parametrize("trouble", [broken(), aiohttp.ClientConnectionError("gone"), TimeoutError()])
@@ -489,6 +499,7 @@ def held(made: Made) -> Held:
         await go.wait()
 
     reminders = Reminders(
+        metrics=made.metrics,
         hub=made.hub,
         views=discord.views(made.hub, ReminderView),
         rest=typing.cast("hikari.api.RESTClient", made.rest),
@@ -847,6 +858,8 @@ async def test_a_reminder_whose_item_cannot_be_read_is_not_sent_as_gone(made: Ma
     made.rest.create_message.assert_not_called()
     assert made.hub.named("delivered") == []
     assert made.reminders.waiting == frozenset({things.uid(9001)})
+    assert discord.counted(made.metrics, "plsremind_discord_delivery_attempts_total", result="unreadable") == 1
+    assert discord.counted(made.metrics, "plsremind_discord_deliveries_waiting") == 1
 
 
 async def test_closing_does_not_wait_out_the_grace_for_a_try_that_failed(made: Made) -> None:
@@ -945,3 +958,32 @@ async def test_a_reminder_whose_item_was_deleted_while_it_went_out_is_redrawn(ma
     made.rest.create_message.side_effect = answer
     await made.reminders.deliver(delivery())
     assert made.redrawn == [(100, CHANNEL + 1234)]
+
+
+@pytest.mark.parametrize(("trouble", "result"), [(refused, "refused"), (broken, "passing")])
+async def test_a_try_that_does_not_go_through_is_counted_by_why(
+    made: Made, trouble: collections.abc.Callable[[], hikari.HTTPError], result: str
+) -> None:
+    made.rest.create_message.side_effect = trouble()
+    await made.reminders.deliver(delivery())
+    assert discord.counted(made.metrics, "plsremind_discord_delivery_attempts_total", result=result) >= 1
+    assert discord.counted(made.metrics, "plsremind_discord_delivery_attempts_total", result="sent") == 0
+
+
+async def test_a_try_that_breaks_unexpectedly_is_counted_as_an_error(made: Made) -> None:
+    made.rest.create_message.side_effect = RuntimeError("boom")
+    await made.reminders.deliver(delivery())
+    assert discord.counted(made.metrics, "plsremind_discord_delivery_attempts_total", result="error") >= 1
+    assert made.reminders.waiting == frozenset({things.uid(9001)})
+
+
+@pytest.mark.parametrize(("step", "result"), [("failed", "refused"), ("delivered", "sent")])
+async def test_a_result_is_counted_once_however_often_telling_the_hub_is_tried(
+    made: Made, step: str, result: str
+) -> None:
+    if result == "refused":
+        made.rest.create_message.side_effect = refused()
+    made.hub.fail[step] = plsremind.NetworkError("the hub is away")
+    await made.reminders.deliver(delivery())
+    await discord.until(lambda: len(made.slept) >= 3)
+    assert discord.counted(made.metrics, "plsremind_discord_delivery_attempts_total", result=result) == 1
