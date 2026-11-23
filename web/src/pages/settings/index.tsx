@@ -1,6 +1,7 @@
 import { Link, Redirect } from "wouter";
 import { useProfile } from "../../hub/hooks.js";
-import { useLoaded } from "../../hub/loaded.js";
+import type { UserConnection } from "plsremind";
+import { useLoaded, type Loaded } from "../../hub/loaded.js";
 import { useHub } from "../../hub/session.js";
 import { useT } from "../../i18n/index.js";
 import { routes } from "../../shell/router.js";
@@ -13,7 +14,7 @@ import { AdminInvites } from "./admin/invites.js";
 import { AdminProviders } from "./admin/providers.js";
 import { AdminUsers } from "./admin/users.js";
 import { needsAttention } from "./apps-model.js";
-import { ConnectionSettings } from "./connections.js";
+import { AppsSettings } from "./apps.js";
 import { KeySettings } from "./keys.js";
 import { LookSettings } from "./look.js";
 import { legacySettings, settingsPages, SettingsNav } from "./nav.js";
@@ -22,7 +23,7 @@ import { ReminderSettings } from "./reminders.js";
 import { SecuritySettings } from "./security.js";
 import { TokenSettings } from "./tokens.js";
 
-function Content({ page }: { page: string }) {
+function Content({ page, apps }: { page: string; apps: Loaded<UserConnection[]> }) {
   switch (page) {
     case "security":
       return <SecuritySettings />;
@@ -33,7 +34,7 @@ function Content({ page }: { page: string }) {
     case "keys":
       return <KeySettings />;
     case "apps":
-      return <ConnectionSettings />;
+      return <AppsSettings apps={apps} />;
     case "tokens":
       return <TokenSettings />;
     case "admin/instance":
@@ -93,7 +94,7 @@ export default function SettingsPage(props: {
             </Link>
           )}
           <h1 className="h1">{t(page.label)}</h1>
-          <Content page={page.id} />
+          <Content page={page.id} apps={apps} />
         </div>
       </div>
     </div>

@@ -39,3 +39,6 @@ export function useLoaded<T>(load: (signal: AbortSignal) => Promise<T>, key: unk
   const reload = useCallback(() => setRound((before) => before + 1), []);
   return { data, setData, reload, failed: failed && data === undefined };
 }
+
+/** What useLoaded gives: the data once it is there, and ways to change or reload it. */
+export type Loaded<T> = ReturnType<typeof useLoaded<T>>;
