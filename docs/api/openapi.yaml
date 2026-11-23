@@ -2334,7 +2334,7 @@ components:
           description: Where users add the app on the provider's side; empty when there is no such place.
         reach:
           type: integer
-          description: How many users the connection would remind now.
+          description: How many users the connection can remind now, counting only those with an account at its provider.
         token:
           type: string
           description: Only present right after creating the connection or replacing its token.

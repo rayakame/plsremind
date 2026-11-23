@@ -18,10 +18,9 @@ FROM connections c
 LEFT JOIN users u ON c.enabled
     AND NOT u.disabled
     AND 'deliveries' = ANY(c.allowed_intents)
+    AND EXISTS (SELECT 1 FROM identities i WHERE i.user_id = u.id AND i.provider = c.provider)
     AND COALESCE((SELECT g.remind FROM connection_grants g WHERE g.user_id = u.id AND g.connection_id = c.id), true)
-    AND COALESCE(
-        (SELECT g.enabled FROM connection_grants g WHERE g.user_id = u.id AND g.connection_id = c.id),
-        EXISTS (SELECT 1 FROM identities i WHERE i.user_id = u.id AND i.provider = c.provider))
+    AND COALESCE((SELECT g.enabled FROM connection_grants g WHERE g.user_id = u.id AND g.connection_id = c.id), true)
 WHERE $1::uuid IS NULL OR c.id = $1::uuid
 GROUP BY c.id
 `
@@ -31,7 +30,7 @@ type ConnectionReachRow struct {
 	Reach int32
 }
 
-// Whom each connection would remind now, by the same rule as ListReminderConnections.
+// Whom each connection can remind now: users it reminds who have an account it can write to.
 func (q *Queries) ConnectionReach(ctx context.Context, connectionID *uuid.UUID) ([]ConnectionReachRow, error) {
 	rows, err := q.db.Query(ctx, connectionReach, connectionID)
 	if err != nil {

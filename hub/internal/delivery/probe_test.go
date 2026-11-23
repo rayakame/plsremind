@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
 
+	"github.com/rayakame/plsremind/hub/internal/gateway"
 	"github.com/rayakame/plsremind/hub/internal/testkit"
 )
 
@@ -175,6 +176,20 @@ func TestTheTestEventIsNotSentAgainOnLogin(t *testing.T) {
 
 	later := e.Gateway(t, bot.Token, "deliveries")
 	later.ExpectQuiet(t)
+}
+
+func TestTheTestEventIsNotSentAgainOnResume(t *testing.T) {
+	e := testkit.New(t)
+	bot := e.Connection(t, "discord")
+	mia := testkit.Linked(t, e, "mia", "111")
+	first := e.Gateway(t, bot.Token, "deliveries")
+	startTest(t, mia, bot.ID)
+	first.Expect(t, "delivery.test")
+	first.Close()
+
+	back := e.ResumeGateway(t, bot.Token, first.SessionID, first.LastSeq)
+	back.Expect(t, gateway.EventResumed)
+	back.ExpectQuiet(t)
 }
 
 func TestOldTestsAreSwept(t *testing.T) {

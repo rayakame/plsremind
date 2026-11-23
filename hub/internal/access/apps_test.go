@@ -73,8 +73,10 @@ func TestReachCountsWhoAnAppWouldRemind(t *testing.T) {
 	gone := testkit.Linked(t, e, "gone", "4")
 	require.Equal(t, 200, e.Admin(t).Do(t, "PATCH", "/admin/users/"+gone.UserID, J{"disabled": true}).Status)
 	e.User(t, "unlinked")
+	optedIn := e.User(t, "opted")
+	require.Equal(t, 200, optedIn.Do(t, "PUT", "/users/@me/connections/"+bot.ID, J{"enabled": true}).Status)
 
-	require.Equal(t, int64(1), adminApp(t, e, bot.ID).Get("reach").Int())
+	require.Equal(t, int64(1), adminApp(t, e, bot.ID).Get("reach").Int(), "only users with an account there count")
 	require.Equal(t, int64(0), adminApp(t, e, quiet.Get("id").String()).Get("reach").Int())
 	require.True(t, quiet.Get("reach").Exists())
 }
