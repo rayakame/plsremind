@@ -80,6 +80,9 @@ func New(d *core.Deps) *Server {
 		d.RateAnon = api.NewLimiter(20, time.Minute, d.Now)
 	}
 
+	// Outside the API, so that neither a login nor the rate limit stands between a probe and the answer.
+	registerHealth(app, d.Pool)
+
 	root := app.Group("/api/v1", rejectNUL, auth.Middleware(d), api.RateLimit(d.Now, func(c fiber.Ctx) (*api.Limiter, string) {
 		// Logging in and signing up are always counted per address. Otherwise anyone
 		// with an account could guess passwords on their own credential's larger budget.

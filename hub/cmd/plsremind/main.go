@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -26,6 +27,17 @@ import (
 const tickEvery = 5 * time.Second
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "health" {
+		// The image has no shell or curl, so its healthcheck runs the binary itself.
+		listen := os.Getenv("PLSREMIND_LISTEN_ADDR")
+		if listen == "" {
+			listen = ":8080"
+		}
+		if !probe(readyURL(listen)) {
+			os.Exit(1)
+		}
+		return
+	}
 	if err := run(); err != nil {
 		slog.Error("plsremind stopped", "err", err)
 		os.Exit(1)
@@ -105,4 +117,29 @@ func run() error {
 	}()
 	slog.Info("listening", "addr", cfg.ListenAddr, "version", server.Version)
 	return app.Listen(cfg.ListenAddr, fiber.ListenConfig{DisableStartupMessage: true})
+}
+
+// readyURL is where the hub listening on listen answers /readyz from the same machine.
+func readyURL(listen string) string {
+	host, port, err := net.SplitHostPort(listen)
+	if err != nil {
+		return "http://" + listen + "/readyz"
+	}
+	switch ip := net.ParseIP(host); {
+	case host == "" || (ip != nil && ip.IsUnspecified() && ip.To4() != nil):
+		host = "127.0.0.1"
+	case ip != nil && ip.IsUnspecified():
+		host = "::1"
+	}
+	return "http://" + net.JoinHostPort(host, port) + "/readyz"
+}
+
+func probe(url string) bool {
+	client := http.Client{Timeout: 3 * time.Second}
+	res, err := client.Get(url)
+	if err != nil {
+		return false
+	}
+	res.Body.Close()
+	return res.StatusCode == http.StatusOK
 }
