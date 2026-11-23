@@ -5,6 +5,8 @@ import (
 	"time"
 
 	"github.com/gofiber/contrib/v3/websocket"
+
+	"github.com/rayakame/plsremind/hub/internal/metrics"
 )
 
 const outQueue = 256
@@ -18,6 +20,7 @@ type conn struct {
 	fin          chan closing
 	once         sync.Once
 	writeTimeout time.Duration
+	metrics      *metrics.Metrics
 }
 
 type closing struct {
@@ -25,8 +28,8 @@ type closing struct {
 	reason string
 }
 
-func newConn(ws *websocket.Conn, writeTimeout time.Duration) *conn {
-	c := &conn{ws: ws, out: make(chan []byte, outQueue), done: make(chan struct{}), fin: make(chan closing, 1), writeTimeout: writeTimeout}
+func newConn(ws *websocket.Conn, writeTimeout time.Duration, m *metrics.Metrics) *conn {
+	c := &conn{ws: ws, out: make(chan []byte, outQueue), done: make(chan struct{}), fin: make(chan closing, 1), writeTimeout: writeTimeout, metrics: m}
 	go c.write()
 	return c
 }
@@ -113,6 +116,7 @@ func (c *conn) closed() bool {
 func (c *conn) close(code int, reason string) {
 	c.once.Do(func() {
 		close(c.done)
+		c.metrics.GatewayClose(code)
 		deadline := time.Now().Add(time.Second)
 		_ = c.ws.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(code, reason), deadline)
 		_ = c.ws.Close()

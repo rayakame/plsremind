@@ -7,9 +7,11 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"strconv"
 	"sync"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/collectors"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -30,7 +32,12 @@ type Metrics struct {
 	TickerDuration    prometheus.Histogram
 	TickerLastSuccess prometheus.Gauge
 
-	open *openDeliveries
+	GatewayCloses     *prometheus.CounterVec
+	GatewayDispatches *prometheus.CounterVec
+
+	open     *openDeliveries
+	sessions *sessions
+	pool     *pool
 }
 
 // New returns a registry that already holds the Go runtime, the process and the build version.
@@ -89,9 +96,102 @@ func New(version string) *Metrics {
 			Help: "When the reminder ticker last finished a round without an error.",
 		}),
 	}
+	m.GatewayCloses = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "plsremind_gateway_closes_total",
+		Help: "Gateway connections that ended, by close code.",
+	}, []string{"code"})
+	m.GatewayDispatches = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "plsremind_gateway_dispatches_total",
+		Help: "Dispatches produced for gateway sessions, by event.",
+	}, []string{"event"})
 	reg.MustRegister(m.Requests, m.Durations, m.Reminders, m.Lateness, m.Acknowledged, m.Expired,
-		m.TickerRuns, m.TickerDuration, m.TickerLastSuccess)
+		m.TickerRuns, m.TickerDuration, m.TickerLastSuccess, m.GatewayCloses, m.GatewayDispatches)
 	return m
+}
+
+// GatewayClose notes a gateway connection that ended with code.
+func (m *Metrics) GatewayClose(code int) {
+	if m != nil {
+		m.GatewayCloses.WithLabelValues(strconv.Itoa(code)).Inc()
+	}
+}
+
+// Dispatch notes a dispatch produced for a gateway session.
+func (m *Metrics) Dispatch(event string) {
+	if m != nil {
+		m.GatewayDispatches.WithLabelValues(event).Inc()
+	}
+}
+
+// CountSessions reports the attached gateway sessions by kind, asked at each scrape. A later call replaces the count.
+func (m *Metrics) CountSessions(attached func() map[string]int) {
+	if m.sessions == nil {
+		m.sessions = &sessions{desc: prometheus.NewDesc("plsremind_gateway_sessions",
+			"Gateway sessions with a client attached, by the kind of credential behind them.", []string{"kind"}, nil)}
+		m.registry.MustRegister(m.sessions)
+	}
+	m.sessions.mu.Lock()
+	defer m.sessions.mu.Unlock()
+	m.sessions.attached = attached
+}
+
+type sessions struct {
+	desc     *prometheus.Desc
+	mu       sync.Mutex
+	attached func() map[string]int
+}
+
+func (s *sessions) Describe(ch chan<- *prometheus.Desc) {
+	ch <- s.desc
+}
+
+func (s *sessions) Collect(ch chan<- prometheus.Metric) {
+	s.mu.Lock()
+	attached := s.attached
+	s.mu.Unlock()
+	for kind, n := range attached() {
+		ch <- prometheus.MustNewConstMetric(s.desc, prometheus.GaugeValue, float64(n), kind)
+	}
+}
+
+// WatchPool reports the database pool, asked at each scrape. A later call replaces the pool.
+func (m *Metrics) WatchPool(stat func() *pgxpool.Stat) {
+	if m.pool == nil {
+		m.pool = &pool{
+			conns:   prometheus.NewDesc("plsremind_db_pool_connections", "Database connections of the pool, by state.", []string{"state"}, nil),
+			acquire: prometheus.NewDesc("plsremind_db_pool_acquire_seconds_total", "Time spent getting a connection from the pool.", nil, nil),
+			empty:   prometheus.NewDesc("plsremind_db_pool_empty_acquires_total", "Requests for a connection that had to wait because none was free.", nil, nil),
+		}
+		m.registry.MustRegister(m.pool)
+	}
+	m.pool.mu.Lock()
+	defer m.pool.mu.Unlock()
+	m.pool.stat = stat
+}
+
+type pool struct {
+	conns, acquire, empty *prometheus.Desc
+	mu                    sync.Mutex
+	stat                  func() *pgxpool.Stat
+}
+
+func (p *pool) Describe(ch chan<- *prometheus.Desc) {
+	ch <- p.conns
+	ch <- p.acquire
+	ch <- p.empty
+}
+
+func (p *pool) Collect(ch chan<- prometheus.Metric) {
+	p.mu.Lock()
+	stat := p.stat()
+	p.mu.Unlock()
+	for state, n := range map[string]int32{
+		"acquired": stat.AcquiredConns(), "idle": stat.IdleConns(), "total": stat.TotalConns(), "max": stat.MaxConns(),
+	} {
+		ch <- prometheus.MustNewConstMetric(p.conns, prometheus.GaugeValue, float64(n), state)
+	}
+	ch <- prometheus.MustNewConstMetric(p.acquire, prometheus.CounterValue, stat.AcquireDuration().Seconds())
+	ch <- prometheus.MustNewConstMetric(p.empty, prometheus.CounterValue, float64(stat.EmptyAcquireCount()))
 }
 
 // Reminder notes a reminder whose time came. late only counts for one that fired.

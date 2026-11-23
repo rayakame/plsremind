@@ -113,6 +113,8 @@ func New(d *core.Deps) *Server {
 	delivery.Register(root, user, d)
 	hub := gateway.NewHub(d)
 	hub.Register(root)
+	d.Metrics.CountSessions(hub.Attached)
+	d.Metrics.WatchPool(d.Pool.Stat)
 
 	app.Use("/api", func(fiber.Ctx) error { return fiber.ErrNotFound })
 	app.Get("/*", WebHandler(embeddedWeb(), d.Cfg.PublicURL))

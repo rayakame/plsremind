@@ -89,6 +89,7 @@ func (s *Session) emit(event string, numbered bool, data any) {
 		seq = &n
 	}
 	frame := encode(OpDispatch, data, seq, &event)
+	s.hub.d.Metrics.Dispatch(event)
 	if numbered {
 		s.buffer = append(s.buffer, sequenced{seq: s.seq, frame: frame})
 		s.bufferBytes += len(frame)
@@ -154,6 +155,7 @@ func (s *Session) deliver(epoch int, id uuid.UUID, data any) {
 	}
 	event := "delivery.created"
 	c.send(encode(OpDispatch, data, nil, &event))
+	s.hub.d.Metrics.Dispatch(event)
 }
 
 func (s *Session) currentEpoch() int {

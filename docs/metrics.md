@@ -24,6 +24,12 @@ on that address. An address the hub cannot listen on stops it at the start.
 | `plsremind_ticker_runs_total` | counter | `result` | Rounds of the reminder ticker, `ok` or `error`. It runs every five seconds. |
 | `plsremind_ticker_duration_seconds` | histogram | | How long a round took. |
 | `plsremind_ticker_last_success_timestamp_seconds` | gauge | | When the ticker last finished a round without an error. |
+| `plsremind_gateway_sessions` | gauge | `kind` | Gateway sessions with a client attached, by credential: `personal_token`, `connection` or `session` (the dashboard). |
+| `plsremind_gateway_closes_total` | counter | `code` | Gateway connections that ended, by close code. `1000` is a normal end; the others are listed in `docs/gateway.md`. |
+| `plsremind_gateway_dispatches_total` | counter | `event` | Dispatches produced for sessions, by event, such as `READY` or `item.created`. |
+| `plsremind_db_pool_connections` | gauge | `state` | Database connections: `acquired`, `idle`, `total` and the pool's `max`. |
+| `plsremind_db_pool_acquire_seconds_total` | counter | | Time spent getting a connection from the pool. |
+| `plsremind_db_pool_empty_acquires_total` | counter | | Requests for a connection that had to wait because none was free. A steady rise means the pool is too small. |
 
 The Go runtime (`go_*`) and the process (`process_*`) are included.
 

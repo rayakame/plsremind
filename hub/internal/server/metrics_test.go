@@ -65,3 +65,25 @@ func TestAnErrorIsCountedWithItsStatusUnderItsRoute(t *testing.T) {
 	require.Equal(t, 404, missing.Status)
 	require.Equal(t, 1.0, requests(t, e)["GET /api/v1/users/:user/items/:id 404"], requests(t, e))
 }
+
+func TestTheDatabasePoolIsReported(t *testing.T) {
+	e := testkit.New(t)
+	families, err := e.Deps.Metrics.Registry().Gather()
+	require.NoError(t, err)
+	found := map[string]float64{}
+	for _, family := range families {
+		for _, metric := range family.GetMetric() {
+			key := family.GetName()
+			for _, pair := range metric.GetLabel() {
+				key += " " + pair.GetValue()
+			}
+			found[key] = metric.GetGauge().GetValue() + metric.GetCounter().GetValue()
+		}
+	}
+	require.Equal(t, float64(e.Pool.Stat().MaxConns()), found["plsremind_db_pool_connections max"])
+	for _, key := range []string{"plsremind_db_pool_connections acquired", "plsremind_db_pool_connections idle",
+		"plsremind_db_pool_connections total", "plsremind_db_pool_acquire_seconds_total", "plsremind_db_pool_empty_acquires_total"} {
+		_, ok := found[key]
+		require.True(t, ok, key)
+	}
+}

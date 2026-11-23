@@ -35,7 +35,7 @@ func isTimeout(err error) bool {
 // serve runs one connection from Hello until it ends.
 func (h *Hub) serve(ws *websocket.Conn) {
 	cfg := h.d.Gateway
-	c := newConn(ws, cfg.WriteTimeout)
+	c := newConn(ws, cfg.WriteTimeout, h.d.Metrics)
 	cookie := ws.Cookies(auth.SessionCookie)
 	sameOrigin := ws.Headers(fiber.HeaderOrigin) == h.d.Cfg.PublicURL
 	ctx := context.Background()
