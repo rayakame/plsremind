@@ -111,3 +111,22 @@ tests:
               severity: warning
             exp_annotations:
               summary: The Discord bot at discord:9091 ran into errors nobody foresaw; its log says which.
+
+  - name: with two bots, only the one that is down is reported
+    interval: 1m
+    input_series:
+      - series: 'up{job="plsremind-discord",instance="discord:9091"}'
+        values: "1x10 0x30"
+      - series: 'up{job="plsremind-discord",instance="discord-team:9091"}'
+        values: "1x40"
+    alert_rule_test:
+      - eval_time: 20m
+        groupname: plsremind
+        alertname: PlsremindBotDown
+        exp_alerts:
+          - exp_labels:
+              job: plsremind-discord
+              instance: discord:9091
+              severity: critical
+            exp_annotations:
+              summary: The Discord bot at discord:9091 has not answered a scrape for two minutes.
