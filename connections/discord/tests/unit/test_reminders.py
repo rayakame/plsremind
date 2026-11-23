@@ -18,6 +18,7 @@ import pytest
 
 from plsremind_discord import reminders as reminders_module
 from plsremind_discord.reminders import Reminders
+from plsremind_discord.store import Sent
 from plsremind_discord.store import Store
 from plsremind_discord.views.reminder import ReminderView
 from tests.support import discord
@@ -232,9 +233,13 @@ async def test_closed_dms_on_the_new_dm_channel_count_as_closed(made: Made) -> N
     assert str(made.hub.named("failed")[0]["reason"]).startswith("Discord did not accept")
 
 
-async def test_passing_trouble_on_the_new_dm_channel_keeps_it_for_the_next_try(made: Made) -> None:
+async def test_passing_trouble_on_the_new_dm_channel_opens_it_again_on_the_next_try(made: Made) -> None:
     await made.reminders.deliver(delivery())
-    made.rest.create_dm_channel.side_effect = [mock.Mock(id=hikari.Snowflake(NEW_CHANNEL))]
+
+    async def opened(_: int) -> mock.Mock:
+        return mock.Mock(id=hikari.Snowflake(NEW_CHANNEL))
+
+    made.rest.create_dm_channel.side_effect = opened
     sent_on_the_new_one = 0
 
     def answer(target: int, **_: object) -> mock.Mock:
@@ -251,7 +256,8 @@ async def test_passing_trouble_on_the_new_dm_channel_keeps_it_for_the_next_try(m
     await discord.until(lambda: len(made.hub.named("delivered")) == 2)
     targets = [call.args[0] for call in made.rest.create_message.await_args_list]
     assert targets == [CHANNEL + 1234, CHANNEL + 1234, NEW_CHANNEL, NEW_CHANNEL]
-    assert made.rest.create_dm_channel.await_count == 2
+    assert made.rest.create_dm_channel.await_count == 3
+    assert await made.store.dm_channel(BOT, 1234) == NEW_CHANNEL
 
 
 async def test_a_dm_channel_kept_before_a_restart_is_used_again(made: Made, tmp_path: pathlib.Path) -> None:
@@ -277,50 +283,23 @@ async def test_a_dm_channel_kept_before_a_restart_is_used_again(made: Made, tmp_
 
 
 async def test_a_dm_channel_kept_by_another_bot_is_not_used(made: Made) -> None:
-    await made.store.keep_dm_channel(BOT + 1, 1234, CHANNEL + 5555)
+    await made.store.record(
+        delivery_id="elsewhere",
+        user_id=MIA,
+        item_id=ITEM.id,
+        shown_at=None,
+        messages=[Sent(555, CHANNEL + 5555, 1234)],
+        bot_id=BOT + 1,
+        now=things.NOW,
+    )
     await made.reminders.deliver(delivery())
     assert made.rest.create_message.await_args.args[0] == CHANNEL + 1234
 
 
-async def test_a_stale_channel_read_while_another_reminder_forgets_it_is_not_taken_for_closed_dms(made: Made) -> None:
-    await made.reminders.deliver(delivery())
-    forgetting, let_go = asyncio.Event(), asyncio.Event()
-    forget = made.store.forget_dm_channel
-
-    async def slow_forget(bot: int, account: int, channel_id: int) -> None:
-        forgetting.set()
-        await let_go.wait()
-        await forget(bot, account, channel_id)
-
-    async def opened(_: int) -> mock.Mock:
-        return mock.Mock(id=hikari.Snowflake(NEW_CHANNEL))
-
-    ids = itertools.count(200)
-
-    def answer(target: int, **_: object) -> mock.Mock:
-        if target == CHANNEL + 1234:
-            raise unknown_channel()
-        return mock.Mock(id=hikari.Snowflake(next(ids)))
-
-    made.rest.create_message.side_effect = answer
-    made.rest.create_dm_channel.side_effect = opened
-    with mock.patch.object(made.store, "forget_dm_channel", slow_forget):
-        first = asyncio.create_task(made.reminders.deliver(things.delivery(2, of=ITEM)))
-        await asyncio.wait_for(forgetting.wait(), 2)
-        second = asyncio.create_task(made.reminders.deliver(things.delivery(3, of=ITEM)))
-        await discord.until(lambda: made.rest.create_message.await_count >= 3)
-        let_go.set()
-        async with asyncio.timeout(2):
-            await asyncio.gather(first, second)
-    assert len(made.hub.named("delivered")) == 3
-    assert made.hub.named("failed") == []
-
-
-@pytest.mark.parametrize("step", ["dm_channel", "keep_dm_channel"])
-async def test_trouble_with_the_store_does_not_hold_a_reminder_up(
-    made: Made, step: str, caplog: pytest.LogCaptureFixture
+async def test_a_dm_channel_that_cannot_be_read_does_not_hold_a_reminder_up(
+    made: Made, caplog: pytest.LogCaptureFixture
 ) -> None:
-    with mock.patch.object(made.store, step, side_effect=sqlite3.OperationalError("disk I/O error")):
+    with mock.patch.object(made.store, "dm_channel", side_effect=sqlite3.OperationalError("disk I/O error")):
         await made.reminders.deliver(delivery())
     assert len(made.hub.named("delivered")) == 1
     assert "disk I/O error" in caplog.text
@@ -411,6 +390,7 @@ async def test_a_fresh_dm_channel_that_is_unknown_counts_as_closed(made: Made) -
     await made.reminders.deliver(delivery(to=things.user(locale="en")))
     made.rest.create_dm_channel.assert_awaited_once_with(1234)
     assert str(made.hub.named("failed")[0]["reason"]).startswith("Discord did not accept")
+    assert await made.store.dm_channel(BOT, 1234) is None
 
 
 async def test_a_delivery_that_went_out_before_is_only_confirmed(made: Made) -> None:
@@ -423,6 +403,7 @@ async def test_a_delivery_that_went_out_before_is_only_confirmed(made: Made) -> 
 async def test_closed_dms_are_reported_in_the_users_language(made: Made) -> None:
     made.rest.create_message.side_effect = forbidden()
     await made.reminders.deliver(delivery())
+    assert await made.store.dm_channel(BOT, 1234) is None
     (call,) = made.hub.named("failed")
     assert call["delivery"] == things.uid(9001)
     assert str(call["reason"]).startswith("Discord hat die Direktnachricht nicht angenommen")

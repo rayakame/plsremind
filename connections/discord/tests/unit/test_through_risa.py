@@ -104,6 +104,7 @@ async def test_a_fixed_snooze_sets_the_reminder_and_turns_the_message_into_the_n
         item_id=ITEM.id,
         shown_at=ITEM.updated_at,
         messages=[Sent(555, wire.CHANNEL, 1234)],
+        bot_id=900,
         now=NOW,
     )
     select = wire.custom_id(payloads, kind=3)
@@ -173,6 +174,7 @@ async def test_a_change_made_elsewhere_redraws_the_message_discord_holds(made: M
         item_id=ITEM.id,
         shown_at=ITEM.updated_at,
         messages=[Sent(555, wire.CHANNEL, 1234)],
+        bot_id=900,
         now=NOW,
     )
 
@@ -209,6 +211,7 @@ async def test_a_message_that_shows_something_else_by_now_is_forgotten_instead_o
         item_id=ITEM.id,
         shown_at=ITEM.updated_at,
         messages=[Sent(555, wire.CHANNEL, 1234)],
+        bot_id=900,
         now=NOW,
     )
 

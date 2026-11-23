@@ -33,14 +33,14 @@ DELETE FROM messages WHERE user_id = ?;
 DELETE FROM messages WHERE sent_at < ?;
 
 -- name: FindDmChannel :one
-SELECT channel_id FROM dm_channels WHERE bot_id = ? AND account_id = ?;
+SELECT channel_id FROM dm_channels WHERE account_id = ? AND bot_id = ?;
 
 -- name: KeepDmChannel :exec
-INSERT INTO dm_channels (bot_id, account_id, channel_id) VALUES (?, ?, ?)
-ON CONFLICT (bot_id, account_id) DO UPDATE SET channel_id = excluded.channel_id;
+INSERT INTO dm_channels (account_id, bot_id, channel_id) VALUES (?, ?, ?)
+ON CONFLICT (account_id, bot_id) DO UPDATE SET channel_id = excluded.channel_id;
 
 -- name: ForgetDmChannel :exec
-DELETE FROM dm_channels WHERE bot_id = ? AND account_id = ? AND channel_id = ?;
+DELETE FROM dm_channels WHERE account_id = ? AND bot_id = ? AND channel_id = ?;
 
 -- name: ForgetAccountDmChannels :exec
 DELETE FROM dm_channels WHERE account_id = ?;

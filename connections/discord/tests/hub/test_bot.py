@@ -193,6 +193,7 @@ async def test_done_in_discord_reaches_the_hub_and_only_other_messages_are_redra
         item_id=item.id,
         shown_at=item.updated_at,
         messages=[Sent(555, CHANNEL, 1234), Sent(556, CHANNEL, 1234)],
+        bot_id=900,
         now=now(),
     )
     running.redraws.shows.update({555: (mia.id, item.id), 556: (mia.id, item.id)})
@@ -255,6 +256,7 @@ async def test_a_change_in_the_hub_redraws_the_message(running: Running) -> None
         item_id=item.id,
         shown_at=None,
         messages=[Sent(555, CHANNEL, 1234)],
+        bot_id=900,
         now=now(),
     )
     running.redraws.shows[555] = (mia.id, item.id)
@@ -278,6 +280,7 @@ async def test_a_user_who_switches_the_connection_off_is_forgotten(running: Runn
         item_id=item.id,
         shown_at=None,
         messages=[Sent(555, CHANNEL, 1234)],
+        bot_id=900,
         now=now(),
     )
     await mia.browser.call("PUT", f"/users/@me/connections/{running.connection}", {"enabled": False})

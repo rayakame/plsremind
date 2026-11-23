@@ -99,16 +99,16 @@ DELETE FROM messages WHERE sent_at < ?
 """
 
 FIND_DM_CHANNEL: typing.Final[str] = """-- name: FindDmChannel :one
-SELECT channel_id FROM dm_channels WHERE bot_id = ? AND account_id = ?
+SELECT channel_id FROM dm_channels WHERE account_id = ? AND bot_id = ?
 """
 
 KEEP_DM_CHANNEL: typing.Final[str] = """-- name: KeepDmChannel :exec
-INSERT INTO dm_channels (bot_id, account_id, channel_id) VALUES (?, ?, ?)
-ON CONFLICT (bot_id, account_id) DO UPDATE SET channel_id = excluded.channel_id
+INSERT INTO dm_channels (account_id, bot_id, channel_id) VALUES (?, ?, ?)
+ON CONFLICT (account_id, bot_id) DO UPDATE SET channel_id = excluded.channel_id
 """
 
 FORGET_DM_CHANNEL: typing.Final[str] = """-- name: ForgetDmChannel :exec
-DELETE FROM dm_channels WHERE bot_id = ? AND account_id = ? AND channel_id = ?
+DELETE FROM dm_channels WHERE account_id = ? AND bot_id = ? AND channel_id = ?
 """
 
 FORGET_ACCOUNT_DM_CHANNELS: typing.Final[str] = """-- name: ForgetAccountDmChannels :exec
@@ -226,19 +226,19 @@ async def purge_messages(conn: aiosqlite.Connection, *, sent_at: datetime.dateti
     return (await conn.execute(PURGE_MESSAGES, (sent_at,))).rowcount
 
 
-async def find_dm_channel(conn: aiosqlite.Connection, *, bot_id: int, account_id: int) -> int | None:
-    row = await (await conn.execute(FIND_DM_CHANNEL, (bot_id, account_id))).fetchone()
+async def find_dm_channel(conn: aiosqlite.Connection, *, account_id: int, bot_id: int) -> int | None:
+    row = await (await conn.execute(FIND_DM_CHANNEL, (account_id, bot_id))).fetchone()
     if row is None:
         return None
     return row[0]
 
 
-async def keep_dm_channel(conn: aiosqlite.Connection, *, bot_id: int, account_id: int, channel_id: int) -> None:
-    await conn.execute(KEEP_DM_CHANNEL, (bot_id, account_id, channel_id))
+async def keep_dm_channel(conn: aiosqlite.Connection, *, account_id: int, bot_id: int, channel_id: int) -> None:
+    await conn.execute(KEEP_DM_CHANNEL, (account_id, bot_id, channel_id))
 
 
-async def forget_dm_channel(conn: aiosqlite.Connection, *, bot_id: int, account_id: int, channel_id: int) -> None:
-    await conn.execute(FORGET_DM_CHANNEL, (bot_id, account_id, channel_id))
+async def forget_dm_channel(conn: aiosqlite.Connection, *, account_id: int, bot_id: int, channel_id: int) -> None:
+    await conn.execute(FORGET_DM_CHANNEL, (account_id, bot_id, channel_id))
 
 
 async def forget_account_dm_channels(conn: aiosqlite.Connection, *, account_id: int) -> None:

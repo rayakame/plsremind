@@ -21,8 +21,8 @@ class Delivery(msgspec.Struct):
 
 
 class DmChannel(msgspec.Struct):
-    bot_id: int
     account_id: int
+    bot_id: int
     channel_id: int
 
 

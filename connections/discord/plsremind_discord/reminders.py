@@ -229,15 +229,8 @@ class Reminders:
         # Discord gives back the same channel when it is opened again, and it would fail again.
         if stale is not None and channel == kept:
             raise stale
-        try:
-            message = await self._message(channel, account, rendered)
-        except Exception as trouble:
-            # Any answer but 404 shows that the channel is there.
-            if not isinstance(trouble, hikari.NotFoundError):
-                await self._keep(account, channel)
-            raise
-        await self._keep(account, channel)
-        return channel, message
+        # Kept when the message is recorded, so that a channel lasts exactly as long as its messages.
+        return channel, await self._message(channel, account, rendered)
 
     async def _kept(self, account: int) -> int | None:
         try:
@@ -245,12 +238,6 @@ class Reminders:
         except Exception:
             _LOGGER.exception("a kept DM channel could not be read")
             return None
-
-    async def _keep(self, account: int, channel: int) -> None:
-        try:
-            await self._store.keep_dm_channel(self._bot, account, channel)
-        except Exception:
-            _LOGGER.exception("a DM channel could not be kept")
 
     async def _forget_channel(self, account: int, channel: int) -> None:
         try:
@@ -277,6 +264,7 @@ class Reminders:
                 item_id=delivery.item.id,
                 shown_at=version,
                 messages=sent,
+                bot_id=self._bot,
                 now=self._clock.now(),
             )
         except Exception:

@@ -101,6 +101,7 @@ async def sent(
         item_id=item.id,
         shown_at=item.updated_at,
         messages=[Sent(message, CHANNEL, account)],
+        bot_id=900,
         now=things.NOW,
     )
 
@@ -311,13 +312,11 @@ async def test_an_account_that_was_unlinked_loses_its_messages(made: Made) -> No
     await made.sync.user_changed(moved(both))
     assert [row.message_id for row in await made.store.messages_for_user(MIA)] == [100, 101]
 
-    await made.store.keep_dm_channel(900, 1234, 71)
-    await made.store.keep_dm_channel(900, 5678, 72)
     one = things.user(external_ids=("1234",))
     made.hub.knows(one, ITEM, OTHER)
     await made.sync.user_changed(moved(one))
     assert [row.message_id for row in await made.store.messages_for_user(MIA)] == [100]
-    assert [await made.store.dm_channel(900, account) for account in (1234, 5678)] == [71, None]
+    assert [await made.store.dm_channel(900, account) for account in (1234, 5678)] == [CHANNEL, None]
 
     await made.sync.item_changed(updated(renamed(ITEM), ITEM))
     await settled(made)
