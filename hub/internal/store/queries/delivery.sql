@@ -202,3 +202,6 @@ WHERE id IN (
     WHERE d.user_id = @user_id AND d.status = 'pending' AND d.held_until IS NOT NULL
     ORDER BY d.id
     FOR UPDATE);
+
+-- name: CountOpenDeliveries :one
+SELECT count(*) FROM deliveries WHERE status = 'pending';

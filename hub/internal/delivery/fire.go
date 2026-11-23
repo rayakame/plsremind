@@ -27,12 +27,14 @@ func RunOnce(ctx context.Context, d *core.Deps) error {
 			break
 		}
 	}
+	var expiredCount int
 	err := store.Tx(ctx, d.Pool, func(q *sqlc.Queries) error {
 		now := d.Now()
 		expired, err := q.ExpireDeliveries(ctx, &now)
 		if err != nil {
 			return err
 		}
+		expiredCount = len(expired)
 		if err := events.DeliveriesClosed(ctx, q, expired); err != nil {
 			return err
 		}
@@ -46,6 +48,7 @@ func RunOnce(ctx context.Context, d *core.Deps) error {
 	if err != nil {
 		return err
 	}
+	d.Metrics.Expire(expiredCount)
 	return sweepSpent(ctx, d)
 }
 
@@ -54,7 +57,13 @@ func RunOnce(ctx context.Context, d *core.Deps) error {
 // and a crash before the commit leaves the rows for the next run.
 func fireBatch(ctx context.Context, d *core.Deps) (int, error) {
 	count := 0
+	type noted struct {
+		kind, outcome string
+		late          time.Duration
+	}
+	var seen []noted
 	err := store.Tx(ctx, d.Pool, func(q *sqlc.Queries) error {
+		seen = seen[:0]
 		now := d.Now()
 		due, err := q.LockDueReminders(ctx, sqlc.LockDueRemindersParams{Now: now, Batch: batchSize})
 		if err != nil {
@@ -102,6 +111,7 @@ func fireBatch(ctx context.Context, d *core.Deps) (int, error) {
 			if err != nil {
 				return err
 			}
+			seen = append(seen, noted{kind: row.Kind, outcome: outcome, late: now.Sub(row.FireAt)})
 			if outcome != "fired" {
 				continue
 			}
@@ -111,6 +121,12 @@ func fireBatch(ctx context.Context, d *core.Deps) (int, error) {
 		}
 		return q.DeleteScheduledReminders(ctx, ids)
 	})
+	// Counted once committed: a batch that rolls back fires again in the next round.
+	if err == nil {
+		for _, n := range seen {
+			d.Metrics.Reminder(n.kind, n.outcome, n.late)
+		}
+	}
 	return count, err
 }
 

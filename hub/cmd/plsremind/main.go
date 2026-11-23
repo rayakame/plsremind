@@ -85,7 +85,7 @@ func run() error {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				if err := delivery.RunOnce(ctx, d); err != nil && ctx.Err() == nil {
+				if err := d.Metrics.Tick(func() error { return delivery.RunOnce(ctx, d) }); err != nil && ctx.Err() == nil {
 					slog.Error("fire reminders", "err", err)
 				}
 			}

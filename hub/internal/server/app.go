@@ -2,6 +2,7 @@
 package server
 
 import (
+	"context"
 	"strings"
 	"time"
 
@@ -42,6 +43,7 @@ func New(d *core.Deps) *Server {
 	if d.Metrics == nil {
 		d.Metrics = metrics.New(Version)
 	}
+	d.Metrics.CountOpenDeliveries(func(ctx context.Context) (int64, error) { return d.Q().CountOpenDeliveries(ctx) })
 	if d.ReadTimeout == 0 {
 		d.ReadTimeout = 30 * time.Second
 	}

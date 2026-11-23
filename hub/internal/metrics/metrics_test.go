@@ -2,6 +2,7 @@ package metrics_test
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net"
 	"net/http"
@@ -9,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/require"
 
 	"github.com/rayakame/plsremind/hub/internal/metrics"
@@ -73,4 +75,54 @@ func TestStartServesMetricsUntilItsContextEnds(t *testing.T) {
 		ln.Close()
 		return true
 	}, 6*time.Second, 50*time.Millisecond, "the address is free again")
+}
+
+func TestTickNotesHowARoundEnded(t *testing.T) {
+	m := metrics.New("dev")
+	require.NoError(t, m.Tick(func() error { return nil }))
+	require.Error(t, m.Tick(func() error { return errors.New("database away") }))
+	require.Equal(t, 1.0, testutil.ToFloat64(m.TickerRuns.WithLabelValues("ok")))
+	require.Equal(t, 1.0, testutil.ToFloat64(m.TickerRuns.WithLabelValues("error")))
+	require.Positive(t, testutil.ToFloat64(m.TickerLastSuccess))
+	require.Contains(t, scrape(t, m), "plsremind_ticker_duration_seconds_count 2")
+}
+
+func TestOpenDeliveriesAreCountedWhenAsked(t *testing.T) {
+	m := metrics.New("dev")
+	m.CountOpenDeliveries(func(context.Context) (int64, error) { return 7, nil })
+	require.Contains(t, scrape(t, m), "plsremind_deliveries_open 7")
+}
+
+func TestOpenDeliveriesAreLeftOutWhenTheDatabaseCannotSay(t *testing.T) {
+	m := metrics.New("dev")
+	m.CountOpenDeliveries(func(context.Context) (int64, error) { return 0, errors.New("database away") })
+	body := scrape(t, m)
+	require.NotContains(t, body, "plsremind_deliveries_open")
+	require.Contains(t, body, "plsremind_build_info", "the rest of the scrape still comes")
+}
+
+func TestOpenDeliveriesGiveUpWithinTwoSeconds(t *testing.T) {
+	m := metrics.New("dev")
+	m.CountOpenDeliveries(func(ctx context.Context) (int64, error) {
+		<-ctx.Done()
+		return 0, ctx.Err()
+	})
+	start := time.Now()
+	require.NotContains(t, scrape(t, m), "plsremind_deliveries_open")
+	require.Less(t, time.Since(start), 3*time.Second)
+}
+
+func TestANilRegistryCountsNothingAndDoesNotFail(t *testing.T) {
+	var m *metrics.Metrics
+	m.Reminder("due", "fired", time.Second)
+	m.Expire(2)
+	m.Acknowledge("delivered")
+	require.NoError(t, m.Tick(func() error { return nil }))
+}
+
+func TestCountingOpenDeliveriesAgainReplacesTheCount(t *testing.T) {
+	m := metrics.New("dev")
+	m.CountOpenDeliveries(func(context.Context) (int64, error) { return 1, nil })
+	m.CountOpenDeliveries(func(context.Context) (int64, error) { return 2, nil })
+	require.Contains(t, scrape(t, m), "plsremind_deliveries_open 2")
 }

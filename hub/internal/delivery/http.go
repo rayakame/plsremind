@@ -90,6 +90,7 @@ func acknowledge(d *core.Deps) fiber.Handler {
 		}
 
 		var out sqlc.Delivery
+		closed := false
 		err = store.Tx(c.Context(), d.Pool, func(q *sqlc.Queries) error {
 			row, err := q.LockDelivery(c.Context(), id)
 			// A delivery of another channel does not exist as far as this one is concerned.
@@ -103,6 +104,7 @@ func acknowledge(d *core.Deps) fiber.Handler {
 			case "pending":
 				now := d.Now()
 				out, err = q.CloseDelivery(c.Context(), sqlc.CloseDeliveryParams{ID: id, Status: in.Status, Reason: in.Reason, Now: &now})
+				closed = err == nil
 				return err
 			case in.Status:
 				out = row
@@ -112,6 +114,9 @@ func acknowledge(d *core.Deps) fiber.Handler {
 		})
 		if err != nil {
 			return err
+		}
+		if closed {
+			d.Metrics.Acknowledge(in.Status)
 		}
 		return c.JSON(fiber.Map{"id": out.ID, "status": out.Status, "reason": out.Reason})
 	}

@@ -16,6 +16,14 @@ on that address. An address the hub cannot listen on stops it at the start.
 | `plsremind_build_info` | gauge | `version` | Always 1; tells which version runs. |
 | `plsremind_http_requests_total` | counter | `method`, `route`, `status` | HTTP requests. `route` is the pattern, such as `/api/v1/users/:user/items/:id`; `web` is the dashboard, `unmatched` a path no route knows. |
 | `plsremind_http_request_duration_seconds` | histogram | `method`, `route` | How long requests took. The gateway's WebSocket is left out, since it lasts as long as its connection. |
+| `plsremind_reminders_total` | counter | `kind`, `outcome` | Reminders whose time came. `kind` is `before`, `due`, `follow_up` or `manual`; `outcome` is `fired`, `superseded` (a newer one of the same item fired at once) or `missed` (more than a day late, after the hub was away). |
+| `plsremind_reminder_lateness_seconds` | histogram | | How long after its time a reminder fired. Quiet hours move that time on purpose, so they do not count as lateness. This is the number to watch. |
+| `plsremind_deliveries_open` | gauge | | Deliveries still waiting for a channel to confirm them, counted at each scrape. Left out when the database does not answer within two seconds. |
+| `plsremind_deliveries_acknowledged_total` | counter | `result` | Deliveries a channel confirmed, `delivered` or `failed`. |
+| `plsremind_deliveries_expired_total` | counter | | Deliveries nobody confirmed within a day. |
+| `plsremind_ticker_runs_total` | counter | `result` | Rounds of the reminder ticker, `ok` or `error`. It runs every five seconds. |
+| `plsremind_ticker_duration_seconds` | histogram | | How long a round took. |
+| `plsremind_ticker_last_success_timestamp_seconds` | gauge | | When the ticker last finished a round without an error. |
 
 The Go runtime (`go_*`) and the process (`process_*`) are included.
 
