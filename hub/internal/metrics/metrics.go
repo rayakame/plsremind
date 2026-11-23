@@ -106,8 +106,17 @@ func New(version string) *Metrics {
 	}, []string{"event"})
 	reg.MustRegister(m.Requests, m.Durations, m.Reminders, m.Lateness, m.Acknowledged, m.Expired,
 		m.TickerRuns, m.TickerDuration, m.TickerLastSuccess, m.GatewayCloses, m.GatewayDispatches)
+	// Present from the start, so that a panel or a rate over what has not happened yet shows 0, not nothing.
 	for _, channel := range []string{"connection", "personal_token"} {
 		m.Expired.WithLabelValues(channel)
+	}
+	for _, kind := range []string{"before", "due", "follow_up", "manual"} {
+		for _, outcome := range []string{"fired", "superseded", "missed"} {
+			m.Reminders.WithLabelValues(kind, outcome)
+		}
+	}
+	for _, result := range []string{"delivered", "failed"} {
+		m.Acknowledged.WithLabelValues(result)
 	}
 	// From the start of the process, so that a hub that just started does not look stalled for decades.
 	m.TickerLastSuccess.SetToCurrentTime()

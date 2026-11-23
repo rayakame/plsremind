@@ -30,7 +30,9 @@
         "y": 0
       },
       "fieldConfig": {
-        "defaults": {},
+        "defaults": {
+          "noValue": "none firing"
+        },
         "overrides": []
       },
       "options": {
@@ -92,6 +94,7 @@
       "fieldConfig": {
         "defaults": {
           "unit": "short",
+          "noValue": "0",
           "color": {
             "mode": "fixed",
             "fixedColor": "text"
@@ -142,6 +145,7 @@
       "fieldConfig": {
         "defaults": {
           "unit": "s",
+          "noValue": "-",
           "color": {
             "mode": "fixed",
             "fixedColor": "text"
@@ -192,6 +196,7 @@
       "fieldConfig": {
         "defaults": {
           "unit": "s",
+          "noValue": "-",
           "color": {
             "mode": "fixed",
             "fixedColor": "text"
@@ -242,6 +247,7 @@
       "fieldConfig": {
         "defaults": {
           "unit": "short",
+          "noValue": "0",
           "color": {
             "mode": "fixed",
             "fixedColor": "text"
@@ -292,6 +298,7 @@
       "fieldConfig": {
         "defaults": {
           "unit": "bool_yes_no",
+          "noValue": "no bot",
           "color": {
             "mode": "fixed",
             "fixedColor": "text"
@@ -342,6 +349,7 @@
       "fieldConfig": {
         "defaults": {
           "unit": "short",
+          "noValue": "-",
           "color": {
             "mode": "fixed",
             "fixedColor": "text"
@@ -393,6 +401,7 @@
       "fieldConfig": {
         "defaults": {
           "unit": "ops",
+          "noValue": "0",
           "color": {
             "mode": "palette-classic"
           },
@@ -446,6 +455,7 @@
       "fieldConfig": {
         "defaults": {
           "unit": "s",
+          "noValue": "-",
           "color": {
             "mode": "palette-classic"
           },
@@ -508,6 +518,7 @@
       "fieldConfig": {
         "defaults": {
           "unit": "ops",
+          "noValue": "0",
           "color": {
             "mode": "palette-classic"
           },
@@ -583,6 +594,7 @@
       "fieldConfig": {
         "defaults": {
           "unit": "reqps",
+          "noValue": "0",
           "color": {
             "mode": "palette-classic"
           },
@@ -636,6 +648,7 @@
       "fieldConfig": {
         "defaults": {
           "unit": "s",
+          "noValue": "-",
           "color": {
             "mode": "palette-classic"
           },
@@ -689,6 +702,7 @@
       "fieldConfig": {
         "defaults": {
           "unit": "ops",
+          "noValue": "0",
           "color": {
             "mode": "palette-classic"
           },
@@ -742,6 +756,7 @@
       "fieldConfig": {
         "defaults": {
           "unit": "short",
+          "noValue": "0",
           "color": {
             "mode": "palette-classic"
           },
@@ -795,6 +810,7 @@
       "fieldConfig": {
         "defaults": {
           "unit": "ops",
+          "noValue": "0",
           "color": {
             "mode": "palette-classic"
           },
@@ -848,6 +864,7 @@
       "fieldConfig": {
         "defaults": {
           "unit": "short",
+          "noValue": "0",
           "color": {
             "mode": "palette-classic"
           },
@@ -901,6 +918,7 @@
       "fieldConfig": {
         "defaults": {
           "unit": "reqps",
+          "noValue": "0",
           "color": {
             "mode": "palette-classic"
           },
@@ -954,6 +972,7 @@
       "fieldConfig": {
         "defaults": {
           "unit": "ops",
+          "noValue": "0",
           "color": {
             "mode": "palette-classic"
           },
@@ -1007,6 +1026,7 @@
       "fieldConfig": {
         "defaults": {
           "unit": "s",
+          "noValue": "0",
           "color": {
             "mode": "palette-classic"
           },
@@ -1073,6 +1093,7 @@
       "fieldConfig": {
         "defaults": {
           "unit": "ops",
+          "noValue": "0",
           "color": {
             "mode": "palette-classic"
           },
@@ -1126,6 +1147,7 @@
       "fieldConfig": {
         "defaults": {
           "unit": "ops",
+          "noValue": "0",
           "color": {
             "mode": "palette-classic"
           },
@@ -1179,6 +1201,7 @@
       "fieldConfig": {
         "defaults": {
           "unit": "ops",
+          "noValue": "0",
           "color": {
             "mode": "palette-classic"
           },
@@ -1232,6 +1255,7 @@
       "fieldConfig": {
         "defaults": {
           "unit": "ops",
+          "noValue": "0",
           "color": {
             "mode": "palette-classic"
           },
@@ -1285,6 +1309,7 @@
       "fieldConfig": {
         "defaults": {
           "unit": "ops",
+          "noValue": "0",
           "color": {
             "mode": "palette-classic"
           },
@@ -1338,6 +1363,7 @@
       "fieldConfig": {
         "defaults": {
           "unit": "s",
+          "noValue": "-",
           "color": {
             "mode": "palette-classic"
           },
@@ -1391,6 +1417,7 @@
       "fieldConfig": {
         "defaults": {
           "unit": "ops",
+          "noValue": "0",
           "color": {
             "mode": "palette-classic"
           },

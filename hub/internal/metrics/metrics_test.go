@@ -92,6 +92,17 @@ func TestTheTickerCountsFromTheStartOfTheProcess(t *testing.T) {
 	require.GreaterOrEqual(t, testutil.ToFloat64(metrics.New("dev").TickerLastSuccess), before)
 }
 
+func TestRemindersAndAcknowledgementsAreThereBeforeAnythingHappened(t *testing.T) {
+	body := scrape(t, metrics.New("dev"))
+	for _, kind := range []string{"before", "due", "follow_up", "manual"} {
+		for _, outcome := range []string{"fired", "superseded", "missed"} {
+			require.Contains(t, body, `plsremind_reminders_total{kind="`+kind+`",outcome="`+outcome+`"} 0`)
+		}
+	}
+	require.Contains(t, body, `plsremind_deliveries_acknowledged_total{result="delivered"} 0`)
+	require.Contains(t, body, `plsremind_deliveries_acknowledged_total{result="failed"} 0`)
+}
+
 func TestOpenDeliveriesAreCountedWhenAsked(t *testing.T) {
 	m := metrics.New("dev")
 	m.CountOpenDeliveries(func(context.Context) (int64, error) { return 7, nil })
