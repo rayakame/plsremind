@@ -68,7 +68,7 @@ async function settings(
   first(app);
   const { act } = await import("@testing-library/react");
   await act(() => app.connect());
-  await screen.findByRole("heading", { level: 1, name: "Settings" });
+  await screen.findByRole("navigation", { name: "Settings" });
   return app;
 }
 
@@ -250,9 +250,9 @@ test("deleting the account needs the display name typed out", async () => {
 });
 
 test("an error from linking elsewhere is shown and leaves the address", async () => {
-  const app = await settings("connections?auth_error=link_disabled");
+  const app = await settings("apps?auth_error=link_disabled");
   expect((await screen.findByRole("alert")).textContent).toBe("Linking this way is turned off.");
-  expect(app.path()).toBe("/settings/connections");
+  expect(app.path()).toBe("/settings/apps");
 });
 
 test("a token made before the list has loaded is not wiped out by the list", async () => {

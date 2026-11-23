@@ -102,7 +102,7 @@ async function page(
   app.route("GET", "/admin/connections", { status: 200, body: [connection] });
   first(app);
   await act(() => app.connect());
-  await screen.findByRole("navigation", { name: "Administration" });
+  await screen.findByRole("navigation", { name: "Settings" });
   return app;
 }
 
@@ -171,6 +171,7 @@ test("users are promoted, blocked, given a new password and deleted", async () =
 
 test("an invite is created, its code shown once, and its state listed", async () => {
   const app = await page("invites");
+  const invites = () => within(screen.getByRole("list", { name: "Invites" }));
   app.route("POST", "/admin/invites", {
     status: 201,
     body: {
@@ -183,9 +184,9 @@ test("an invite is created, its code shown once, and its state listed", async ()
     },
   });
   app.route("DELETE", "/admin/invites/v1", { status: 204 });
-  await waitFor(() => expect(screen.getAllByRole("listitem")).toHaveLength(3));
+  await waitFor(() => expect(invites().getAllByRole("listitem")).toHaveLength(3));
   expect(
-    screen
+    invites()
       .getAllByRole("listitem")
       .map((row) => within(row).getByText(/Open|Used|Expired/).textContent),
   ).toEqual(["Open", "Used", "Expired"]);
@@ -196,9 +197,9 @@ test("an invite is created, its code shown once, and its state listed", async ()
   expect(app.sent("POST", "/admin/invites")[0]!.body).toEqual({ expires_in: "30d" });
   await userEvent.click(shown.getByRole("button", { name: "Done" }));
   expect(document.body.innerHTML).not.toContain("INV-123");
-  expect(screen.getAllByRole("listitem")).toHaveLength(4);
-  await userEvent.click(screen.getAllByRole("button", { name: "Delete" })[0]!);
-  await waitFor(() => expect(screen.getAllByRole("listitem")).toHaveLength(3));
+  expect(invites().getAllByRole("listitem")).toHaveLength(4);
+  await userEvent.click(invites().getAllByRole("button", { name: "Delete" })[0]!);
+  await waitFor(() => expect(invites().getAllByRole("listitem")).toHaveLength(3));
 });
 
 test("a provider is configured without its secret ever coming back", async () => {

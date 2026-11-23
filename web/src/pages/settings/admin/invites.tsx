@@ -49,7 +49,7 @@ export function AdminInvites() {
     <>
       <Card>
         {invites.data?.length === 0 && <p className="text dim">{t("invite.none")}</p>}
-        <div role="list" className="stack">
+        <div role="list" className="stack" aria-label={t("admin.invites")}>
           {invites.data?.map((invite) => (
             <div role="listitem" className="between" key={invite.id}>
               <span className="kv fill">

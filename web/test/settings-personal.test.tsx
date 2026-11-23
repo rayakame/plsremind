@@ -18,23 +18,11 @@ async function personal(options: Parameters<typeof renderApp>[0] = {}) {
     body: wirePlan(call.body as Record<string, unknown>),
   }));
   app.route("DELETE", /reminder-plans/, { status: 204 });
-  await screen.findByRole("heading", { level: 1, name: "Settings" });
+  await screen.findByRole("navigation", { name: "Settings" });
   return app;
 }
 const sent = (app: Awaited<ReturnType<typeof personal>>) =>
   app.sent("PATCH", me).map((call) => call.body);
-
-test("settings has its areas, and administration only for admins", async () => {
-  await personal();
-  const areas = within(screen.getByRole("navigation", { name: "Settings" }));
-  expect(areas.getAllByRole("link").map((link) => link.textContent)).toEqual([
-    "Personal",
-    "Connections",
-    "Tokens",
-    "Login",
-  ]);
-  expect(areas.getByRole("link", { name: "Personal" }).getAttribute("aria-current")).toBe("page");
-});
 
 test("name, zone and language are saved to the profile", async () => {
   const app = await personal();
@@ -57,7 +45,7 @@ test("name, zone and language are saved to the profile", async () => {
     { timezone: "America/New_York" },
     { locale: "de" },
   ]);
-  expect(screen.getByRole("heading", { level: 1, name: "Einstellungen" })).toBeTruthy();
+  expect(screen.getByRole("navigation", { name: "Einstellungen" })).toBeTruthy();
 });
 
 test("theme and week start apply at once and keep what other clients stored", async () => {

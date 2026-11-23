@@ -4,7 +4,7 @@ export const routes = {
   calendar: "/calendar",
   done: "/done",
   item: (id: string) => `/items/${encodeURIComponent(id)}`,
-  settings: (area = "personal") => `/settings/${area}`,
+  settings: (page?: string) => (page ? `/settings/${page}` : "/settings"),
   login: "/login",
   register: "/register",
   setup: "/setup",
