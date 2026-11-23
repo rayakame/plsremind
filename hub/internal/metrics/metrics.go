@@ -17,6 +17,9 @@ import (
 // Metrics is the hub's own registry and what is registered in it.
 type Metrics struct {
 	registry *prometheus.Registry
+
+	Requests  *prometheus.CounterVec
+	Durations *prometheus.HistogramVec
 }
 
 // New returns a registry that already holds the Go runtime, the process and the build version.
@@ -33,7 +36,20 @@ func New(version string) *Metrics {
 	})
 	info.Set(1)
 	reg.MustRegister(info)
-	return &Metrics{registry: reg}
+	m := &Metrics{
+		registry: reg,
+		Requests: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "plsremind_http_requests_total",
+			Help: "HTTP requests by method, route pattern and status.",
+		}, []string{"method", "route", "status"}),
+		Durations: prometheus.NewHistogramVec(prometheus.HistogramOpts{
+			Name:    "plsremind_http_request_duration_seconds",
+			Help:    "How long HTTP requests took, by method and route pattern.",
+			Buckets: prometheus.DefBuckets,
+		}, []string{"method", "route"}),
+	}
+	reg.MustRegister(m.Requests, m.Durations)
+	return m
 }
 
 func (m *Metrics) Registry() *prometheus.Registry {

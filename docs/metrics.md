@@ -14,6 +14,8 @@ on that address. An address the hub cannot listen on stops it at the start.
 | Metric | Type | Labels | Meaning |
 |---|---|---|---|
 | `plsremind_build_info` | gauge | `version` | Always 1; tells which version runs. |
+| `plsremind_http_requests_total` | counter | `method`, `route`, `status` | HTTP requests. `route` is the pattern, such as `/api/v1/users/:user/items/:id`; `web` is the dashboard, `unmatched` a path no route knows. |
+| `plsremind_http_request_duration_seconds` | histogram | `method`, `route` | How long requests took. The gateway's WebSocket is left out, since it lasts as long as its connection. |
 
 The Go runtime (`go_*`) and the process (`process_*`) are included.
 

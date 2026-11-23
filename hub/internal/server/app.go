@@ -80,6 +80,7 @@ func New(d *core.Deps) *Server {
 		d.RateAnon = api.NewLimiter(20, time.Minute, d.Now)
 	}
 
+	app.Use(measure(d.Metrics))
 	// Outside the API, so that neither a login nor the rate limit stands between a probe and the answer.
 	registerHealth(app, d.Pool)
 
