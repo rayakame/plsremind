@@ -85,7 +85,12 @@ def test_every_counted_outcome_starts_at_zero() -> None:
         assert metrics.registry.get_sample_value("plsremind_discord_delivery_attempts_total", {"result": result}) == 0
     for kind in ("command", "component", "modal", "autocomplete"):
         assert metrics.registry.get_sample_value("plsremind_discord_interactions_total", {"kind": kind}) == 0
+    for kind in ("command", "component", "modal"):
         assert metrics.registry.get_sample_value("plsremind_discord_interaction_failures_total", {"kind": kind}) == 0
+    assert (
+        metrics.registry.get_sample_value("plsremind_discord_interaction_failures_total", {"kind": "autocomplete"})
+        is None
+    )
     for result in ("redrawn", "forgotten", "failed"):
         assert metrics.registry.get_sample_value("plsremind_discord_redraws_total", {"result": result}) == 0
     assert metrics.registry.get_sample_value("plsremind_discord_dm_channels_opened_total") == 0

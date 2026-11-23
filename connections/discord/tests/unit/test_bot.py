@@ -339,6 +339,28 @@ async def test_metrics_are_served_while_the_bot_runs_and_the_port_is_free_after(
         again.bind(("127.0.0.1", port))
 
 
+async def test_readiness_follows_the_hub_connection_of_the_running_bot(
+    running: tuple[Running, bot.Config], caplog: pytest.LogCaptureFixture
+) -> None:
+    parts, config = running
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        port = int(probe.getsockname()[1])
+    client = typing.cast("mock.Mock", parts.hub.client)
+    client.status = plsremind.ClientStatus.CONNECTED
+    with mock.patch.object(bot, "discord_connected", return_value=True):
+        serving = asyncio.create_task(bot.main(msgspec.structs.replace(config, metrics_address=("127.0.0.1", port))))
+        await discord.until(lambda: "the bot is running" in caplog.text)
+        async with aiohttp.ClientSession() as session:
+            async with session.get(f"http://127.0.0.1:{port}/readyz") as response:
+                assert response.status == 200
+            client.status = plsremind.ClientStatus.RECONNECTING
+            async with session.get(f"http://127.0.0.1:{port}/readyz") as response:
+                assert response.status == 503
+        os.kill(os.getpid(), signal.SIGTERM)
+        assert await asyncio.wait_for(serving, 5) == 0
+
+
 async def test_a_metrics_address_that_is_taken_ends_the_bot_with_a_reason(
     running: tuple[Running, bot.Config], caplog: pytest.LogCaptureFixture
 ) -> None:

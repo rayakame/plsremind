@@ -45,7 +45,7 @@ class Metrics:
         self.interaction_failures: typing.Final = self._counter(
             "plsremind_discord_interaction_failures_total",
             "Interactions that failed unexpectedly, by kind.",
-            kind=kinds,
+            kind=("command", "component", "modal"),
         )
         self.redraws: typing.Final = self._counter(
             "plsremind_discord_redraws_total",
