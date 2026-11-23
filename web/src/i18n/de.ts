@@ -293,6 +293,27 @@ export const de: Texts = {
   "intent.plans": "deine Erinnerungspläne",
   "intent.history": "deine erledigten Einträge",
   "intent.deliveries": "Erinnerungen zum Weitergeben",
+  "linked.title": "{name} ist verknüpft",
+  "linked.as": "Du bist jetzt als {name} verknüpft.",
+  "linked.asHandle": "Du bist jetzt als {name} (@{handle}) verknüpft.",
+  "linked.next": "So geht es weiter",
+  "linked.nextText":
+    "Damit eine App dir schreiben kann, füg sie zu deinem {name}-Konto hinzu. Schon hinzugefügt? Dann musst du nichts tun.",
+  "linked.testText": "Kommen Erinnerungen an?",
+  "linked.test": "Test-Erinnerung schicken",
+  "linked.home": "Zum Dashboard",
+  "linked.failed": "Das hat nicht geklappt",
+  "linked.taken": "Dieses {name}-Konto ist schon mit einem anderen plsremind-Konto verknüpft.",
+  "linked.whatNow": "Was du tun kannst",
+  "linked.takenElsewhere":
+    "Entweder meldest du dich mit dem anderen plsremind-Konto an und trennst {name} dort.",
+  "linked.takenOther":
+    "Oder du meldest dich bei {name} mit einem anderen Konto an und versuchst es noch einmal.",
+  "linked.tryAgain":
+    "Versuch es noch einmal. Klappt es weiter nicht, frag, wer diese Instanz betreibt.",
+  "linked.unchanged": "Nichts wurde geändert.",
+  "linked.retry": "Noch einmal versuchen",
+  "linked.back": "Zurück zu den Einstellungen",
   "apps.lead":
     "Apps dieser Instanz, zum Beispiel Discord-Bots. Hier legst du fest, was jede darf und ob sie dich erinnert.",
   "apps.empty": "Auf dieser Instanz ist noch keine App eingerichtet.",

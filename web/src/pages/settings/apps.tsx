@@ -30,7 +30,8 @@ const accessWords: Record<"discord" | "other", Record<Access, Key>> = {
   other: { none: "apps.none", use: "apps.access", remind: "apps.accessReminders" },
 };
 
-function TestLine({ state }: { state: TestState }) {
+/** How a test of an app is going, in one line. */
+export function TestLine({ state }: { state: TestState }) {
   const t = useT();
   if (state.status === "refused") return <div className="state bad">{state.message}</div>;
   if (state.status === "starting" || state.status === "pending") {
