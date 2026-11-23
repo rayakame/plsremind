@@ -44,3 +44,22 @@ limits, so that a load balancer or an orchestrator can ask:
 
 The image has no shell, so `plsremind health` asks `/readyz` on the hub's own listener
 and exits with 0 or 1. The compose file uses it as the hub's healthcheck.
+
+## Discord bot
+
+Set `PLSREMIND_DISCORD_METRICS_ADDR` to `host:port`, for example `0.0.0.0:9091`. The bot
+then serves three paths on it:
+
+- `GET /metrics` with the metrics below.
+- `GET /healthz`, `200 ok` while the bot runs.
+- `GET /readyz`, `200 ok` while the bot is connected to both the hub and Discord and lets
+  through what the hub sends, otherwise `503 unavailable`.
+
+An address the bot cannot listen on ends it at the start with exit code 1 and the
+variable named in the log.
+
+| Metric | Type | Labels | Meaning |
+|---|---|---|---|
+| `plsremind_discord_build_info` | gauge | `version` | Always 1; tells which version runs. |
+
+The process (`process_*`) and the Python version (`python_info`) are included.

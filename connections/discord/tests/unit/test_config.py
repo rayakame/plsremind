@@ -78,3 +78,25 @@ def test_the_clock_tells_the_time_in_utc() -> None:
     now = Clock().now()
     assert now.tzinfo is datetime.UTC
     assert abs(datetime.datetime.now(datetime.UTC) - now) < datetime.timedelta(seconds=5)
+
+
+def test_metrics_are_off_without_an_address() -> None:
+    assert Config.from_env(FULL).metrics_address is None
+
+
+@pytest.mark.parametrize(
+    ("value", "address"),
+    [
+        ("0.0.0.0:9091", ("0.0.0.0", 9091)),  # ruff: ignore[hardcoded-bind-all-interfaces]
+        (":9091", ("0.0.0.0", 9091)),  # ruff: ignore[hardcoded-bind-all-interfaces]
+        ("[::]:9091", ("::", 9091)),
+    ],
+)
+def test_a_metrics_address_is_read(value: str, address: tuple[str, int]) -> None:
+    assert Config.from_env({**FULL, "PLSREMIND_DISCORD_METRICS_ADDR": value}).metrics_address == address
+
+
+@pytest.mark.parametrize("value", ["9091", "host:", "host:port", "host:70000"])
+def test_a_metrics_address_without_a_port_is_refused(value: str) -> None:
+    with pytest.raises(ConfigError, match="PLSREMIND_DISCORD_METRICS_ADDR"):
+        Config.from_env({**FULL, "PLSREMIND_DISCORD_METRICS_ADDR": value})

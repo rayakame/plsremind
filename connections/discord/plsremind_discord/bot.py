@@ -9,6 +9,7 @@ import signal
 import sys
 import typing
 
+import aiohttp.web
 import hikari
 import lightbulb
 import plsremind
@@ -21,6 +22,8 @@ from plsremind_discord.commands import common as commands_
 from plsremind_discord.commands import every
 from plsremind_discord.config import Config
 from plsremind_discord.config import ConfigError
+from plsremind_discord.metrics import Metrics
+from plsremind_discord.metrics import serve
 from plsremind_discord.reminders import Reminders
 from plsremind_discord.store import Store
 from plsremind_discord.submits import Modals
@@ -43,6 +46,7 @@ class Parts(typing.NamedTuple):
     reminders: Reminders
     sync: Sync
     gate: Gate
+    metrics: Metrics
 
 
 async def build(config: Config, store: Store, hub: hub_.Hub) -> Parts:
@@ -88,7 +92,7 @@ async def build(config: Config, store: Store, hub: hub_.Hub) -> Parts:
     discord.subscribe(hikari.ModalInteractionCreateEvent, modals.submitted)
     gate = Gate()
     listen(hub.client, reminders=reminders, sync=sync, gate=gate)
-    return Parts(discord, commands, views, reminders, sync, gate)
+    return Parts(discord, commands, views, reminders, sync, gate, Metrics())
 
 
 class Gate:
@@ -109,6 +113,10 @@ class Gate:
     @property
     def holding(self) -> bool:
         return not self._decided.is_set()
+
+    @property
+    def is_open(self) -> bool:
+        return self._open
 
     async def passes(self) -> bool:
         await self._decided.wait()
@@ -151,6 +159,11 @@ def listen(client: plsremind.Client, *, reminders: Reminders, sync: Sync, gate: 
     client.subscribe(plsremind.UserReadyEvent, once_up(sync.user_ready))
     client.subscribe(plsremind.UserUpdateEvent, once_up(sync.user_changed))
     client.subscribe(plsremind.UserGoneEvent, once_up(sync.user_gone))
+
+
+def ready(gate: Gate, hub: plsremind.ClientStatus, *, discord_alive: bool) -> bool:
+    """Whether the bot can take a click and pass a reminder on: the hub and Discord are both there."""
+    return gate.is_open and hub is plsremind.ClientStatus.CONNECTED and discord_alive
 
 
 async def click_failed(pipeline: risa.ExecutionPipeline, ctx: risa.ComponentContext, tools: commands_.Tools) -> bool:
@@ -212,13 +225,17 @@ async def _serve(config: Config, store: Store) -> int:
     for number in (signal.SIGINT, signal.SIGTERM):
         loop.add_signal_handler(number, stop, None)
     tasks: list[asyncio.Task[None]] = []
+    served: aiohttp.web.AppRunner | None = None
     try:
+        if config.metrics_address is not None:
+            served = await _serve_metrics(parts, hub, config.metrics_address)
         reason = await _run(parts, hub, store, stopped=stopped, stop=stop, tasks=tasks)
     except (
         plsremind.PlsremindError,
         hub_.HubError,
         hikari.HikariError,
         lightbulb.exceptions.LightbulbException,
+        MetricsAddressError,
     ) as error:
         reason = f"{type(error).__name__}: {error}"
     except Exception as error:
@@ -226,10 +243,27 @@ async def _serve(config: Config, store: Store) -> int:
         reason = f"{type(error).__name__}: {error}"
     finally:
         await _put_away(parts, hub, tasks)
+        if served is not None:
+            await served.cleanup()
     if reason is None:
         return 0
     _LOGGER.error("stopping: %s", reason)
     return 1
+
+
+async def _serve_metrics(parts: Parts, hub: hub_.Hub, address: tuple[str, int]) -> aiohttp.web.AppRunner:
+    def answer() -> bool:
+        return ready(parts.gate, hub.client.status, discord_alive=parts.discord.is_alive)
+
+    try:
+        return await serve(parts.metrics, address, answer)
+    except OSError as error:
+        msg = f"PLSREMIND_DISCORD_METRICS_ADDR: {error}"
+        raise MetricsAddressError(msg) from error
+
+
+class MetricsAddressError(Exception):
+    pass
 
 
 async def _run(

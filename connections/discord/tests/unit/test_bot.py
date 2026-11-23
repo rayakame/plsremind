@@ -6,10 +6,12 @@ import logging
 import os
 import pathlib
 import signal
+import socket
 import sqlite3
 import typing
 from unittest import mock
 
+import aiohttp
 import hikari
 import lightbulb
 import msgspec
@@ -304,6 +306,40 @@ async def test_the_bot_runs_until_it_is_told_to_stop(
     assert not parts.hub.ready.is_set()
     assert config.discord_token not in caplog.text
     assert config.hub_token not in caplog.text
+
+
+async def test_metrics_are_served_while_the_bot_runs_and_the_port_is_free_after(
+    running: tuple[Running, bot.Config], caplog: pytest.LogCaptureFixture
+) -> None:
+    _, config = running
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        port = int(probe.getsockname()[1])
+    serving = asyncio.create_task(bot.main(msgspec.structs.replace(config, metrics_address=("127.0.0.1", port))))
+    await discord.until(lambda: "the bot is running" in caplog.text)
+    async with aiohttp.ClientSession() as session:
+        async with session.get(f"http://127.0.0.1:{port}/metrics") as response:
+            assert response.status == 200
+            assert "plsremind_discord_build_info" in await response.text()
+        async with session.get(f"http://127.0.0.1:{port}/readyz") as response:
+            assert response.status == 503, "Discord is not really connected in this test"
+    os.kill(os.getpid(), signal.SIGTERM)
+    assert await asyncio.wait_for(serving, 5) == 0
+    with socket.socket() as again:
+        again.bind(("127.0.0.1", port))
+
+
+async def test_a_metrics_address_that_is_taken_ends_the_bot_with_a_reason(
+    running: tuple[Running, bot.Config], caplog: pytest.LogCaptureFixture
+) -> None:
+    parts, config = running
+    with socket.socket() as taken:
+        taken.bind(("127.0.0.1", 0))
+        taken.listen()
+        address = ("127.0.0.1", int(taken.getsockname()[1]))
+        assert await asyncio.wait_for(bot.main(msgspec.structs.replace(config, metrics_address=address)), 5) == 1
+    assert "PLSREMIND_DISCORD_METRICS_ADDR" in caplog.text
+    parts.discord_started.assert_not_awaited()
 
 
 async def test_the_hub_is_asked_first_so_that_a_refusal_costs_no_discord_session(
