@@ -12,11 +12,15 @@ function initials(name: string, count: number): string {
 export function Avatar(props: {
   name: string;
   src?: string | undefined;
-  size?: "m" | "l";
+  size?: "s" | "m" | "l";
   square?: boolean;
 }) {
   const [broken, setBroken] = useState(false);
-  const className = ["ava", props.size === "l" ? "l" : "", props.square ? "square" : ""]
+  const className = [
+    "ava",
+    props.size === "m" ? "" : (props.size ?? ""),
+    props.square ? "square" : "",
+  ]
     .filter(Boolean)
     .join(" ");
   if (props.src && !broken) {

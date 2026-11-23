@@ -135,6 +135,26 @@ async function sql(text: string, values: unknown[]): Promise<void> {
   }
 }
 
+/** Links an account at a provider straight in the database, as a finished link would, and returns its id. */
+export async function seedIdentity(
+  userId: string,
+  provider: string,
+  externalId: string,
+): Promise<string> {
+  const client = new pg.Client({ connectionString: databaseUrl });
+  await client.connect();
+  try {
+    const result = await client.query<{ id: string }>(
+      `INSERT INTO identities (id, user_id, provider, external_id, display_name, username, created_at)
+       VALUES (gen_random_uuid(), $1, $2, $3, 'Mia Example', 'mia', now()) RETURNING id`,
+      [userId, provider, externalId],
+    );
+    return result.rows[0]!.id;
+  } finally {
+    await client.end();
+  }
+}
+
 /** Puts open items straight into the database, for amounts REST would take minutes for. */
 export async function seedOpen(userId: string, count: number): Promise<void> {
   await sql(

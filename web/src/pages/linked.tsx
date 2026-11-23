@@ -36,7 +36,7 @@ export default function LinkedPage({ provider }: { provider: string }) {
 
   if (error !== null) {
     return (
-      <main className="center">
+      <main className="center roomy">
         <div className="mark">
           <span className="ava l square" aria-hidden="true">
             <Icon name="warn" />
@@ -78,7 +78,7 @@ export default function LinkedPage({ provider }: { provider: string }) {
     (app) => app.enabled && app.remind && app.intents.includes("deliveries"),
   );
   return (
-    <main className="center">
+    <main className="center roomy">
       <div className="mark">
         <Avatar
           name={identity?.displayName ?? name}
@@ -107,8 +107,8 @@ export default function LinkedPage({ provider }: { provider: string }) {
             {own.map((app) => {
               const test = tests.state(app.id);
               return (
-                <div role="listitem" aria-label={app.name} className="row tall" key={app.id}>
-                  <Avatar name={app.name} square />
+                <div role="listitem" aria-label={app.name} className="row tall wrap" key={app.id}>
+                  <Avatar name={app.name} size="s" square />
                   <span className="fill stack0">
                     <span className="strong">{app.name}</span>
                     {!test && app.description && (
@@ -130,7 +130,6 @@ export default function LinkedPage({ provider }: { provider: string }) {
             <div className="between">
               <span className="dim">{t("linked.testText")}</span>
               <Button
-                variant="ghost"
                 disabled={testable.some((app) => isRunning(tests.state(app.id)))}
                 onClick={() => testable.forEach((app) => void tests.start(app.id))}
               >
