@@ -11,6 +11,7 @@ import zoneinfo
 import msgspec
 
 from plsremind.enums import ChannelKind
+from plsremind.enums import ConnectionTestStatus
 from plsremind.enums import CredentialKind
 from plsremind.enums import DeliveryStatus
 from plsremind.enums import FollowUp
@@ -29,14 +30,17 @@ from plsremind.types import Duration
 
 __all__ = [
     "Actor",
+    "ConnectionTest",
     "ConnectionUser",
     "Delivery",
     "DeliveryReminder",
     "DeliveryResult",
+    "DeliveryTest",
     "DeliveryUser",
     "Identity",
     "Info",
     "Item",
+    "LastDelivery",
     "List",
     "LoginMethod",
     "LookupResult",
@@ -126,6 +130,10 @@ class Identity(msgspec.Struct, frozen=True, kw_only=True, gc=False):
     external_id: str
     display_name: str
     created_at: datetime.datetime
+    username: str = ""
+    """The handle at the provider; empty when it has none or the account was linked before the hub kept it."""
+    has_avatar: bool = False
+    """Whether `RESTClient.get_identity_avatar` has a picture."""
 
 
 class LoginMethod(msgspec.Struct, frozen=True, kw_only=True, gc=False):
@@ -243,6 +251,34 @@ class UserConnection(msgspec.Struct, frozen=True, kw_only=True, gc=False):
     enabled: bool
     remind: bool
     intents: _Intents
+    install_url: str = ""
+    """Where the user adds the app on the provider's side; empty when there is no such place."""
+    last_delivery: LastDelivery | None = None
+    """How the newest delivery through this connection to the user went, `None` before the first."""
+
+
+class LastDelivery(msgspec.Struct, frozen=True, kw_only=True, gc=False):
+    """How a delivery, or a test the user sent, went."""
+
+    status: DeliveryStatus
+    reason: str
+    """What the connection reported when it failed; empty otherwise."""
+    at: datetime.datetime
+    """When it was closed, or created while it is still pending."""
+    test: bool
+    """Whether it was a test the user sent, not a reminder."""
+
+
+class ConnectionTest(msgspec.Struct, frozen=True, kw_only=True, gc=False):
+    """A test the user asked an app to send."""
+
+    id: ID
+    connection_id: ID
+    status: ConnectionTestStatus
+    reason: str
+    """For `FAILED` what the app reported; for `UNANSWERED` `not_connected` or `no_answer`."""
+    created_at: datetime.datetime
+    closed_at: datetime.datetime | None
 
 
 class LookupResult(msgspec.Struct, frozen=True, kw_only=True, gc=False):
@@ -282,6 +318,13 @@ class Delivery(msgspec.Struct, frozen=True, kw_only=True, gc=False):
     late: bool
     reminder: DeliveryReminder
     item: Item
+    user: DeliveryUser
+
+
+class DeliveryTest(msgspec.Struct, frozen=True, kw_only=True, gc=False):
+    """What an app receives to show the user that it reaches them."""
+
+    id: ID
     user: DeliveryUser
 
 

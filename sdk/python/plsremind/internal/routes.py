@@ -39,6 +39,7 @@ GET_INFO: typing.Final = Route("GET", "/info")
 GET_USER: typing.Final = Route("GET", "/users/{user}")
 UPDATE_USER: typing.Final = Route("PATCH", "/users/{user}")
 LIST_IDENTITIES: typing.Final = Route("GET", "/users/{user}/identities")
+GET_IDENTITY_AVATAR: typing.Final = Route("GET", "/users/{user}/identities/{id}/avatar")
 
 LIST_LISTS: typing.Final = Route("GET", "/users/{user}/lists")
 CREATE_LIST: typing.Final = Route("POST", "/users/{user}/lists")
@@ -72,5 +73,6 @@ SET_CONNECTION_GRANT: typing.Final = Route("PUT", "/users/{user}/connections/{id
 
 LIST_DELIVERIES: typing.Final = Route("GET", "/deliveries")
 ACKNOWLEDGE_DELIVERY: typing.Final = Route("PUT", "/deliveries/{id}")
+REPORT_TEST: typing.Final = Route("PUT", "/deliveries/tests/{id}")
 
 LIST_REMINDER_LOG: typing.Final = Route("GET", "/users/{user}/reminder-log")

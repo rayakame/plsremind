@@ -14,7 +14,9 @@ import pytest
 
 import plsremind
 from plsremind import models
+from plsremind.enums import ConnectionTestStatus
 from plsremind.enums import CredentialKind
+from plsremind.enums import DeliveryStatus
 from plsremind.enums import Intents
 from plsremind.enums import OverrideMode
 from plsremind.enums import Priority
@@ -141,10 +143,49 @@ def test_connection_intents_are_flags() -> None:
 def test_a_login_method_says_whether_it_logs_in_and_links() -> None:
     info = decode(
         models.Info,
-        {**fixtures.INFO, "login_methods": [{"key": "discord", "type": "discord", "name": "Discord", "login": False, "link": True}]},
+        {
+            **fixtures.INFO,
+            "login_methods": [{"key": "discord", "type": "discord", "name": "Discord", "login": False, "link": True}],
+        },
     )
     assert info.login_methods[0].login is False
     assert info.login_methods[0].link is True
+
+
+def test_an_app_tells_how_its_last_delivery_went() -> None:
+    connection = decode(
+        models.UserConnection,
+        {
+            **fixtures.USER_CONNECTION,
+            "install_url": "https://discord.com/oauth2/authorize?client_id=1",
+            "last_delivery": {"status": "failed", "reason": "closed", "at": "2026-11-12T18:00:00Z", "test": True},
+        },
+    )
+    assert connection.install_url == "https://discord.com/oauth2/authorize?client_id=1"
+    assert connection.last_delivery is not None
+    assert connection.last_delivery.status is DeliveryStatus.FAILED
+    assert connection.last_delivery.test is True
+    assert connection.last_delivery.at == datetime.datetime(2026, 11, 12, 18, tzinfo=datetime.UTC)
+    assert decode(models.UserConnection, fixtures.USER_CONNECTION).last_delivery is None
+
+
+def test_an_identity_has_a_handle_and_maybe_a_picture() -> None:
+    identity = decode(models.Identity, {**fixtures.IDENTITY, "username": "mia", "has_avatar": True})
+    assert identity.username == "mia"
+    assert identity.has_avatar is True
+    older = decode(models.Identity, fixtures.IDENTITY)
+    assert not older.username
+    assert older.has_avatar is False
+
+
+def test_a_test_of_an_app() -> None:
+    test = decode(models.ConnectionTest, fixtures.CONNECTION_TEST)
+    assert test.status is ConnectionTestStatus.FAILED
+    assert test.closed_at == datetime.datetime(2026, 11, 12, 18, 0, 2, tzinfo=datetime.UTC)
+    assert (
+        decode(models.ConnectionTest, {**fixtures.CONNECTION_TEST, "status": "pending", "closed_at": None}).closed_at
+        is None
+    )
 
 
 def test_delivery() -> None:
