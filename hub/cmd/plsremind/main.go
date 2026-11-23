@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -16,6 +17,7 @@ import (
 
 	"github.com/rayakame/plsremind/hub/internal/core"
 	"github.com/rayakame/plsremind/hub/internal/delivery"
+	"github.com/rayakame/plsremind/hub/internal/metrics"
 	"github.com/rayakame/plsremind/hub/internal/server"
 	"github.com/rayakame/plsremind/hub/internal/store"
 )
@@ -48,10 +50,16 @@ func run() error {
 	defer pool.Close()
 
 	d := &core.Deps{
-		Cfg:  cfg,
-		Pool: pool,
-		Now:  time.Now,
-		HTTP: &http.Client{Timeout: 10 * time.Second},
+		Cfg:     cfg,
+		Pool:    pool,
+		Now:     time.Now,
+		HTTP:    &http.Client{Timeout: 10 * time.Second},
+		Metrics: metrics.New(server.Version),
+	}
+	if cfg.MetricsAddr != "" {
+		if err := metrics.Start(ctx, cfg.MetricsAddr, d.Metrics); err != nil {
+			return fmt.Errorf("PLSREMIND_METRICS_ADDR: %w", err)
+		}
 	}
 	srv := server.New(d)
 	app := srv.App

@@ -14,6 +14,7 @@ import (
 	"github.com/rayakame/plsremind/hub/internal/core"
 	"github.com/rayakame/plsremind/hub/internal/delivery"
 	"github.com/rayakame/plsremind/hub/internal/gateway"
+	"github.com/rayakame/plsremind/hub/internal/metrics"
 	"github.com/rayakame/plsremind/hub/internal/reminder"
 	"github.com/rayakame/plsremind/hub/internal/todo"
 )
@@ -38,6 +39,9 @@ type Server struct {
 
 func New(d *core.Deps) *Server {
 	d.Gateway = d.Gateway.WithDefaults()
+	if d.Metrics == nil {
+		d.Metrics = metrics.New(Version)
+	}
 	if d.ReadTimeout == 0 {
 		d.ReadTimeout = 30 * time.Second
 	}
