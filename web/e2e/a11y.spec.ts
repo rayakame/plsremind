@@ -22,10 +22,14 @@ for (const scheme of ["light", "dark"] as const) {
       "/calendar",
       "/done",
       `/items/${item.id}`,
-      "/settings/personal",
-      "/settings/connections",
+      "/settings/profile",
+      "/settings/security",
+      "/settings/reminders",
+      "/settings/apps",
+      "/settings/look",
+      "/settings/keys",
       "/settings/tokens",
-      "/settings/login",
+      "/linked/discord?error=identity_taken",
       "/find?q=later",
     ];
     for (const path of paths) {

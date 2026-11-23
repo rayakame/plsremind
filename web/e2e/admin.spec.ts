@@ -28,9 +28,9 @@ test("an admin invites someone, sees them register, and blocks them", async ({ b
   const problems: string[] = [];
   watch(page, problems);
 
-  for (const section of ["instance", "users", "providers", "connections", "invites"]) {
+  for (const section of ["instance", "providers", "apps", "apps/new/discord", "users"]) {
     await page.goto(`/settings/admin/${section}`);
-    await expect(page.getByRole("navigation", { name: "Administration" })).toBeVisible();
+    await expect(page.getByRole("navigation", { name: "Settings" })).toBeVisible();
     await page.waitForLoadState("networkidle");
     expect(await audit(page), section).toEqual([]);
   }
@@ -107,5 +107,51 @@ test("the focus stays in the dialog while a new password is on its way", async (
   await page.keyboard.press("Tab");
   expect(await inside()).toBe(true);
   await held?.();
+  await context.close();
+});
+
+test("apps of any kind are added and every user sees them grouped", async ({ browser }) => {
+  const session = restSession();
+  const user = await session.rest.login(admin);
+  const context = await browser.newContext({ baseURL: hubUrl });
+  await context.setExtraHTTPHeaders({ [proxyHeader]: address() });
+  await signIn(context, {
+    rest: session.rest,
+    user,
+    username: admin.username,
+    password: admin.password,
+    cookie: session.cookie(),
+  });
+  const page = await context.newPage();
+  const bot = unique("Bot");
+  const hook = unique("Hook");
+
+  await page.goto("/settings/admin/apps");
+  await page.getByRole("link", { name: "Add Discord bot" }).click();
+  await page.getByLabel("Name").fill(bot);
+  await page
+    .getByLabel("Application ID from the Discord Developer Portal")
+    .fill("123456789012345678");
+  await page.getByRole("button", { name: "Add bot and show its token" }).click();
+  await expect(page.getByRole("dialog").getByLabel("Token")).toHaveValue(/^plsr_con_/);
+  await page.getByRole("dialog").getByRole("button", { name: "Done" }).click();
+
+  await page.getByRole("link", { name: "Add another app" }).click();
+  await page.getByLabel("Name").fill(hook);
+  await page.getByLabel("Kind").fill("example");
+  await page.getByRole("button", { name: "Add app and show its token" }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Done" }).click();
+  await expect(page.getByRole("listitem").filter({ hasText: bot })).toBeVisible();
+
+  await page.goto("/settings/apps");
+  // This instance has no Discord sign-in, so the section is named after the key.
+  const discord = page.getByRole("region", { name: "discord", exact: true });
+  await expect(discord.getByRole("region", { name: bot })).toBeVisible();
+  await expect(
+    discord.getByRole("region", { name: bot }).getByRole("link", { name: /Add in Discord/ }),
+  ).toHaveAttribute("href", /client_id=123456789012345678/);
+  await expect(
+    page.getByRole("region", { name: "example", exact: true }).getByRole("region", { name: hook }),
+  ).toBeVisible();
   await context.close();
 });

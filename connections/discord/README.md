@@ -29,8 +29,9 @@ Times can be typed the way you would say them, in English or German:
 
 A day without a time is an all-day deadline for `/deadline` and 09:00 for a reminder.
 
-To use the bot, add it to your Discord account with the install link of the instance you
-use and link your Discord account in the dashboard under Settings.
+To use the bot, link your Discord account in the dashboard under Settings, Apps, and add
+the bot to your Discord account with the button there. "Send test" shows that its reminders
+reach you.
 
 ## Running it
 
