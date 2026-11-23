@@ -199,3 +199,55 @@ test("a list of apps that did not load can be asked for again", async () => {
   await act(() => made.connect());
   expect(await screen.findByRole("button", { name: "Try again" })).toBeTruthy();
 });
+
+test("a Discord bot whose link was set by hand keeps it when saved twice", async () => {
+  const made = await renderApp({ path: "/settings/admin/apps/c", user: admin, info, hold: true });
+  made.route("GET", "/admin/connections", {
+    status: 200,
+    body: [app("c", "Custom", { install_url: "https://example.com/add" })],
+  });
+  made.route("PATCH", "/admin/connections/c", (call) => ({
+    status: 200,
+    body: { ...app("c", "Custom"), ...(call.body as object) },
+  }));
+  await act(() => made.connect());
+  const link = await screen.findByLabelText("Where users set it up");
+  await userEvent.clear(link);
+  await userEvent.type(link, discordInstallUrl(id));
+  await userEvent.click(screen.getByRole("button", { name: "Save" }));
+  await waitFor(() => expect(made.sent("PATCH", "/admin/connections/c")).toHaveLength(1));
+  await userEvent.click(screen.getByRole("button", { name: "Save" }));
+  await waitFor(() => expect(made.sent("PATCH", "/admin/connections/c")).toHaveLength(2));
+  expect(made.sent("PATCH", "/admin/connections/c")[1]!.body).toMatchObject({
+    install_url: discordInstallUrl(id),
+  });
+});
+
+test("an app added while the list did not load brings the whole list", async () => {
+  const made = await renderApp({
+    path: "/settings/admin/apps/new/other",
+    user: admin,
+    info,
+    hold: true,
+  });
+  made.route("GET", "/admin/connections", {
+    status: 500,
+    body: { error: { code: "internal", message: "no" } },
+  });
+  made.route("POST", "/admin/connections", (call) => ({
+    status: 201,
+    body: { ...app("n", "Hook"), ...(call.body as object), token: "plsr_con_x" },
+  }));
+  await act(() => made.connect());
+  await userEvent.type(await screen.findByLabelText("Name"), "Hook");
+  await userEvent.type(screen.getByLabelText("Kind"), "corp");
+  made.route("GET", "/admin/connections", {
+    status: 200,
+    body: [app("t", "Teamwork"), app("n", "Hook", { provider: "corp" })],
+  });
+  await userEvent.click(screen.getByRole("button", { name: "Add app and show its token" }));
+  await userEvent.click(
+    within(await screen.findByRole("dialog")).getByRole("button", { name: "Done" }),
+  );
+  expect(await screen.findByText("Teamwork")).toBeTruthy();
+});

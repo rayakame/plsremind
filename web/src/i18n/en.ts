@@ -263,6 +263,7 @@ export const en = {
   "plan.before": "Before the deadline",
   "plan.none": "None",
   "plan.add": "Add a time",
+  "plan.addIt": "Add",
   "plan.remove": "Remove {time}",
   "plan.newTime": "New time before the deadline",
   "plan.timeError": "Write a time like 2h or 1d.",

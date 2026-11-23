@@ -15,6 +15,12 @@ test("language and theme are chosen, apply at once and survive a reload @core", 
   await expect(page.getByRole("heading", { level: 1, name: "Profile" })).toBeVisible();
   await page.getByLabel("Language").selectOption("Deutsch");
   await expect(page.getByRole("heading", { level: 1, name: "Profil" })).toBeVisible();
+  await expect
+    .poll(async () => {
+      const user = await account.rest.getUser();
+      return "preferences" in user ? user.locale : null;
+    })
+    .toBe("de");
   await page.goto("/settings/look");
   await page.getByRole("button", { name: "Dunkel" }).click();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");

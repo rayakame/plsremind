@@ -12,7 +12,7 @@ import { Icon } from "../../ui/icon.js";
 import { LoadFailed } from "../../ui/load-failed.js";
 import { formatMoment } from "../item/labels.js";
 import { rememberLinkOrigin } from "../linked-origin.js";
-import { isRunning, useAppTest, type TestState } from "./app-test.js";
+import { isRunning, testShown, useAppTest, type TestState } from "./app-test.js";
 import {
   accessOf,
   grantFor,
@@ -138,7 +138,11 @@ function AppCard(props: {
       </div>
       <div className="between">
         <div role="status" className="fill">
-          {test ? <TestLine state={test} /> : <StatusLine app={app} />}
+          {test && testShown(test, app.lastDelivery) ? (
+            <TestLine state={test} />
+          ) : (
+            <StatusLine app={app} />
+          )}
         </div>
         {canTest && (
           <Button variant={failed ? undefined : "ghost"} disabled={running} onClick={props.onTest}>

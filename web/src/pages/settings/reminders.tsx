@@ -130,7 +130,7 @@ function PlanCard({ plan }: { plan: ReminderPlan }) {
           )}
         </div>
         {adding && (
-          <form className="line" onSubmit={add}>
+          <form className="stack" onSubmit={add}>
             <Field label={t("plan.newTime")} error={error}>
               <Input
                 autoFocus
@@ -141,6 +141,14 @@ function PlanCard({ plan }: { plan: ReminderPlan }) {
                 onKeyDown={escape}
               />
             </Field>
+            <div className="line">
+              <Button variant="primary" type="submit">
+                {t("plan.addIt")}
+              </Button>
+              <Button variant="ghost" onClick={close}>
+                {t("common.cancel")}
+              </Button>
+            </div>
           </form>
         )}
       </div>

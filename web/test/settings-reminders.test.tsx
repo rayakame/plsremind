@@ -115,3 +115,13 @@ test("the focus stays near the chips, and Escape puts the new time away", async 
     expect(document.activeElement).toBe(plan("Low").getByRole("button", { name: "Add a time" })),
   );
 });
+
+test("a new time can also be added with a button", async () => {
+  const app = await reminders();
+  await userEvent.click(plan("Low").getByRole("button", { name: "Add a time" }));
+  await userEvent.type(plan("Low").getByLabelText("New time before the deadline"), "3h");
+  await userEvent.click(plan("Low").getByRole("button", { name: "Add" }));
+  await waitFor(() =>
+    expect(sent(app).at(-1)).toEqual(["low", { before: ["3h"], follow_up: "never" }]),
+  );
+});

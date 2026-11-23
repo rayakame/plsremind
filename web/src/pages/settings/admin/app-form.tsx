@@ -31,8 +31,10 @@ export function AppForm(props: {
   const t = useT();
   const { app } = props;
   const knownId = app ? discordApplicationIdOf(app.installUrl) : undefined;
-  // A link someone set by hand is shown as it is rather than lost.
-  const byId = props.kind === "discord" && (!app || app.installUrl === "" || knownId !== undefined);
+  // A link someone set by hand is shown as it is rather than lost; the field stays while editing.
+  const [byId] = useState(
+    props.kind === "discord" && (!app || app.installUrl === "" || knownId !== undefined),
+  );
   const [name, setName] = useState(app?.name ?? "");
   const [description, setDescription] = useState(app?.description ?? "");
   const [provider, setProvider] = useState(app?.provider ?? "");

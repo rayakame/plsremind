@@ -1,4 +1,4 @@
-import { ApiError, type ConnectionTest } from "plsremind";
+import { ApiError, type ConnectionTest, type LastDelivery } from "plsremind";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { describeError } from "../../hub/errors.js";
 import { useHub } from "../../hub/session.js";
@@ -23,6 +23,13 @@ export type TestState =
 /** Whether a test is still under way, so that another must wait. */
 export function isRunning(state: TestState | undefined): boolean {
   return state?.status === "starting" || state?.status === "pending";
+}
+
+/** Whether a test should show rather than the last delivery: until something newer happened. */
+export function testShown(state: TestState | undefined, last: LastDelivery | null): boolean {
+  if (!state) return false;
+  if (!("closedAt" in state) || state.closedAt === null || last === null) return true;
+  return last.at.getTime() <= state.closedAt.getTime();
 }
 
 /** Starts tests of apps and follows each until the app answers, then calls done. */

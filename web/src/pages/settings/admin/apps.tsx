@@ -214,7 +214,10 @@ function NewApp(props: { kind: "discord" | "other"; onCreated: (app: Connection)
 export function AdminApps({ rest }: { rest: string | undefined }) {
   const { client } = useHub();
   const apps = useLoaded((signal) => client.rest.listConnections({ signal }), client);
-  const add = (app: Connection) => apps.setData((before) => [...(before ?? []), app]);
+  const add = (app: Connection) => {
+    if (apps.data) apps.setData((before) => [...(before ?? []), app]);
+    else apps.reload();
+  };
 
   if (rest === "new/discord" || rest === "new/other") {
     return <NewApp kind={rest === "new/discord" ? "discord" : "other"} onCreated={add} />;

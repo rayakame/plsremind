@@ -271,6 +271,7 @@ export const de: Texts = {
   "plan.before": "Vor der Frist",
   "plan.none": "Keine",
   "plan.add": "Zeitpunkt hinzufügen",
+  "plan.addIt": "Hinzufügen",
   "plan.remove": "{time} entfernen",
   "plan.newTime": "Neuer Zeitpunkt vor der Frist",
   "plan.timeError": "Schreib einen Zeitpunkt wie 2h oder 1d.",
