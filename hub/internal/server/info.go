@@ -25,7 +25,7 @@ func info(d *core.Deps) fiber.Handler {
 		}
 		loginMethods := make([]fiber.Map, 0, len(methods))
 		for _, m := range methods {
-			loginMethods = append(loginMethods, fiber.Map{"key": m.Key, "type": m.Type, "name": m.Name})
+			loginMethods = append(loginMethods, fiber.Map{"key": m.Key, "type": m.Type, "name": m.Name, "login": m.LoginEnabled, "link": m.LinkEnabled})
 		}
 		return c.JSON(fiber.Map{
 			"name":           settings.Name,

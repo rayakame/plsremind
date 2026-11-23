@@ -50,8 +50,8 @@ test("other ways to sign in are links to the hub", async () => {
     user: null,
     info: {
       login_methods: [
-        { key: "password", type: "password", name: "Password" },
-        { key: "gh", type: "github", name: "GitHub" },
+        { key: "password", type: "password", name: "Password", login: true, link: false },
+        { key: "gh", type: "github", name: "GitHub", login: true, link: true },
       ],
     },
   });
@@ -60,11 +60,28 @@ test("other ways to sign in are links to the hub", async () => {
   );
 });
 
+test("the login page offers only providers that log in", async () => {
+  await renderApp({
+    user: null,
+    info: {
+      login_methods: [
+        { key: "password", type: "password", name: "Password", login: true, link: false },
+        { key: "gh", type: "github", name: "GitHub", login: true, link: true },
+        { key: "discord", type: "discord", name: "Discord", login: false, link: true },
+      ],
+    },
+  });
+  expect(screen.getByRole("link", { name: "Continue with GitHub" })).toBeTruthy();
+  expect(screen.queryByRole("link", { name: "Continue with Discord" })).toBeNull();
+});
+
 test("signing in elsewhere remembers the page one came for", async () => {
   await renderApp({
     user: null,
     path: "/login?next=%2Fcalendar",
-    info: { login_methods: [{ key: "gh", type: "github", name: "GitHub" }] },
+    info: {
+      login_methods: [{ key: "gh", type: "github", name: "GitHub", login: true, link: true }],
+    },
   });
   const link = screen.getByRole("link", { name: "Continue with GitHub" });
   link.addEventListener("click", (event) => event.preventDefault());

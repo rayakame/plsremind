@@ -57,7 +57,9 @@ export function fakeHub(options: HubOptions = {}) {
       gateway_url: "ws://hub.test/api/v1/gateway",
       setup_required: false,
       registration: "open",
-      login_methods: [{ key: "password", type: "password", name: "Password" }],
+      login_methods: [
+        { key: "password", type: "password", name: "Password", login: true, link: false },
+      ],
       ...options.info,
     },
   });

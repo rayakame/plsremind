@@ -122,13 +122,17 @@ func (q *Queries) GetSessionUser(ctx context.Context, arg GetSessionUserParams) 
 }
 
 const listLoginMethods = `-- name: ListLoginMethods :many
-SELECT key, type, name FROM login_providers WHERE login_enabled ORDER BY type = 'password' DESC, key
+SELECT key, type, name, login_enabled, link_enabled FROM login_providers
+WHERE login_enabled OR link_enabled
+ORDER BY type = 'password' DESC, key
 `
 
 type ListLoginMethodsRow struct {
-	Key  string
-	Type string
-	Name string
+	Key          string
+	Type         string
+	Name         string
+	LoginEnabled bool
+	LinkEnabled  bool
 }
 
 func (q *Queries) ListLoginMethods(ctx context.Context) ([]ListLoginMethodsRow, error) {
@@ -140,7 +144,13 @@ func (q *Queries) ListLoginMethods(ctx context.Context) ([]ListLoginMethodsRow, 
 	var items []ListLoginMethodsRow
 	for rows.Next() {
 		var i ListLoginMethodsRow
-		if err := rows.Scan(&i.Key, &i.Type, &i.Name); err != nil {
+		if err := rows.Scan(
+			&i.Key,
+			&i.Type,
+			&i.Name,
+			&i.LoginEnabled,
+			&i.LinkEnabled,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

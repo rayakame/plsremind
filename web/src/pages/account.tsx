@@ -86,7 +86,9 @@ export function takeNext(): string | null {
 function Providers(props: { info: Info; rest: RestClient; inviteCode?: string }) {
   const t = useT();
   const next = new URLSearchParams(useSearch()).get("next");
-  const others = props.info.loginMethods.filter((method) => method.type !== "password");
+  const others = props.info.loginMethods.filter(
+    (method) => method.type !== "password" && method.login,
+  );
   if (others.length === 0) return null;
   return (
     <div className="stack">
@@ -107,7 +109,8 @@ function Providers(props: { info: Info; rest: RestClient; inviteCode?: string })
   );
 }
 
-const hasPassword = (info: Info) => info.loginMethods.some((method) => method.type === "password");
+const hasPassword = (info: Info) =>
+  info.loginMethods.some((method) => method.type === "password" && method.login);
 
 export function LoginPage(props: { info: Info; rest: RestClient }) {
   const t = useT();

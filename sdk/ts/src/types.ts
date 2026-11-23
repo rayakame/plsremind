@@ -19,6 +19,10 @@ export interface LoginMethod {
   readonly key: string;
   readonly type: ProviderType;
   readonly name: string;
+  /** Whether people can log in with it. */
+  readonly login: boolean;
+  /** Whether logged-in users can link their account there. */
+  readonly link: boolean;
 }
 
 export interface Info {

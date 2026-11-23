@@ -134,6 +134,10 @@ class LoginMethod(msgspec.Struct, frozen=True, kw_only=True, gc=False):
     key: str
     type: ProviderType
     name: str
+    login: bool
+    """Whether people can log in with it."""
+    link: bool
+    """Whether logged-in users can link their account there."""
 
 
 class Info(msgspec.Struct, frozen=True, kw_only=True, gc=False):

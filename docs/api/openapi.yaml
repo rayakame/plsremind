@@ -1778,9 +1778,10 @@ components:
           enum: [open, invite]
         login_methods:
           type: array
+          description: Every provider that allows logging in, linking or both.
           items:
             type: object
-            required: [key, type, name]
+            required: [key, type, name, login, link]
             properties:
               key:
                 type: string
@@ -1789,6 +1790,12 @@ components:
                 enum: [password, github, discord, oidc]
               name:
                 type: string
+              login:
+                type: boolean
+                description: Whether people can log in with it.
+              link:
+                type: boolean
+                description: Whether logged-in users can link their account there.
     OptionalQuietHours:
       description: Null while quiet hours are off, which is the default.
       oneOf:

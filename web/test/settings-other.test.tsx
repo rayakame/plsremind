@@ -33,9 +33,9 @@ const identities = [
 ];
 const info = {
   login_methods: [
-    { key: "password", type: "password", name: "Password" },
-    { key: "discord", type: "discord", name: "Discord" },
-    { key: "gh", type: "github", name: "GitHub" },
+    { key: "password", type: "password", name: "Password", login: true, link: false },
+    { key: "discord", type: "discord", name: "Discord", login: true, link: true },
+    { key: "gh", type: "github", name: "GitHub", login: true, link: true },
   ],
 };
 

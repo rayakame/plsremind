@@ -138,6 +138,15 @@ def test_connection_intents_are_flags() -> None:
     assert newer.intents == Intents.ITEMS
 
 
+def test_a_login_method_says_whether_it_logs_in_and_links() -> None:
+    info = decode(
+        models.Info,
+        {**fixtures.INFO, "login_methods": [{"key": "discord", "type": "discord", "name": "Discord", "login": False, "link": True}]},
+    )
+    assert info.login_methods[0].login is False
+    assert info.login_methods[0].link is True
+
+
 def test_delivery() -> None:
     delivery = decode(models.Delivery, fixtures.DELIVERY)
     assert delivery.reminder.kind is ReminderKind.BEFORE
