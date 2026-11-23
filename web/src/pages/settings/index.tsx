@@ -14,15 +14,24 @@ import { AdminProviders } from "./admin/providers.js";
 import { AdminUsers } from "./admin/users.js";
 import { needsAttention } from "./apps-model.js";
 import { ConnectionSettings } from "./connections.js";
-import { LoginSettings } from "./login.js";
+import { KeySettings } from "./keys.js";
+import { LookSettings } from "./look.js";
 import { legacySettings, settingsPages, SettingsNav } from "./nav.js";
-import { PersonalSettings } from "./personal.js";
+import { ProfileSettings } from "./profile.js";
+import { ReminderSettings } from "./reminders.js";
+import { SecuritySettings } from "./security.js";
 import { TokenSettings } from "./tokens.js";
 
 function Content({ page }: { page: string }) {
   switch (page) {
     case "security":
-      return <LoginSettings />;
+      return <SecuritySettings />;
+    case "reminders":
+      return <ReminderSettings />;
+    case "look":
+      return <LookSettings />;
+    case "keys":
+      return <KeySettings />;
     case "apps":
       return <ConnectionSettings />;
     case "tokens":
@@ -41,7 +50,7 @@ function Content({ page }: { page: string }) {
     case "admin/apps":
       return <AdminConnections />;
     default:
-      return <PersonalSettings />;
+      return <ProfileSettings />;
   }
 }
 

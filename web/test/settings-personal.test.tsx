@@ -49,7 +49,10 @@ test("name, zone and language are saved to the profile", async () => {
 });
 
 test("theme and week start apply at once and keep what other clients stored", async () => {
-  const app = await personal({ user: wireUser({ locale: "en", preferences: { other: 1 } }) });
+  const app = await personal({
+    path: "/settings/look",
+    user: wireUser({ locale: "en", preferences: { other: 1 } }),
+  });
   await userEvent.click(screen.getByRole("button", { name: "Dark" }));
   expect(document.documentElement.dataset.theme).toBe("dark");
   await userEvent.click(screen.getByRole("button", { name: "Sunday" }));
@@ -61,7 +64,7 @@ test("theme and week start apply at once and keep what other clients stored", as
 });
 
 test("quiet hours are switched on with times and off again", async () => {
-  const app = await personal();
+  const app = await personal({ path: "/settings/reminders" });
   await userEvent.click(screen.getByRole("checkbox", { name: "Quiet hours" }));
   await waitFor(() => expect(sent(app)).toHaveLength(1));
   expect(sent(app)[0]).toEqual({ quiet_hours: { start: "22:00", end: "07:00" } });
@@ -76,6 +79,7 @@ test("quiet hours are switched on with times and off again", async () => {
 
 test("a reminder plan takes durations, a follow-up and can go back to the default", async () => {
   const app = await personal({
+    path: "/settings/reminders",
     sync: {
       plans: [
         wirePlan({ priority: "low" }),
@@ -108,7 +112,7 @@ test("a reminder plan takes durations, a follow-up and can go back to the defaul
 });
 
 test("the command prefix must be one character that is not a letter or digit", async () => {
-  const app = await personal();
+  const app = await personal({ path: "/settings/keys" });
   const prefix = screen.getByLabelText("Command prefix");
   await userEvent.clear(prefix);
   await userEvent.type(prefix, "a");
@@ -125,7 +129,7 @@ test("the command prefix must be one character that is not a letter or digit", a
 });
 
 test("a key is changed by pressing the new one, refused when taken, and reset", async () => {
-  const app = await personal();
+  const app = await personal({ path: "/settings/keys" });
   const keys = within(screen.getByRole("group", { name: "Keys" }));
   await userEvent.click(
     keys.getByRole("button", { name: "Change the key for Complete the selected item" }),
