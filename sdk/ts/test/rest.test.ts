@@ -360,3 +360,18 @@ test("login methods of a hub that does not say whether they link log in and do n
   const info = await rest.getInfo();
   expect(info.loginMethods[0]).toMatchObject({ login: true, link: false });
 });
+
+test("a picture whose answer breaks off is a network error", async () => {
+  const broken = new ReadableStream({
+    start(controller) {
+      controller.error(new Error("cut"));
+    },
+  });
+  const rest = new RestClient({
+    url: "https://hub.test/",
+    token: "plsr_pat_x",
+    fetch: async () =>
+      new Response(broken, { status: 200, headers: { "content-type": "image/png" } }),
+  });
+  await expect(rest.getIdentityAvatar("i1")).rejects.toBeInstanceOf(NetworkError);
+});

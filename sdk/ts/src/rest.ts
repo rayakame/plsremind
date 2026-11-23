@@ -194,7 +194,14 @@ export class RestClient {
           continue;
         }
       }
-      if (request.raw && response.ok) return (await response.blob()) as T;
+      if (request.raw && response.ok) {
+        try {
+          return (await response.blob()) as T;
+        } catch (cause) {
+          if (signal?.aborted) throw cause;
+          throw new NetworkError(`The answer to ${method} ${target} broke off.`, cause);
+        }
+      }
       return read<T>(response, method, target, signal);
     }
   }
