@@ -8,7 +8,7 @@ import { routes } from "../../shell/router.js";
 import { Icon } from "../../ui/icon.js";
 import { useNarrow } from "../../ui/layout-mode.js";
 import { NotFound } from "../not-found.js";
-import { AdminConnections } from "./admin/connections.js";
+import { AdminApps } from "./admin/apps.js";
 import { AdminInstance } from "./admin/instance.js";
 import { AdminInvites } from "./admin/invites.js";
 import { AdminProviders } from "./admin/providers.js";
@@ -23,7 +23,12 @@ import { ReminderSettings } from "./reminders.js";
 import { SecuritySettings } from "./security.js";
 import { TokenSettings } from "./tokens.js";
 
-function Content({ page, apps }: { page: string; apps: Loaded<UserConnection[]> }) {
+function Content(props: {
+  page: string;
+  rest: string | undefined;
+  apps: Loaded<UserConnection[]>;
+}) {
+  const { page, apps } = props;
   switch (page) {
     case "security":
       return <SecuritySettings />;
@@ -49,16 +54,13 @@ function Content({ page, apps }: { page: string; apps: Loaded<UserConnection[]> 
     case "admin/providers":
       return <AdminProviders />;
     case "admin/apps":
-      return <AdminConnections />;
+      return <AdminApps rest={props.rest} />;
     default:
       return <ProfileSettings />;
   }
 }
 
-export default function SettingsPage(props: {
-  area: string | undefined;
-  section: string | undefined;
-}) {
+export default function SettingsPage(props: { path: string | undefined }) {
   const t = useT();
   const { client } = useHub();
   const profile = useProfile();
@@ -67,8 +69,8 @@ export default function SettingsPage(props: {
   const warn = needsAttention(apps.data ?? []);
   const allowed = settingsPages.filter((page) => !page.admin || profile.role === "admin");
 
-  const id = props.section ? `${props.area}/${props.section}` : props.area;
-  if (id === undefined) {
+  const id = props.path?.replace(/\/+$/, "");
+  if (!id) {
     if (!narrow) return <Redirect to={routes.settings("profile")} replace />;
     return (
       <div className="scroll col">
@@ -79,8 +81,9 @@ export default function SettingsPage(props: {
   }
   const moved = legacySettings[id];
   if (moved !== undefined) return <Redirect to={routes.settings(moved)} replace />;
-  const page = allowed.find((one) => one.id === id);
-  if (!page) return <NotFound />;
+  const page = allowed.find((one) => id === one.id || id.startsWith(`${one.id}/`));
+  const rest = page && id !== page.id ? id.slice(page.id.length + 1) : undefined;
+  if (!page || (rest !== undefined && page.id !== "admin/apps")) return <NotFound />;
 
   return (
     <div className="scroll col">
@@ -94,7 +97,7 @@ export default function SettingsPage(props: {
             </Link>
           )}
           <h1 className="h1">{t(page.label)}</h1>
-          <Content page={page.id} apps={apps} />
+          <Content page={page.id} rest={rest} apps={apps} />
         </div>
       </div>
     </div>

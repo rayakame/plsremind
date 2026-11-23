@@ -61,6 +61,7 @@ function ProviderCard(props: {
           <Field label={t("provider.name")}>
             <Input value={name} onChange={(event) => setName(event.target.value)} required />
           </Field>
+          {external && <p className="text dim">{t("provider.forApps")}</p>}
           <Toggle label={t("provider.login")} checked={login} onChange={setLogin} />
           <Toggle label={t("provider.link")} checked={link} onChange={setLink} />
           {external && (

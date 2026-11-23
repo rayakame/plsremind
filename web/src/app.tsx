@@ -132,10 +132,10 @@ function SignedIn() {
                     <DonePage />
                   </Route>
                   <Route path="/items/:id">{(params) => <ItemPage id={params.id} />}</Route>
-                  <Route path="/settings/:area?/:section?">
+                  <Route path="/settings/*?">
                     {(params) => (
                       <Suspense fallback={null}>
-                        <SettingsPage area={params.area} section={params.section} />
+                        <SettingsPage path={params["*"] || undefined} />
                       </Suspense>
                     )}
                   </Route>

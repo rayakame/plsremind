@@ -17,6 +17,7 @@ export function SecretDialog(props: {
   title: string;
   label: string;
   value: string;
+  hint?: string;
   onClose: () => void;
 }) {
   const t = useT();
@@ -32,6 +33,7 @@ export function SecretDialog(props: {
   return (
     <Dialog title={props.title} onClose={props.onClose} sticky>
       <p className="text">{t("tokens.once")}</p>
+      {props.hint && <p className="text dim">{props.hint}</p>}
       <Field label={props.label}>
         <Input
           className="mono"
