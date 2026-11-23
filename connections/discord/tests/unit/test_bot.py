@@ -178,7 +178,7 @@ async def test_on_the_way_out_what_waits_for_discord_is_let_go_unheard() -> None
 @pytest.mark.parametrize(
     ("failure", "said"),
     [
-        (common.NotYoursError(), "nicht mit plsremind verbunden"),
+        (common.NotYoursError(), "nicht mit plsremind verknüpft"),
         (plsremind.NetworkError("no route"), "Das hat nicht geklappt"),
     ],
 )
@@ -219,7 +219,7 @@ async def test_a_click_while_the_bot_is_starting_says_so_instead_of_blaming_the_
     built = [builder.build()[0] for builder in ctx.respond.await_args.kwargs["components"]]
     said = "\n".join(discord.payload_texts(built))
     assert "Der Bot startet gerade" in said
-    assert "nicht mit plsremind verbunden" not in said
+    assert "nicht mit plsremind verknüpft" not in said
     assert discord.counted(given.metrics, "plsremind_discord_interaction_failures_total", kind="component") == 0
 
 

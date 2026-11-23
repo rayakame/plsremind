@@ -126,7 +126,9 @@ class Reminders:
         if result == "sent":
             await self._hub.tested(test.id)
             return
-        reason = {"closed": "delivery.closed_dms", "refused": "delivery.refused"}.get(result, "test.trouble")
+        reason = {"closed": "delivery.closed_dms", "refused": "delivery.refused", "error": "test.error"}.get(
+            result, "test.trouble"
+        )
         await self._hub.test_failed(test.id, self._texts(reason, locale))
 
     async def _probe(self, accounts: list[int], rendered: ui.Rendered) -> str:

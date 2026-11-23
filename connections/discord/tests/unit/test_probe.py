@@ -137,5 +137,5 @@ async def test_an_unforeseen_error_is_logged_and_reported(made: Made, caplog: py
     made.rest.create_dm_channel.side_effect = RuntimeError("boom")
     await made.reminders.probe(things.probe())
     assert "test" in caplog.text
-    assert str(made.hub.named("test_failed")[0]["reason"]).startswith("Discord war gerade nicht erreichbar")
+    assert str(made.hub.named("test_failed")[0]["reason"]).startswith("Beim Bot ist etwas schiefgegangen")
     assert discord.counted(made.metrics, TESTS, result="error") == 1

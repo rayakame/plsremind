@@ -96,6 +96,9 @@ msgstr "Discord hat die Erinnerung nicht angenommen."
 msgid "test.message"
 msgstr "Test: Hier kommen deine Erinnerungen an."
 
+msgid "test.error"
+msgstr "Beim Bot ist etwas schiefgegangen. Sein Log sagt, was."
+
 msgid "test.trouble"
 msgstr "Discord war gerade nicht erreichbar. Versuch den Test gleich noch einmal."
 
@@ -196,7 +199,7 @@ msgid "error.time_unreadable"
 msgstr "Diese Zeit habe ich nicht verstanden. Versuch zum Beispiel: morgen 9, in 2h, fr 18:00"
 
 msgid "error.not_linked"
-msgstr "Dein Discord-Konto ist nicht mit plsremind verbunden, oder die Discord-Connection ist ausgeschaltet."
+msgstr "Dein Discord-Konto ist nicht mit plsremind verknüpft, oder dieser Bot ist für dich ausgeschaltet."
 
 msgid "error.failed"
 msgstr "Das hat nicht geklappt. Bitte versuch es noch einmal."
