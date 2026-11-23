@@ -1,6 +1,7 @@
 import type {
   Delivery,
   DeliveryStatus,
+  DeliveryTest,
   Intent,
   Item,
   List,
@@ -75,6 +76,13 @@ export interface DeliveryCreatedEvent {
   readonly data: Delivery;
 }
 
+export interface DeliveryTestEvent {
+  readonly userId: string;
+  readonly actor: null;
+  readonly nonce: null;
+  readonly data: DeliveryTest;
+}
+
 export interface DeliveryClosedEvent {
   readonly userId: string;
   readonly actor: null;
@@ -146,6 +154,8 @@ export interface EventMap {
   "plan.updated": PlanUpdatedEvent;
   "delivery.created": DeliveryCreatedEvent;
   "delivery.closed": DeliveryClosedEvent;
+  /** The user asked to see that this app reaches them; answer with `rest.reportTest`. */
+  "delivery.test": DeliveryTestEvent;
   /** After every new login, once the state of every user is complete. */
   ready: ReadyEvent;
   /** One user's state is complete. */
@@ -179,4 +189,5 @@ export const hubEventNames = [
   "plan.updated",
   "delivery.created",
   "delivery.closed",
+  "delivery.test",
 ] as const satisfies readonly (keyof EventMap)[];

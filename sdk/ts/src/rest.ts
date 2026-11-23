@@ -3,6 +3,7 @@ import { ApiError, NetworkError } from "./errors.js";
 import type {
   AdminUser,
   Connection,
+  ConnectionTest,
   Delivery,
   DeliveryResult,
   FollowUp,
@@ -102,6 +103,10 @@ interface Request {
   body?: unknown;
   user?: boolean;
   options?: WriteOptions | undefined;
+  /** The answer is a file, not JSON. */
+  raw?: boolean;
+  /** A 429 is handed to the caller at once. */
+  noRetry?: boolean;
 }
 
 const maxRetries = 3;
@@ -159,7 +164,7 @@ export class RestClient {
         if (value !== null) url.searchParams.set(key, String(value));
       }
     }
-    const headers: Record<string, string> = { accept: "application/json" };
+    const headers: Record<string, string> = { accept: request.raw ? "*/*" : "application/json" };
     if (this.#token !== undefined) headers.authorization = `Bearer ${this.#token}`;
     if (typeof options?.nonce === "string") headers["x-request-nonce"] = options.nonce;
     const init: RequestInit = { method, headers };
@@ -179,7 +184,7 @@ export class RestClient {
         if (signal?.aborted) throw cause;
         throw new NetworkError(`The hub did not answer ${method} ${target}.`, cause);
       }
-      if (response.status === 429 && this.#retry && attempt < maxRetries) {
+      if (response.status === 429 && this.#retry && !request.noRetry && attempt < maxRetries) {
         const asked = response.headers.get("retry-after");
         const wait = asked === null || asked.trim() === "" ? Number.NaN : Number(asked) * 1000;
         if (wait >= 0 && wait < longestWait) {
@@ -188,6 +193,7 @@ export class RestClient {
           continue;
         }
       }
+      if (request.raw && response.ok) return (await response.blob()) as T;
       return read<T>(response, method, target, signal);
     }
   }
@@ -252,6 +258,21 @@ export class RestClient {
 
   listIdentities(options?: UserOptions): Promise<Identity[]> {
     return this.#request("GET", "/identities", { user: true, options });
+  }
+
+  /** The address of a linked account's picture, for an `<img>` in a browser that is logged in. */
+  identityAvatarUrl(id: string, options?: UserOptions): string {
+    const named = typeof options?.user === "string" ? options.user : "@me";
+    const user = named === "@me" ? named : seg(named);
+    return `${this.#base}/users/${user}/identities/${seg(id)}/avatar`;
+  }
+
+  getIdentityAvatar(id: string, options?: UserOptions): Promise<Blob> {
+    return this.#request("GET", `/identities/${seg(id)}/avatar`, {
+      user: true,
+      options,
+      raw: true,
+    });
   }
 
   unlinkIdentity(id: string, options?: WriteOptions): Promise<void> {
@@ -462,6 +483,23 @@ export class RestClient {
     return this.#request("PUT", `/connections/${seg(id)}`, { user: true, body: grant, options });
   }
 
+  /** Asks the app to show that it reaches the user. Too soon after the last one is a 429 at once. */
+  startConnectionTest(id: string, options?: WriteOptions): Promise<ConnectionTest> {
+    // Waiting out the limit would look like a button that hangs.
+    return this.#request("POST", `/connections/${seg(id)}/tests`, {
+      user: true,
+      options,
+      noRetry: true,
+    });
+  }
+
+  getConnectionTest(id: string, testId: string, options?: UserOptions): Promise<ConnectionTest> {
+    return this.#request("GET", `/connections/${seg(id)}/tests/${seg(testId)}`, {
+      user: true,
+      options,
+    });
+  }
+
   listConnections(options?: CallOptions): Promise<Connection[]> {
     return this.#request("GET", "/admin/connections", { options });
   }
@@ -472,6 +510,7 @@ export class RestClient {
       provider: string;
       description?: string;
       allowedIntents?: readonly Intent[];
+      installUrl?: string;
     },
     options?: CallOptions,
   ): Promise<Connection> {
@@ -485,6 +524,7 @@ export class RestClient {
       description?: string;
       enabled?: boolean;
       allowedIntents?: readonly Intent[];
+      installUrl?: string;
     },
     options?: CallOptions,
   ): Promise<Connection> {
@@ -524,6 +564,15 @@ export class RestClient {
     options?: CallOptions,
   ): Promise<DeliveryResult> {
     return this.#request("PUT", `/deliveries/${seg(id)}`, { body: outcome, options });
+  }
+
+  /** Says how a test the user asked for went, which the user gets to see. */
+  reportTest(
+    id: string,
+    outcome: { status: "delivered" } | { status: "failed"; reason: string },
+    options?: CallOptions,
+  ): Promise<ConnectionTest> {
+    return this.#request("PUT", `/deliveries/tests/${seg(id)}`, { body: outcome, options });
   }
 
   listReminderLog(

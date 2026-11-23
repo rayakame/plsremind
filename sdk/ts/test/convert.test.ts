@@ -1,6 +1,13 @@
 import { expect, test } from "vitest";
 import { fromWire, microsOf, toWire } from "../src/convert.js";
-import type { Delivery, Item, ReminderPlan, User } from "../src/index.js";
+import type {
+  ConnectionTest,
+  Delivery,
+  Item,
+  ReminderPlan,
+  User,
+  UserConnection,
+} from "../src/index.js";
 import { wireDelivery, wireItem, wirePlan, wireUser } from "./fixtures.js";
 
 test("an item arrives with idiomatic names and real types", () => {
@@ -111,4 +118,43 @@ test("a value in a form the SDK does not know is left as it came", () => {
     before: ["1d", "2w"],
     dueAt: "soon",
   });
+});
+
+test("an app tells how its last delivery went, and a test carries its dates", () => {
+  const app = fromWire<UserConnection>({
+    id: "c1",
+    name: "Bot",
+    description: "",
+    provider: "discord",
+    linked: true,
+    enabled: true,
+    remind: true,
+    intents: ["deliveries"],
+    install_url: "https://discord.com/oauth2/authorize?client_id=1",
+    last_delivery: {
+      status: "failed",
+      reason: "DMs are closed",
+      at: "2026-11-12T18:00:00Z",
+      test: true,
+    },
+  });
+  expect(app.installUrl).toBe("https://discord.com/oauth2/authorize?client_id=1");
+  expect(app.lastDelivery).toEqual({
+    status: "failed",
+    reason: "DMs are closed",
+    at: new Date("2026-11-12T18:00:00Z"),
+    test: true,
+  });
+  const open = fromWire<ConnectionTest>({
+    id: "t1",
+    connection_id: "c1",
+    status: "pending",
+    reason: "",
+    created_at: "2026-11-12T18:00:00Z",
+    closed_at: null,
+  });
+  expect(open.closedAt).toBeNull();
+  expect(open.connectionId).toBe("c1");
+  const done = fromWire<ConnectionTest>({ ...open, closed_at: "2026-11-12T18:00:05Z" });
+  expect(done.closedAt).toEqual(new Date("2026-11-12T18:00:05Z"));
 });

@@ -539,3 +539,27 @@ test("close inside ready and connect inside closed both do what they say", async
   await again;
   expect(client.status).toBe("connected");
 });
+
+test("a test reaches the listeners of delivery.test", async () => {
+  const { client, socket } = await connected();
+  const tests: string[] = [];
+  client.on("delivery.test", (event) =>
+    tests.push(`${event.data.id} ${event.data.user.externalIds?.join(",")}`),
+  );
+  socket.dispatch(
+    "delivery.test",
+    change("u1", {
+      id: "t1",
+      user: {
+        id: "u1",
+        display_name: "Mia",
+        timezone: "UTC",
+        locale: null,
+        external_ids: ["1234"],
+      },
+    }),
+    null,
+  );
+  await settle();
+  expect(tests).toEqual(["t1 1234"]);
+});

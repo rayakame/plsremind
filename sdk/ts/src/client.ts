@@ -25,6 +25,7 @@ const withoutOld: ReadonlySet<string> = new Set([
   "user.gone",
   "delivery.created",
   "delivery.closed",
+  "delivery.test",
 ]);
 
 type Listen = (name: string, listener: () => void) => void;
