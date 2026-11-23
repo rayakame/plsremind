@@ -172,6 +172,7 @@ def listen(client: plsremind.Client, *, reminders: Reminders, sync: Sync, gate: 
 
     client.subscribe(plsremind.DeliveryCreateEvent, once_up(due))
     client.subscribe(plsremind.DeliveryCloseEvent, withdrawn)
+    client.subscribe(plsremind.DeliveryTestEvent, once_up(lambda event: reminders.probe(event.test)))
     client.subscribe(plsremind.ItemUpdateEvent, once_up(sync.item_changed))
     client.subscribe(plsremind.ItemDeleteEvent, once_up(sync.item_changed))
     client.subscribe(plsremind.ListUpdateEvent, once_up(sync.list_changed))

@@ -32,6 +32,11 @@ class Metrics:
             "Tries to send a reminder, by result.",
             result=("sent", "closed", "refused", "no_account", "passing", "unreadable", "error"),
         )
+        self.tests: typing.Final = self._counter(
+            "plsremind_discord_tests_total",
+            "Test reminders users asked for, by result.",
+            result=("sent", "closed", "refused", "no_account", "trouble", "error"),
+        )
         self.deliveries_waiting: typing.Final = prometheus_client.Gauge(
             "plsremind_discord_deliveries_waiting", "Deliveries that are tried again later.", registry=self.registry
         )

@@ -230,6 +230,14 @@ class FakeHub(Hub):
     async def failed(self, delivery: plsremind.ID, reason: str) -> None:
         self._called("failed", delivery=delivery, reason=reason)
 
+    @typing.override
+    async def tested(self, test: plsremind.ID) -> None:
+        self._called("tested", test=test)
+
+    @typing.override
+    async def test_failed(self, test: plsremind.ID, reason: str) -> None:
+        self._called("test_failed", test=test, reason=reason)
+
     def _items(self, user: plsremind.ID) -> dict[plsremind.ID, plsremind.Item]:
         return self.their_items.setdefault(user, {})
 

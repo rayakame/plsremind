@@ -22,6 +22,7 @@ from plsremind_discord.metrics import Metrics
 from plsremind_discord.store import Sent
 from plsremind_discord.store import Store
 from plsremind_discord.views import common
+from plsremind_discord.views.common import Notice
 from plsremind_discord.views.reminder import ReminderView
 
 RETRY_AFTER: typing.Final = (60.0, 300.0, 900.0)
@@ -106,6 +107,49 @@ class Reminders:
         task = self._tries.pop(delivery_id, None)
         if task is not None:
             task.cancel()
+
+    async def probe(self, test: plsremind.DeliveryTest) -> None:
+        """Show the user that their reminders reach them here, and tell the hub how it went."""
+        locale = texts_.locale_for(test.user, None)
+        accounts = list(accounts_of(test.user.external_ids))
+        if not accounts:
+            self._metrics.tests.labels("no_account").inc()
+            await self._hub.test_failed(test.id, self._texts("delivery.no_account", locale))
+            return
+        try:
+            rendered = await self._views.build(Notice(text=self._texts("test.message", locale)))
+            result = await self._probe(accounts, rendered)
+        except Exception:
+            _LOGGER.exception("test %s could not be handled", test.id)
+            result = "error"
+        self._metrics.tests.labels(result).inc()
+        if result == "sent":
+            await self._hub.tested(test.id)
+            return
+        reason = {"closed": "delivery.closed_dms", "refused": "delivery.refused"}.get(result, "test.trouble")
+        await self._hub.test_failed(test.id, self._texts(reason, locale))
+
+    async def _probe(self, accounts: list[int], rendered: ui.Rendered) -> str:
+        # A test is not tried again: the user is waiting for the answer and can press the button once more.
+        refused = trouble = sent = False
+        for account in accounts:
+            try:
+                await self._post(account, rendered)
+            except hikari.ForbiddenError, hikari.NotFoundError:
+                continue
+            except hikari.ClientHTTPResponseError:
+                refused = True
+                continue
+            except (hikari.HTTPError, aiohttp.ClientError, TimeoutError) as passing:
+                _LOGGER.warning("a test did not get through to Discord: %s", passing)
+                trouble = True
+                continue
+            sent = True
+        if sent:
+            return "sent"
+        if trouble:
+            return "trouble"
+        return "refused" if refused else "closed"
 
     async def close(self) -> None:
         tasks, self._tries = self._tries, {}

@@ -93,6 +93,12 @@ msgstr "Discord hat die Direktnachricht nicht angenommen. Prüfe, ob du Nachrich
 msgid "delivery.refused"
 msgstr "Discord hat die Erinnerung nicht angenommen."
 
+msgid "test.message"
+msgstr "Test: Hier kommen deine Erinnerungen an."
+
+msgid "test.trouble"
+msgstr "Discord war gerade nicht erreichbar. Versuch den Test gleich noch einmal."
+
 msgid "delivery.no_account"
 msgstr "Es ist kein Discord-Konto verknüpft."
 

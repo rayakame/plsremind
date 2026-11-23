@@ -93,6 +93,12 @@ msgstr "Discord did not accept the direct message. Check that you allow messages
 msgid "delivery.refused"
 msgstr "Discord did not accept the reminder."
 
+msgid "test.message"
+msgstr "Test: this is where your reminders arrive."
+
+msgid "test.trouble"
+msgstr "Discord could not be reached just now. Try the test again in a moment."
+
 msgid "delivery.no_account"
 msgstr "No Discord account is linked."
 

@@ -24,6 +24,7 @@ INTENTS: typing.Final = (
 )
 _PROVIDER: typing.Final = "discord"
 _CLOSED: typing.Final = "delivery_closed"
+_TEST_CLOSED: typing.Final = "test_closed"
 ECHO: typing.Final = 2.0
 RECENT = 60.0
 
@@ -240,6 +241,14 @@ class Hub:
         status = plsremind.DeliveryStatus.FAILED
         await _unless_closed(self.client.rest.acknowledge_delivery(delivery, status=status, reason=reason))
 
+    async def tested(self, test: plsremind.ID) -> None:
+        status = plsremind.DeliveryStatus.DELIVERED
+        await _unless_closed(self.client.rest.report_test(test, status=status), code=_TEST_CLOSED)
+
+    async def test_failed(self, test: plsremind.ID, reason: str) -> None:
+        status = plsremind.DeliveryStatus.FAILED
+        await _unless_closed(self.client.rest.report_test(test, status=status, reason=reason), code=_TEST_CLOSED)
+
     async def _written[T](
         self,
         echo: type[plsremind.ChangeEvent],
@@ -322,12 +331,12 @@ def _settled(task: asyncio.Task[object]) -> None:
         task.exception()
 
 
-async def _unless_closed(answer: collections.abc.Awaitable[object]) -> None:
+async def _unless_closed(answer: collections.abc.Awaitable[object], *, code: str = _CLOSED) -> None:
     try:
         await answer
     except plsremind.ConflictError as error:
-        # The hub withdrew it meanwhile, for example because the item was completed.
-        if error.code != _CLOSED:
+        # The hub withdrew it meanwhile, for example because the item was completed or the test ran out of time.
+        if error.code != code:
             raise
 
 

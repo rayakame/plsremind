@@ -128,6 +128,20 @@ def delivery(
     )
 
 
+def probe(number: int = 1, *, to: plsremind.ConnectionUser | None = None) -> plsremind.DeliveryTest:
+    target = to or user()
+    return plsremind.DeliveryTest(
+        id=uid(9500 + number),
+        user=plsremind.DeliveryUser(
+            id=target.id,
+            display_name=target.display_name,
+            timezone=target.timezone,
+            locale=target.locale,
+            external_ids=target.external_ids,
+        ),
+    )
+
+
 def scheduled(at: datetime.datetime) -> plsremind.ScheduledReminder:
     return plsremind.ScheduledReminder(
         kind=plsremind.ReminderKind.BEFORE, offset=None, reminder_id=None, scheduled_for=at, fire_at=at

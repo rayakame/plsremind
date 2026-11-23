@@ -79,6 +79,7 @@ async def test_the_bot_is_put_together_without_intents_and_with_everything_it_li
     assert heard == {
         plsremind.DeliveryCreateEvent,
         plsremind.DeliveryCloseEvent,
+        plsremind.DeliveryTestEvent,
         plsremind.ItemUpdateEvent,
         plsremind.ItemDeleteEvent,
         plsremind.ListUpdateEvent,
@@ -121,6 +122,9 @@ async def test_the_listeners_hand_events_to_the_parts_that_deal_with_them() -> N
     moved = plsremind.UserUpdateEvent(user_id=things.MIA, actor=None, nonce=None, user=things.user())
     await heard[plsremind.UserUpdateEvent](moved)
     sync.user_changed.assert_awaited_once_with(moved)
+    test = things.probe()
+    await heard[plsremind.DeliveryTestEvent](plsremind.DeliveryTestEvent(user_id=things.MIA, test=test))
+    reminders.probe.assert_awaited_once_with(test)
 
 
 async def test_what_the_hub_reports_waits_until_discord_is_there() -> None:

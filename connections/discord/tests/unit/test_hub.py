@@ -437,6 +437,18 @@ async def test_a_delivery_the_hub_closed_meanwhile_counts_as_confirmed(made: Mad
     )
 
 
+async def test_a_test_the_hub_ended_meanwhile_is_left_alone(made: Made) -> None:
+    rest = made.client.rest
+    rest.report_test.side_effect = plsremind.ConflictError(409, "test_closed", "closed")
+    await made.hub.tested(things.uid(9501))
+    rest.report_test.assert_awaited_once_with(things.uid(9501), status=plsremind.DeliveryStatus.DELIVERED)
+    rest.report_test.reset_mock()
+    await made.hub.test_failed(things.uid(9501), "closed DMs")
+    rest.report_test.assert_awaited_once_with(
+        things.uid(9501), status=plsremind.DeliveryStatus.FAILED, reason="closed DMs"
+    )
+
+
 async def test_any_other_refusal_of_a_confirmation_comes_out(made: Made) -> None:
     made.client.rest.acknowledge_delivery.side_effect = plsremind.ConflictError(409, "something_else", "no")
     with pytest.raises(plsremind.ConflictError):
