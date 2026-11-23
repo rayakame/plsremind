@@ -98,14 +98,23 @@ An OpenID Connect provider additionally needs `"type":"oidc"`, a `"name"` and it
 `"issuer_url"`.
 
 `login_enabled` lets people log in through the provider. `link_enabled` lets logged-in users
-attach their account there, which is how a connection such as the Discord bot recognises
-them. The two are independent.
+attach their account there, which is how an app such as the Discord bot recognises them.
+The two are independent. One provider serves every app of its kind: a single Discord
+provider links accounts for all Discord bots of the instance.
 
-## Connections
+## Apps
 
-A connection is an integration for all users of the instance. Create one with
-`POST /api/v1/admin/connections` and give the returned token to the integration. The token
-is shown once; `POST /api/v1/admin/connections/{id}/token` issues a new one.
+An app is an integration for all users of the instance, such as a Discord bot. There can
+be any number of them, several of the same kind too. An admin adds them in the dashboard
+under Settings, Administration, Apps, or with `POST /api/v1/admin/connections` (in the API
+an app is a connection), and gives the returned token to the app. The token is shown
+once; `POST /api/v1/admin/connections/{id}/token` issues a new one. An `install_url` tells
+users where to add the app on the provider's side; for a Discord bot the dashboard makes it
+from the bot's Application ID.
+
+Each user decides per app what it may do for them, under Settings, Apps, and can send a
+test reminder through it to see that it reaches them. Users who want something of their
+own build it with a personal token instead.
 
 ## The Discord bot
 
@@ -120,14 +129,19 @@ through the API and the gateway only, and keeps a small SQLite file of its own.
 2. **Let people link their Discord account.** Configure the login provider `discord` as
    described above with `"link_enabled": true`. The same Discord application can serve
    for this: its client ID and secret are under OAuth2.
-3. **Create the connection** in the hub and keep the token it returns:
+3. **Add the bot as an app** in the dashboard under Settings, Administration, Apps, with
+   its Application ID, or with the API, and keep the token it returns:
 
    ```sh
    curl -b cookies.txt -X POST -H 'Content-Type: application/json' \
      -H 'Origin: https://todo.example.com' \
-     -d '{"name":"Discord","provider":"discord","allowed_intents":["users","lists","items","history","deliveries"]}' \
+     -d '{"name":"Discord","provider":"discord","allowed_intents":["users","lists","items","history","deliveries"],"install_url":"https://discord.com/oauth2/authorize?client_id=<Application ID>&integration_type=1&scope=applications.commands"}' \
      https://todo.example.com/api/v1/admin/connections
    ```
+
+   A bot that was added without its Application ID, for example before apps had an
+   install link, shows users no button: enter the ID once under Settings, Administration,
+   Apps.
 
 4. **Start the bot** next to the hub:
 
@@ -137,8 +151,8 @@ through the API and the gateway only, and keeps a small SQLite file of its own.
    docker compose --profile discord up -d
    ```
 
-Users then add the application to their account with its install link, link their Discord
-account in the dashboard under Settings, and get their reminders as direct messages.
+Users then link their Discord account in the dashboard under Settings, Apps, add the bot
+to their account with the button there, and get their reminders as direct messages.
 
 | Variable | Required | Meaning |
 |---|---|---|
@@ -153,6 +167,24 @@ The file holds which reminders went out, which message shows which item and the 
 channels of the accounts reminded in the last 30 days. If it is lost, the DM channels are
 opened again, a reminder that was still waiting for its confirmation may arrive a second
 time, and older messages only catch up when someone clicks them. Nothing else depends on it.
+
+### Another Discord bot
+
+A second bot is a second app with its own Discord application, token and SQLite file.
+[`deploy/examples/another-discord-bot.yaml`](../deploy/examples/another-discord-bot.yaml)
+adds one next to the first. Copy it to `compose.override.yaml`, which Compose reads on its
+own, so that the bot is also rebuilt when you update:
+
+```sh
+cp examples/another-discord-bot.yaml compose.override.yaml
+echo "DISCORD_TEAM_TOKEN=..." >> .env
+echo "PLSREMIND_DISCORD_TEAM_TOKEN=plsr_con_..." >> .env
+docker compose --profile discord up -d
+```
+
+For the monitoring, add `discord-team:9091` to the targets of the `plsremind-discord` job
+in [`deploy/monitoring/scrape.yml`](../deploy/monitoring/scrape.yml). Every further bot
+works the same way with its own service name, variables and volume.
 
 ## Monitoring
 
@@ -174,17 +206,19 @@ docker compose --profile monitoring up -d
 
 It adds three services:
 
-- **VictoriaMetrics** scrapes the hub and the bot every 15 seconds and keeps 30 days.
+- **VictoriaMetrics** scrapes the hub and the bots every 15 seconds and keeps 30 days.
 - **vmalert** evaluates [`deploy/monitoring/alerts.yml`](../deploy/monitoring/alerts.yml):
   the hub or the bot down, the ticker stalled, reminders more than two minutes late,
   server errors, expired deliveries to a connection, the bot not connected to the hub,
-  Discord refusing reminders, errors in the bot nobody foresaw. If you take the bot away
-  for good, remove the `plsremind-discord` job from
+  Discord refusing reminders, errors in the bot nobody foresaw. With several bots, each is
+  watched and reported on its own. If you take a bot away for good, remove its target, or
+  the whole `plsremind-discord` job, from
   [`deploy/monitoring/scrape.yml`](../deploy/monitoring/scrape.yml), or its alert keeps
   firing until its last scrape has left the 30 days. VictoriaMetrics rereads the file
   within a minute.
 - **Grafana** opens on `http://127.0.0.1:3000` (`PLSREMIND_GRAFANA_PORT` to change it)
-  with the plsremind dashboard. Log in as `admin` with `PLSREMIND_GRAFANA_PASSWORD`; the
+  with the plsremind dashboard, which shows the bots one line each and can be narrowed to
+  some of them. Log in as `admin` with `PLSREMIND_GRAFANA_PASSWORD`; the
   password is set when Grafana first starts, so change it there afterwards. Grafana is
   only reachable from the machine itself; put it behind your reverse proxy to reach it
   from elsewhere. Its own telemetry, update checks and plugin downloads are off.

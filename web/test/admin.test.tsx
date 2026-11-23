@@ -102,7 +102,7 @@ async function page(
   app.route("GET", "/admin/connections", { status: 200, body: [connection] });
   first(app);
   await act(() => app.connect());
-  await screen.findByRole("navigation", { name: "Administration" });
+  await screen.findByRole("navigation", { name: "Settings" });
   return app;
 }
 
@@ -171,6 +171,7 @@ test("users are promoted, blocked, given a new password and deleted", async () =
 
 test("an invite is created, its code shown once, and its state listed", async () => {
   const app = await page("invites");
+  const invites = () => within(screen.getByRole("list", { name: "Invites" }));
   app.route("POST", "/admin/invites", {
     status: 201,
     body: {
@@ -183,9 +184,9 @@ test("an invite is created, its code shown once, and its state listed", async ()
     },
   });
   app.route("DELETE", "/admin/invites/v1", { status: 204 });
-  await waitFor(() => expect(screen.getAllByRole("listitem")).toHaveLength(3));
+  await waitFor(() => expect(invites().getAllByRole("listitem")).toHaveLength(3));
   expect(
-    screen
+    invites()
       .getAllByRole("listitem")
       .map((row) => within(row).getByText(/Open|Used|Expired/).textContent),
   ).toEqual(["Open", "Used", "Expired"]);
@@ -196,9 +197,9 @@ test("an invite is created, its code shown once, and its state listed", async ()
   expect(app.sent("POST", "/admin/invites")[0]!.body).toEqual({ expires_in: "30d" });
   await userEvent.click(shown.getByRole("button", { name: "Done" }));
   expect(document.body.innerHTML).not.toContain("INV-123");
-  expect(screen.getAllByRole("listitem")).toHaveLength(4);
-  await userEvent.click(screen.getAllByRole("button", { name: "Delete" })[0]!);
-  await waitFor(() => expect(screen.getAllByRole("listitem")).toHaveLength(3));
+  expect(invites().getAllByRole("listitem")).toHaveLength(4);
+  await userEvent.click(invites().getAllByRole("button", { name: "Delete" })[0]!);
+  await waitFor(() => expect(invites().getAllByRole("listitem")).toHaveLength(3));
 });
 
 test("a provider is configured without its secret ever coming back", async () => {
@@ -252,68 +253,6 @@ test("a provider is configured without its secret ever coming back", async () =>
   await waitFor(() => expect(screen.queryByRole("group", { name: "Corp SSO" })).toBeNull());
 });
 
-test("a connection is installed, limited, given a new token and removed", async () => {
-  const app = await page("connections");
-  app.route("POST", "/admin/connections", {
-    status: 201,
-    body: {
-      ...connection,
-      id: "c2",
-      name: "Mail",
-      provider: "mail",
-      allowed_intents: ["deliveries"],
-      token: "plsr_con_secret",
-    },
-  });
-  app.route("PATCH", "/admin/connections/c1", (call) => ({
-    status: 200,
-    body: { ...connection, ...(call.body as object) },
-  }));
-  app.route("POST", "/admin/connections/c1/token", {
-    status: 200,
-    body: { ...connection, token: "plsr_con_rotated" },
-  });
-  app.route("DELETE", "/admin/connections/c1", { status: 204 });
-
-  const bot = within(await screen.findByRole("group", { name: "Discord bot" }));
-  await userEvent.click(bot.getByRole("checkbox", { name: "reminders to pass on" }));
-  await waitFor(() => expect(app.sent("PATCH", "/admin/connections/c1")).toHaveLength(1));
-  expect(app.sent("PATCH", "/admin/connections/c1")[0]!.body).toEqual({
-    allowed_intents: ["users", "items", "deliveries"],
-  });
-  await userEvent.click(bot.getByRole("checkbox", { name: "Enabled" }));
-  await waitFor(() => expect(app.sent("PATCH", "/admin/connections/c1")).toHaveLength(2));
-  expect(app.sent("PATCH", "/admin/connections/c1")[1]!.body).toEqual({ enabled: false });
-
-  await userEvent.click(bot.getByRole("button", { name: "New token" }));
-  await userEvent.click(
-    within(screen.getByRole("dialog")).getByRole("button", { name: "New token" }),
-  );
-  const rotated = within(await screen.findByRole("dialog", { name: "Token of the connection" }));
-  expect((rotated.getByLabelText("Token") as HTMLInputElement).value).toBe("plsr_con_rotated");
-  await userEvent.click(rotated.getByRole("button", { name: "Done" }));
-  expect(document.body.innerHTML).not.toContain("plsr_con_rotated");
-
-  const form = within(screen.getByRole("region", { name: "Install a connection" }));
-  await userEvent.type(form.getByLabelText("Name"), "Mail");
-  await userEvent.type(form.getByLabelText("Provider"), "mail");
-  await userEvent.click(form.getByRole("checkbox", { name: "reminders to pass on" }));
-  await userEvent.click(form.getByRole("button", { name: "Install" }));
-  const made = within(await screen.findByRole("dialog", { name: "Token of the connection" }));
-  expect((made.getByLabelText("Token") as HTMLInputElement).value).toBe("plsr_con_secret");
-  expect(app.sent("POST", "/admin/connections")[0]!.body).toEqual({
-    name: "Mail",
-    provider: "mail",
-    allowed_intents: ["deliveries"],
-  });
-  await userEvent.click(made.getByRole("button", { name: "Done" }));
-  expect(screen.getByRole("group", { name: "Mail" })).toBeTruthy();
-
-  await userEvent.click(bot.getByRole("button", { name: "Delete" }));
-  await userEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Delete" }));
-  await waitFor(() => expect(screen.queryByRole("group", { name: "Discord bot" })).toBeNull());
-});
-
 test("a name the hub refuses falls back to the stored one", async () => {
   const app = await page("instance");
   app.route("PATCH", "/admin/settings", {
@@ -326,6 +265,15 @@ test("a name the hub refuses falls back to the stored one", async () => {
   await userEvent.tab();
   expect(await screen.findByRole("alert")).toBeTruthy();
   await waitFor(() => expect(name.value).toBe("plsremind"));
+});
+
+test("a provider says it links accounts for all apps of its kind", async () => {
+  await page("providers");
+  expect(
+    within(await screen.findByRole("group", { name: "GitHub" })).getByText(
+      "Linking here serves every app of this kind.",
+    ),
+  ).toBeTruthy();
 });
 
 test("the password provider can be allowed for linking, without credentials of its own", async () => {

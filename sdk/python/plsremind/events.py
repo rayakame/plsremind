@@ -12,6 +12,7 @@ from plsremind.enums import Intents
 from plsremind.errors import GatewayError
 from plsremind.models import Actor
 from plsremind.models import Delivery
+from plsremind.models import DeliveryTest
 from plsremind.models import Item
 from plsremind.models import List
 from plsremind.models import ManualReminder
@@ -29,6 +30,7 @@ __all__ = [
     "DeliveryCloseEvent",
     "DeliveryCreateEvent",
     "DeliveryEvent",
+    "DeliveryTestEvent",
     "DisconnectedEvent",
     "Event",
     "ExceptionEvent",
@@ -209,6 +211,15 @@ class DeliveryCreateEvent(DeliveryEvent, frozen=True, kw_only=True):
     """A reminder is due. It arrives again after every reconnect until it is acknowledged."""
 
     delivery: Delivery = msgspec.field(name="data")
+
+
+class DeliveryTestEvent(DeliveryEvent, frozen=True, kw_only=True):
+    """The user asked to see that this app reaches them. Answer with `RESTClient.report_test`.
+
+    It arrives once, never again after a reconnect.
+    """
+
+    test: DeliveryTest = msgspec.field(name="data")
 
 
 class DeliveryCloseEvent(DeliveryEvent, frozen=True, kw_only=True):

@@ -254,3 +254,124 @@ test.each(["", ".", ".."])(
     expect(calls).toEqual([]);
   },
 );
+
+test("a test of an app is started, looked at and answered at its own paths", async () => {
+  const test = {
+    id: "t1",
+    connection_id: "c1",
+    status: "pending",
+    reason: "",
+    created_at: "2026-11-12T18:00:00Z",
+    closed_at: null,
+  };
+  const { rest, calls } = fake([
+    { status: 201, body: test },
+    { status: 200, body: test },
+  ]);
+  const started = await rest.startConnectionTest("c1");
+  expect(started.createdAt).toBeInstanceOf(Date);
+  await rest.getConnectionTest("c1", "t1");
+  expect(calls.map((c) => `${c.method} ${c.url}`)).toEqual([
+    "POST https://hub.test/api/v1/users/@me/connections/c1/tests",
+    "GET https://hub.test/api/v1/users/@me/connections/c1/tests/t1",
+  ]);
+
+  const bot = fake([{ status: 200, body: { ...test, status: "failed", reason: "closed" } }], {
+    token: "plsr_con_x",
+  });
+  await bot.rest.reportTest("t1", { status: "failed", reason: "closed" });
+  expect(bot.calls[0]).toMatchObject({
+    method: "PUT",
+    url: "https://hub.test/api/v1/deliveries/tests/t1",
+    body: { status: "failed", reason: "closed" },
+  });
+});
+
+test("starting a test too soon is not waited out", async () => {
+  const { rest, calls } = fake([
+    {
+      status: 429,
+      headers: { "retry-after": "20" },
+      body: { error: { code: "rate_limited", message: "Wait." } },
+    },
+  ]);
+  await expect(rest.startConnectionTest("c1")).rejects.toMatchObject({
+    status: 429,
+    code: "rate_limited",
+  });
+  expect(calls).toHaveLength(1);
+});
+
+test("an app is created and changed with its install link", async () => {
+  const app = {
+    id: "c1",
+    name: "Bot",
+    description: "",
+    provider: "discord",
+    enabled: true,
+    allowed_intents: [],
+    install_url: "https://x.example",
+    reach: 3,
+    created_at: "2026-11-12T18:00:00Z",
+    last_used_at: null,
+  };
+  const { rest, calls } = fake([
+    { status: 201, body: app },
+    { status: 200, body: app },
+  ]);
+  const created = await rest.createConnection({
+    name: "Bot",
+    provider: "discord",
+    installUrl: "https://x.example",
+  });
+  expect(created.reach).toBe(3);
+  await rest.updateConnection("c1", { installUrl: "" });
+  expect(calls[0]!.body).toMatchObject({ install_url: "https://x.example" });
+  expect(calls[1]!.body).toEqual({ install_url: "" });
+});
+
+test("the picture of a linked account has an address and comes as a blob", async () => {
+  const { rest, calls } = fake([
+    { status: 200, text: "png", headers: { "content-type": "image/png" } },
+  ]);
+  expect(rest.identityAvatarUrl("i1")).toBe(
+    "https://hub.test/api/v1/users/@me/identities/i1/avatar",
+  );
+  const picture = await rest.getIdentityAvatar("i1");
+  expect(picture).toBeInstanceOf(Blob);
+  expect(await picture.text()).toBe("png");
+  expect(calls[0]!.url).toBe("https://hub.test/api/v1/users/@me/identities/i1/avatar");
+});
+
+test("login methods of a hub that does not say whether they link log in and do not link", async () => {
+  const { rest } = fake([
+    {
+      status: 200,
+      body: {
+        name: "hub",
+        version: "1",
+        gateway_url: "wss://hub.test/api/v1/gateway",
+        setup_required: false,
+        registration: "open",
+        login_methods: [{ key: "gh", type: "github", name: "GitHub" }],
+      },
+    },
+  ]);
+  const info = await rest.getInfo();
+  expect(info.loginMethods[0]).toMatchObject({ login: true, link: false });
+});
+
+test("a picture whose answer breaks off is a network error", async () => {
+  const broken = new ReadableStream({
+    start(controller) {
+      controller.error(new Error("cut"));
+    },
+  });
+  const rest = new RestClient({
+    url: "https://hub.test/",
+    token: "plsr_pat_x",
+    fetch: async () =>
+      new Response(broken, { status: 200, headers: { "content-type": "image/png" } }),
+  });
+  await expect(rest.getIdentityAvatar("i1")).rejects.toBeInstanceOf(NetworkError);
+});

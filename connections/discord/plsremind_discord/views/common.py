@@ -333,4 +333,4 @@ def notice_layout(text: str, link: str, label: str) -> ui.Layout:
 
 def unlinked(texts: texts_.Texts, locale: hikari.Locale, config: Config) -> tuple[str, str, str]:
     """The text, the link and the link's label of the hint for a Discord account the hub does not know."""
-    return texts("error.not_linked", locale), f"{config.public_url}/settings", texts("button.settings", locale)
+    return texts("error.not_linked", locale), f"{config.public_url}/settings/apps", texts("button.settings", locale)

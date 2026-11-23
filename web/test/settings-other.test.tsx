@@ -33,9 +33,9 @@ const identities = [
 ];
 const info = {
   login_methods: [
-    { key: "password", type: "password", name: "Password" },
-    { key: "discord", type: "discord", name: "Discord" },
-    { key: "gh", type: "github", name: "GitHub" },
+    { key: "password", type: "password", name: "Password", login: true, link: false },
+    { key: "discord", type: "discord", name: "Discord", login: true, link: true },
+    { key: "gh", type: "github", name: "GitHub", login: true, link: true },
   ],
 };
 
@@ -68,77 +68,9 @@ async function settings(
   first(app);
   const { act } = await import("@testing-library/react");
   await act(() => app.connect());
-  await screen.findByRole("heading", { level: 1, name: "Settings" });
+  await screen.findByRole("navigation", { name: "Settings" });
   return app;
 }
-
-test("a connection is switched on, told to remind, and shows what it gets", async () => {
-  const app = await settings("connections");
-  app.route("PUT", "/users/@me/connections/c1", (call) => ({
-    status: 200,
-    body: { ...connection, ...(call.body as object) },
-  }));
-  const row = within(await screen.findByRole("group", { name: "Discord bot" }));
-  expect(row.getByText("Reminds in direct messages")).toBeTruthy();
-  expect(row.getByText("Receives: your profile, your items, reminders to pass on")).toBeTruthy();
-  await userEvent.click(row.getByRole("checkbox", { name: "Use this connection" }));
-  await waitFor(() => expect(app.sent("PUT", "/users/@me/connections/c1")).toHaveLength(1));
-  expect(app.sent("PUT", "/users/@me/connections/c1")[0]!.body).toEqual({ enabled: true });
-  await waitFor(() =>
-    expect(
-      (row.getByRole("checkbox", { name: "Use this connection" }) as HTMLInputElement).checked,
-    ).toBe(true),
-  );
-  await userEvent.click(row.getByRole("checkbox", { name: "Remind me here" }));
-  await waitFor(() => expect(app.sent("PUT", "/users/@me/connections/c1")).toHaveLength(2));
-  expect(app.sent("PUT", "/users/@me/connections/c1")[1]!.body).toEqual({ remind: false });
-});
-
-test("names that others chose are shown as text", async () => {
-  const markup = '<img src=x onerror="alert(1)">';
-  await settings("connections", {}, (made) => {
-    made.route("GET", "/users/@me/connections", {
-      status: 200,
-      body: [{ ...connection, name: markup, description: markup }],
-    });
-    made.route("GET", "/users/@me/identities", {
-      status: 200,
-      body: [{ ...identities[1], display_name: markup }],
-    });
-  });
-  await screen.findByRole("group", { name: markup });
-  expect(document.querySelector("img")).toBeNull();
-});
-
-test("a connection that needs an account elsewhere offers to link it", async () => {
-  await settings("connections");
-  const row = within(await screen.findByRole("group", { name: "Mail" }));
-  expect(row.getByRole("link", { name: "Link your mail account" }).getAttribute("href")).toBe(
-    "http://hub.test/api/v1/auth/oauth/mail/start?intent=link",
-  );
-  expect(
-    (row.getByRole("checkbox", { name: "Use this connection" }) as HTMLInputElement).disabled,
-  ).toBe(true);
-});
-
-test("linked accounts are listed, can be unlinked, and others can be linked", async () => {
-  const app = await settings("connections");
-  app.route("DELETE", "/users/@me/identities/i2", { status: 204 });
-  const accounts = within(await screen.findByRole("region", { name: "Linked accounts" }));
-  await waitFor(() => expect(accounts.getAllByRole("listitem")).toHaveLength(2));
-  expect(accounts.getAllByRole("listitem").map((row) => row.textContent)).toEqual([
-    "Password" + "mia",
-    "Discord" + "mia#1" + "Unlink",
-  ]);
-  expect(accounts.getByRole("link", { name: "Link GitHub" }).getAttribute("href")).toBe(
-    "http://hub.test/api/v1/auth/oauth/gh/start?intent=link",
-  );
-  expect(accounts.queryByRole("link", { name: "Link Discord" })).toBeNull();
-  await userEvent.click(accounts.getByRole("button", { name: "Unlink" }));
-  await userEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Unlink" }));
-  await waitFor(() => expect(accounts.getAllByRole("listitem")).toHaveLength(1));
-  expect(app.sent("DELETE", "/users/@me/identities/i2")).toHaveLength(1);
-});
 
 test("a token is created, shown once, renamed, told to remind and deleted", async () => {
   const app = await settings("tokens");
@@ -250,9 +182,9 @@ test("deleting the account needs the display name typed out", async () => {
 });
 
 test("an error from linking elsewhere is shown and leaves the address", async () => {
-  const app = await settings("connections?auth_error=link_disabled");
+  const app = await settings("apps?auth_error=link_disabled");
   expect((await screen.findByRole("alert")).textContent).toBe("Linking this way is turned off.");
-  expect(app.path()).toBe("/settings/connections");
+  expect(app.path()).toBe("/settings/apps");
 });
 
 test("a token made before the list has loaded is not wiped out by the list", async () => {

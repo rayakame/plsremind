@@ -25,6 +25,7 @@ import { Shell } from "./shell/shell.js";
 const CalendarPage = lazy(() => import("./pages/calendar.js"));
 
 const SettingsPage = lazy(() => import("./pages/settings/index.js"));
+const LinkedPage = lazy(() => import("./pages/linked.js"));
 
 const themeKey = "plsremind.theme";
 
@@ -90,6 +91,14 @@ function AuthError() {
   return null;
 }
 
+function decoded(part: string): string {
+  try {
+    return decodeURIComponent(part);
+  } catch {
+    return part;
+  }
+}
+
 function SignedIn() {
   const [path, navigate] = useLocation();
   const search = new URLSearchParams(useSearch());
@@ -103,44 +112,52 @@ function SignedIn() {
   return (
     <NoticesProvider>
       <Preferences />
-      <SelectionProvider>
-        <BarProvider>
-          <Keys />
-          <AuthError />
-          <Shell panel={<Details />}>
-            <Boundary>
-              <Switch>
-                <Route path="/">
-                  <AllItemsPage />
-                </Route>
-                <Route path="/lists/:id">{(params) => <ListPage id={params.id} />}</Route>
-                <Route path="/find">
-                  <FindPage />
-                </Route>
-                <Route path="/calendar">
-                  <Suspense fallback={null}>
-                    <CalendarPage />
-                  </Suspense>
-                </Route>
-                <Route path="/done">
-                  <DonePage />
-                </Route>
-                <Route path="/items/:id">{(params) => <ItemPage id={params.id} />}</Route>
-                <Route path="/settings/:area?/:section?">
-                  {(params) => (
+      {path.startsWith("/linked/") ? (
+        <Suspense fallback={null}>
+          <Boundary>
+            <LinkedPage provider={decoded(path.slice("/linked/".length))} />
+          </Boundary>
+        </Suspense>
+      ) : (
+        <SelectionProvider>
+          <BarProvider>
+            <Keys />
+            <AuthError />
+            <Shell panel={<Details />}>
+              <Boundary>
+                <Switch>
+                  <Route path="/">
+                    <AllItemsPage />
+                  </Route>
+                  <Route path="/lists/:id">{(params) => <ListPage id={params.id} />}</Route>
+                  <Route path="/find">
+                    <FindPage />
+                  </Route>
+                  <Route path="/calendar">
                     <Suspense fallback={null}>
-                      <SettingsPage area={params.area} section={params.section} />
+                      <CalendarPage />
                     </Suspense>
-                  )}
-                </Route>
-                <Route>
-                  <NotFound />
-                </Route>
-              </Switch>
-            </Boundary>
-          </Shell>
-        </BarProvider>
-      </SelectionProvider>
+                  </Route>
+                  <Route path="/done">
+                    <DonePage />
+                  </Route>
+                  <Route path="/items/:id">{(params) => <ItemPage id={params.id} />}</Route>
+                  <Route path="/settings/*?">
+                    {(params) => (
+                      <Suspense fallback={null}>
+                        <SettingsPage path={params["*"] || undefined} />
+                      </Suspense>
+                    )}
+                  </Route>
+                  <Route>
+                    <NotFound />
+                  </Route>
+                </Switch>
+              </Boundary>
+            </Shell>
+          </BarProvider>
+        </SelectionProvider>
+      )}
     </NoticesProvider>
   );
 }

@@ -54,7 +54,7 @@ groups:
         labels:
           severity: critical
         annotations:
-          summary: The Discord bot has not answered a scrape for two minutes.
+          summary: The Discord bot at {{ $labels.instance }} has not answered a scrape for two minutes.
 
       - alert: PlsremindBotNotConnected
         expr: plsremind_discord_hub_connected == 0
@@ -62,24 +62,24 @@ groups:
         labels:
           severity: critical
         annotations:
-          summary: The Discord bot has not been connected to the hub for five minutes.
+          summary: The Discord bot at {{ $labels.instance }} has not been connected to the hub for five minutes.
 
       - alert: PlsremindDiscordRefusing
         expr: >-
-          sum(rate(plsremind_discord_delivery_attempts_total{result=~"refused|passing"}[15m]))
-          / sum(rate(plsremind_discord_delivery_attempts_total[15m])) > 0.2
-          and sum(increase(plsremind_discord_delivery_attempts_total[15m])) >= 10
+          sum by (instance) (rate(plsremind_discord_delivery_attempts_total{result=~"refused|passing"}[15m]))
+          / sum by (instance) (rate(plsremind_discord_delivery_attempts_total[15m])) > 0.2
+          and sum by (instance) (increase(plsremind_discord_delivery_attempts_total[15m])) >= 10
         for: 15m
         labels:
           severity: warning
         annotations:
-          summary: More than a fifth of the bot's tries to send a reminder do not get through.
+          summary: More than a fifth of the tries of the bot at {{ $labels.instance }} to send a reminder do not get through.
 
       - alert: PlsremindBotErrors
         expr: >-
-          sum(increase(plsremind_discord_delivery_attempts_total{result="error"}[15m]))
-          + sum(increase(plsremind_discord_interaction_failures_total[15m])) > 0
+          sum by (instance) (increase(plsremind_discord_delivery_attempts_total{result="error"}[15m]))
+          + sum by (instance) (increase(plsremind_discord_interaction_failures_total[15m])) > 0
         labels:
           severity: warning
         annotations:
-          summary: The Discord bot ran into errors nobody foresaw; its log says which.
+          summary: The Discord bot at {{ $labels.instance }} ran into errors nobody foresaw; its log says which.

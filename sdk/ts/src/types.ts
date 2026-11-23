@@ -19,6 +19,10 @@ export interface LoginMethod {
   readonly key: string;
   readonly type: ProviderType;
   readonly name: string;
+  /** Whether people can log in with it. */
+  readonly login: boolean;
+  /** Whether logged-in users can link their account there. */
+  readonly link: boolean;
 }
 
 export interface Info {
@@ -77,6 +81,10 @@ export interface Identity {
   readonly provider: string;
   readonly externalId: string;
   readonly displayName: string;
+  /** The handle at the provider; empty when it has none or the account was linked before the hub kept it. */
+  readonly username: string;
+  /** Whether `rest.identityAvatarUrl(id)` has a picture. */
+  readonly hasAvatar: boolean;
   readonly createdAt: Date;
 }
 
@@ -209,6 +217,10 @@ export interface Connection {
   readonly provider: string;
   readonly enabled: boolean;
   readonly allowedIntents: readonly Intent[];
+  /** Where users add the app on the provider's side; empty when there is no such place. */
+  readonly installUrl: string;
+  /** How many users the connection would remind now. */
+  readonly reach: number;
   /** Only present in the answer that created the connection or rotated its token. */
   readonly token?: string;
   readonly createdAt: Date;
@@ -224,6 +236,37 @@ export interface UserConnection {
   readonly enabled: boolean;
   readonly remind: boolean;
   readonly intents: readonly Intent[];
+  /** Where the user adds the app on the provider's side; empty when there is no such place. */
+  readonly installUrl: string;
+  /** How the newest delivery through this connection to the user went, null before the first. */
+  readonly lastDelivery: LastDelivery | null;
+}
+
+export interface LastDelivery {
+  readonly status: "pending" | "delivered" | "failed" | "expired";
+  /** What the connection reported when it failed; empty otherwise. */
+  readonly reason: string;
+  /** When it was closed, or created while it is still pending. */
+  readonly at: Date;
+  /** True when it was a test the user sent, not a reminder. */
+  readonly test: boolean;
+}
+
+/** A test the user asked an app to send. */
+export interface ConnectionTest {
+  readonly id: string;
+  readonly connectionId: string;
+  readonly status: "pending" | "delivered" | "failed" | "unanswered";
+  /** For `failed` what the app reported; for `unanswered` `not_connected` or `no_answer`. */
+  readonly reason: string;
+  readonly createdAt: Date;
+  readonly closedAt: Date | null;
+}
+
+/** What an app receives to show the user that it reaches them. */
+export interface DeliveryTest {
+  readonly id: string;
+  readonly user: DeliveryUser;
 }
 
 export interface LoginProvider {

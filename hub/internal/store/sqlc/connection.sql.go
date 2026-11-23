@@ -12,10 +12,49 @@ import (
 	"github.com/google/uuid"
 )
 
+const connectionReach = `-- name: ConnectionReach :many
+SELECT c.id, count(u.id)::integer AS reach
+FROM connections c
+LEFT JOIN users u ON c.enabled
+    AND NOT u.disabled
+    AND 'deliveries' = ANY(c.allowed_intents)
+    AND EXISTS (SELECT 1 FROM identities i WHERE i.user_id = u.id AND i.provider = c.provider)
+    AND COALESCE((SELECT g.remind FROM connection_grants g WHERE g.user_id = u.id AND g.connection_id = c.id), true)
+    AND COALESCE((SELECT g.enabled FROM connection_grants g WHERE g.user_id = u.id AND g.connection_id = c.id), true)
+WHERE $1::uuid IS NULL OR c.id = $1::uuid
+GROUP BY c.id
+`
+
+type ConnectionReachRow struct {
+	ID    uuid.UUID
+	Reach int32
+}
+
+// Whom each connection can remind now: users it reminds who have an account it can write to.
+func (q *Queries) ConnectionReach(ctx context.Context, connectionID *uuid.UUID) ([]ConnectionReachRow, error) {
+	rows, err := q.db.Query(ctx, connectionReach, connectionID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ConnectionReachRow
+	for rows.Next() {
+		var i ConnectionReachRow
+		if err := rows.Scan(&i.ID, &i.Reach); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const createConnection = `-- name: CreateConnection :one
-INSERT INTO connections (id, name, description, provider, allowed_intents, token_hash, created_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7)
-RETURNING id, name, description, provider, enabled, token_hash, created_at, last_used_at, allowed_intents
+INSERT INTO connections (id, name, description, provider, allowed_intents, install_url, token_hash, created_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+RETURNING id, name, description, provider, enabled, token_hash, created_at, last_used_at, allowed_intents, install_url
 `
 
 type CreateConnectionParams struct {
@@ -24,6 +63,7 @@ type CreateConnectionParams struct {
 	Description    string
 	Provider       string
 	AllowedIntents []string
+	InstallUrl     string
 	TokenHash      []byte
 	CreatedAt      time.Time
 }
@@ -35,6 +75,7 @@ func (q *Queries) CreateConnection(ctx context.Context, arg CreateConnectionPara
 		arg.Description,
 		arg.Provider,
 		arg.AllowedIntents,
+		arg.InstallUrl,
 		arg.TokenHash,
 		arg.CreatedAt,
 	)
@@ -49,6 +90,7 @@ func (q *Queries) CreateConnection(ctx context.Context, arg CreateConnectionPara
 		&i.CreatedAt,
 		&i.LastUsedAt,
 		&i.AllowedIntents,
+		&i.InstallUrl,
 	)
 	return i, err
 }
@@ -66,7 +108,7 @@ func (q *Queries) DeleteConnection(ctx context.Context, id uuid.UUID) (int64, er
 }
 
 const getConnection = `-- name: GetConnection :one
-SELECT id, name, description, provider, enabled, token_hash, created_at, last_used_at, allowed_intents FROM connections WHERE id = $1
+SELECT id, name, description, provider, enabled, token_hash, created_at, last_used_at, allowed_intents, install_url FROM connections WHERE id = $1
 `
 
 func (q *Queries) GetConnection(ctx context.Context, id uuid.UUID) (Connection, error) {
@@ -82,12 +124,13 @@ func (q *Queries) GetConnection(ctx context.Context, id uuid.UUID) (Connection, 
 		&i.CreatedAt,
 		&i.LastUsedAt,
 		&i.AllowedIntents,
+		&i.InstallUrl,
 	)
 	return i, err
 }
 
 const getConnectionByToken = `-- name: GetConnectionByToken :one
-SELECT id, name, description, provider, enabled, token_hash, created_at, last_used_at, allowed_intents FROM connections WHERE token_hash = $1 AND enabled
+SELECT id, name, description, provider, enabled, token_hash, created_at, last_used_at, allowed_intents, install_url FROM connections WHERE token_hash = $1 AND enabled
 `
 
 func (q *Queries) GetConnectionByToken(ctx context.Context, tokenHash []byte) (Connection, error) {
@@ -103,6 +146,7 @@ func (q *Queries) GetConnectionByToken(ctx context.Context, tokenHash []byte) (C
 		&i.CreatedAt,
 		&i.LastUsedAt,
 		&i.AllowedIntents,
+		&i.InstallUrl,
 	)
 	return i, err
 }
@@ -178,8 +222,51 @@ func (q *Queries) GetGrantedUserByIdentity(ctx context.Context, arg GetGrantedUs
 	return i, err
 }
 
+const lastDeliveries = `-- name: LastDeliveries :many
+SELECT DISTINCT ON (d.connection_id)
+       d.connection_id::uuid AS connection_id, d.status, d.reason,
+       COALESCE(d.closed_at, d.created_at)::timestamptz AS at
+FROM deliveries d
+WHERE d.user_id = $1
+  AND d.connection_id IS NOT NULL
+  AND d.status IN ('pending', 'delivered', 'failed', 'expired')
+ORDER BY d.connection_id, d.created_at DESC, d.id DESC
+`
+
+type LastDeliveriesRow struct {
+	ConnectionID uuid.UUID
+	Status       string
+	Reason       string
+	At           time.Time
+}
+
+func (q *Queries) LastDeliveries(ctx context.Context, userID uuid.UUID) ([]LastDeliveriesRow, error) {
+	rows, err := q.db.Query(ctx, lastDeliveries, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []LastDeliveriesRow
+	for rows.Next() {
+		var i LastDeliveriesRow
+		if err := rows.Scan(
+			&i.ConnectionID,
+			&i.Status,
+			&i.Reason,
+			&i.At,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listConnections = `-- name: ListConnections :many
-SELECT id, name, description, provider, enabled, token_hash, created_at, last_used_at, allowed_intents FROM connections ORDER BY id
+SELECT id, name, description, provider, enabled, token_hash, created_at, last_used_at, allowed_intents, install_url FROM connections ORDER BY id
 `
 
 func (q *Queries) ListConnections(ctx context.Context) ([]Connection, error) {
@@ -201,6 +288,7 @@ func (q *Queries) ListConnections(ctx context.Context) ([]Connection, error) {
 			&i.CreatedAt,
 			&i.LastUsedAt,
 			&i.AllowedIntents,
+			&i.InstallUrl,
 		); err != nil {
 			return nil, err
 		}
@@ -213,7 +301,7 @@ func (q *Queries) ListConnections(ctx context.Context) ([]Connection, error) {
 }
 
 const listUserConnections = `-- name: ListUserConnections :many
-SELECT c.id, c.name, c.description, c.provider, c.allowed_intents,
+SELECT c.id, c.name, c.description, c.provider, c.allowed_intents, c.install_url,
        EXISTS (SELECT 1 FROM identities i WHERE i.user_id = $1 AND i.provider = c.provider) AS linked,
        g.enabled AS granted, g.remind AS remind_choice
 FROM connections c
@@ -228,6 +316,7 @@ type ListUserConnectionsRow struct {
 	Description    string
 	Provider       string
 	AllowedIntents []string
+	InstallUrl     string
 	Linked         bool
 	Granted        *bool
 	RemindChoice   *bool
@@ -248,6 +337,7 @@ func (q *Queries) ListUserConnections(ctx context.Context, userID uuid.UUID) ([]
 			&i.Description,
 			&i.Provider,
 			&i.AllowedIntents,
+			&i.InstallUrl,
 			&i.Linked,
 			&i.Granted,
 			&i.RemindChoice,
@@ -264,7 +354,7 @@ func (q *Queries) ListUserConnections(ctx context.Context, userID uuid.UUID) ([]
 
 const setConnectionToken = `-- name: SetConnectionToken :one
 UPDATE connections SET token_hash = $1 WHERE id = $2
-RETURNING id, name, description, provider, enabled, token_hash, created_at, last_used_at, allowed_intents
+RETURNING id, name, description, provider, enabled, token_hash, created_at, last_used_at, allowed_intents, install_url
 `
 
 type SetConnectionTokenParams struct {
@@ -285,6 +375,7 @@ func (q *Queries) SetConnectionToken(ctx context.Context, arg SetConnectionToken
 		&i.CreatedAt,
 		&i.LastUsedAt,
 		&i.AllowedIntents,
+		&i.InstallUrl,
 	)
 	return i, err
 }
@@ -339,9 +430,10 @@ func (q *Queries) TouchConnection(ctx context.Context, arg TouchConnectionParams
 
 const updateConnection = `-- name: UpdateConnection :one
 UPDATE connections
-SET name = $1, description = $2, enabled = $3, allowed_intents = $4
-WHERE id = $5
-RETURNING id, name, description, provider, enabled, token_hash, created_at, last_used_at, allowed_intents
+SET name = $1, description = $2, enabled = $3, allowed_intents = $4,
+    install_url = $5
+WHERE id = $6
+RETURNING id, name, description, provider, enabled, token_hash, created_at, last_used_at, allowed_intents, install_url
 `
 
 type UpdateConnectionParams struct {
@@ -349,6 +441,7 @@ type UpdateConnectionParams struct {
 	Description    string
 	Enabled        bool
 	AllowedIntents []string
+	InstallUrl     string
 	ID             uuid.UUID
 }
 
@@ -358,6 +451,7 @@ func (q *Queries) UpdateConnection(ctx context.Context, arg UpdateConnectionPara
 		arg.Description,
 		arg.Enabled,
 		arg.AllowedIntents,
+		arg.InstallUrl,
 		arg.ID,
 	)
 	var i Connection
@@ -371,6 +465,7 @@ func (q *Queries) UpdateConnection(ctx context.Context, arg UpdateConnectionPara
 		&i.CreatedAt,
 		&i.LastUsedAt,
 		&i.AllowedIntents,
+		&i.InstallUrl,
 	)
 	return i, err
 }

@@ -34,7 +34,7 @@ tests:
               instance: discord:9091
               severity: critical
             exp_annotations:
-              summary: The Discord bot has not answered a scrape for two minutes.
+              summary: The Discord bot at discord:9091 has not answered a scrape for two minutes.
 
   - name: a ticker that stops is reported, one that keeps going is not
     interval: 1m
@@ -71,3 +71,62 @@ tests:
         groupname: plsremind
         alertname: PlsremindDiscordRefusing
         exp_alerts: []
+
+  - name: with two bots, only the one that is refused is reported
+    interval: 1m
+    input_series:
+      - series: 'plsremind_discord_delivery_attempts_total{job="plsremind-discord",instance="discord:9091",result="refused"}'
+        values: "0+1x60"
+      - series: 'plsremind_discord_delivery_attempts_total{job="plsremind-discord",instance="discord-team:9091",result="sent"}'
+        values: "0+5x60"
+    alert_rule_test:
+      - eval_time: 45m
+        groupname: plsremind
+        alertname: PlsremindDiscordRefusing
+        exp_alerts:
+          - exp_labels:
+              instance: discord:9091
+              severity: warning
+            exp_annotations:
+              summary: More than a fifth of the tries of the bot at discord:9091 to send a reminder do not get through.
+
+  - name: with two bots, only the one that errs is reported
+    interval: 1m
+    input_series:
+      - series: 'plsremind_discord_delivery_attempts_total{job="plsremind-discord",instance="discord:9091",result="error"}'
+        values: "0x10 1x20"
+      - series: 'plsremind_discord_interaction_failures_total{job="plsremind-discord",instance="discord:9091",kind="command"}'
+        values: "0x30"
+      - series: 'plsremind_discord_delivery_attempts_total{job="plsremind-discord",instance="discord-team:9091",result="error"}'
+        values: "0x30"
+      - series: 'plsremind_discord_interaction_failures_total{job="plsremind-discord",instance="discord-team:9091",kind="command"}'
+        values: "0x30"
+    alert_rule_test:
+      - eval_time: 15m
+        groupname: plsremind
+        alertname: PlsremindBotErrors
+        exp_alerts:
+          - exp_labels:
+              instance: discord:9091
+              severity: warning
+            exp_annotations:
+              summary: The Discord bot at discord:9091 ran into errors nobody foresaw; its log says which.
+
+  - name: with two bots, only the one that is down is reported
+    interval: 1m
+    input_series:
+      - series: 'up{job="plsremind-discord",instance="discord:9091"}'
+        values: "1x10 0x30"
+      - series: 'up{job="plsremind-discord",instance="discord-team:9091"}'
+        values: "1x40"
+    alert_rule_test:
+      - eval_time: 20m
+        groupname: plsremind
+        alertname: PlsremindBotDown
+        exp_alerts:
+          - exp_labels:
+              job: plsremind-discord
+              instance: discord:9091
+              severity: critical
+            exp_annotations:
+              summary: The Discord bot at discord:9091 has not answered a scrape for two minutes.

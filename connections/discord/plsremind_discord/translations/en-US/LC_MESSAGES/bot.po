@@ -93,6 +93,15 @@ msgstr "Discord did not accept the direct message. Check that you allow messages
 msgid "delivery.refused"
 msgstr "Discord did not accept the reminder."
 
+msgid "test.message"
+msgstr "Test: this is where your reminders arrive."
+
+msgid "test.error"
+msgstr "Something went wrong in the bot. If it happens again, let the admin of your instance know."
+
+msgid "test.trouble"
+msgstr "Discord could not be reached just now. Try the test again in a moment."
+
 msgid "delivery.no_account"
 msgstr "No Discord account is linked."
 
@@ -190,7 +199,7 @@ msgid "error.time_unreadable"
 msgstr "I could not read that time. Try for example: tomorrow 9, in 2h, fri 18:00"
 
 msgid "error.not_linked"
-msgstr "Your Discord account is not linked to plsremind, or the Discord connection is switched off."
+msgstr "Your Discord account is not linked to plsremind, or this bot is switched off for you."
 
 msgid "error.failed"
 msgstr "That did not work. Please try again."

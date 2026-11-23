@@ -62,6 +62,7 @@ variable named in the log.
 |---|---|---|---|
 | `plsremind_discord_build_info` | gauge | `version` | Always 1; tells which version runs. |
 | `plsremind_discord_delivery_attempts_total` | counter | `result` | Tries to send a reminder: `sent`, `closed` (DMs closed), `refused` (Discord would not take the message), `no_account` (no Discord account linked), `passing` (trouble that is tried again), `unreadable` (the item could not be read yet), `error` (something nobody foresaw, logged and tried again). Telling the hub about a result again is not another try. |
+| `plsremind_discord_tests_total` | counter | `result` | Test reminders users asked for: `sent`, `closed`, `refused`, `no_account`, `trouble` (Discord could not be reached; a test is not tried again) or `error`. |
 | `plsremind_discord_deliveries_waiting` | gauge | | Deliveries that are tried again later. |
 | `plsremind_discord_dm_channels_opened_total` | counter | | DM channels the bot had to open; a kept one is used again. |
 | `plsremind_discord_interactions_total` | counter | `kind` | Interactions from Discord: `command`, `component` (a click), `modal` or `autocomplete`. |

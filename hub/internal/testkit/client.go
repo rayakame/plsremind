@@ -21,6 +21,11 @@ type Client struct {
 	Token string
 }
 
+// Opts are the request options that act as this client.
+func (c *Client) Opts() []ReqOpt {
+	return append([]ReqOpt{}, c.opts...)
+}
+
 func (c *Client) Do(t *testing.T, method, path string, body any, opts ...ReqOpt) *Resp {
 	t.Helper()
 	return c.env.Do(t, method, path, body, append(append([]ReqOpt{}, c.opts...), opts...)...)

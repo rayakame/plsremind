@@ -35,7 +35,7 @@ def test_every_gateway_event_has_a_class() -> None:
     table = GATEWAY_DOC.read_text(encoding="utf-8").split("## Events at a glance")[1].split("\n## ")[0]
     names = set(re.findall(r"`([a-z]+\.[a-z_]+)`", table))
     assert names == set(wire.EVENT_CLASSES)
-    assert len(names) == 18
+    assert len(names) == 19
 
 
 def test_item_created() -> None:
@@ -129,6 +129,14 @@ def test_delivery_created_survives_what_the_sdk_does_not_know() -> None:
     assert event.delivery.reminder.kind is ReminderKind.UNKNOWN
     assert event.delivery.item.title == "Hand in the report"
     assert str(event.delivery.user.timezone) == "UTC"
+
+
+def test_delivery_test() -> None:
+    event = decode("delivery.test", change(fixtures.DELIVERY_TEST))
+    assert isinstance(event, events.DeliveryTestEvent)
+    assert event.test.id == fixtures.TEST_ID
+    assert event.test.user.external_ids == ("1234",)
+    assert event.user_id == fixtures.USER_ID
 
 
 def test_delivery_closed() -> None:

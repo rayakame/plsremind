@@ -134,7 +134,7 @@ test("go leads to lists and pages", async () => {
   await userEvent.type(bar(), "/go done{Enter}");
   expect(made.path()).toBe("/done");
   await userEvent.type(bar(), "/go settings{Enter}");
-  expect(made.path()).toBe("/settings/personal");
+  await waitFor(() => expect(made.path()).toBe("/settings/profile"));
 });
 
 test("find lists open and done items that match", async () => {
@@ -268,7 +268,7 @@ test("a list named like a page is reached with the hash", async () => {
   await userEvent.keyboard("{ArrowDown}{Enter}");
   expect(made.path()).toBe("/lists/l5");
   await userEvent.type(bar(), "/go settings{Enter}");
-  expect(made.path()).toBe("/settings/personal");
+  await waitFor(() => expect(made.path()).toBe("/settings/profile"));
 });
 
 test("a word that every object knows is not a place", async () => {

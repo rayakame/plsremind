@@ -47,6 +47,12 @@ func oauthFail(c fiber.Ctx, d *core.Deps, code string) error {
 	return c.Redirect().Status(http.StatusFound).To(d.Cfg.PublicURL + "/?auth_error=" + url.QueryEscape(code))
 }
 
+// linkedPage is where a link flow ends: the dashboard's confirmation, with the linked
+// identity or the error code.
+func linkedPage(d *core.Deps, key, param, value string) string {
+	return d.Cfg.PublicURL + "/linked/" + url.PathEscape(key) + "?" + url.Values{param: {value}}.Encode()
+}
+
 func oauthStart(d *core.Deps, svc *OAuth) fiber.Handler {
 	return func(c fiber.Ctx) error {
 		intent := c.Query("intent", "login")
@@ -69,7 +75,7 @@ func oauthStart(d *core.Deps, svc *OAuth) fiber.Handler {
 				return api.Unauthorized()
 			}
 			if !row.LinkEnabled {
-				return oauthFail(c, d, "link_disabled")
+				return c.Redirect().Status(http.StatusFound).To(linkedPage(d, row.Key, "error", "link_disabled"))
 			}
 			userID = &p.UserID
 		} else if !row.LoginEnabled {
@@ -79,6 +85,9 @@ func oauthStart(d *core.Deps, svc *OAuth) fiber.Handler {
 		provider, err := svc.Build(c.Context(), row)
 		if err != nil {
 			slog.Error("oauth provider unavailable", "provider", row.Key, "err", err)
+			if intent == "link" {
+				return c.Redirect().Status(http.StatusFound).To(linkedPage(d, row.Key, "error", "provider_error"))
+			}
 			return oauthFail(c, d, "provider_error")
 		}
 		// The invite stays usable until the flow ends, so it is kept encrypted like any other secret.
@@ -124,43 +133,54 @@ func oauthCallback(d *core.Deps, svc *OAuth) fiber.Handler {
 		if err != nil {
 			return err
 		}
+		fail := func(code string) error {
+			if stored.Intent == "link" {
+				return c.Redirect().Status(http.StatusFound).To(linkedPage(d, key, "error", code))
+			}
+			return oauthFail(c, d, code)
+		}
 		if stored.Provider != key || !stored.ExpiresAt.After(d.Now()) {
-			return oauthFail(c, d, "invalid_state")
+			return fail("invalid_state")
 		}
 		code := c.Query("code")
 		if c.Query("error") != "" || code == "" {
-			return oauthFail(c, d, "provider_error")
+			return fail("provider_error")
 		}
 
 		row, err := q.GetLoginProvider(c.Context(), key)
 		if err != nil {
-			return oauthFail(c, d, "provider_error")
+			return fail("provider_error")
 		}
+		var linked uuid.UUID
 		provider, err := svc.Build(c.Context(), row)
 		if err == nil {
 			var profile OAuthProfile
 			profile, err = provider.Exchange(c.Context(), code, stored.Verifier, redirectURL(d, key))
 			if err == nil {
-				err = oauthFinish(c, d, row, stored, profile)
+				linked, err = oauthFinish(c, d, row, stored, profile)
 			}
 		}
 		var apiErr *api.Error
 		switch {
+		case err == nil && stored.Intent == "link":
+			return c.Redirect().Status(http.StatusFound).To(linkedPage(d, key, "identity", linked.String()))
 		case err == nil:
 			return c.Redirect().Status(http.StatusFound).To(d.Cfg.PublicURL + "/")
 		case errors.As(err, &apiErr):
-			return oauthFail(c, d, apiErr.Code)
+			return fail(apiErr.Code)
 		default:
 			slog.Error("oauth callback failed", "provider", key, "err", err)
-			return oauthFail(c, d, "provider_error")
+			return fail("provider_error")
 		}
 	}
 }
 
-// oauthFinish applies a verified profile: it logs the user in, creates their account or links the identity.
-func oauthFinish(c fiber.Ctx, d *core.Deps, used sqlc.LoginProvider, stored sqlc.OauthState, profile OAuthProfile) error {
+// oauthFinish applies a verified profile: it logs the user in, creates their account or
+// links the identity, whose id it returns.
+func oauthFinish(c fiber.Ctx, d *core.Deps, used sqlc.LoginProvider, stored sqlc.OauthState, profile OAuthProfile) (uuid.UUID, error) {
 	token := d.Box().Seal([]byte(profile.Token))
-	return store.Tx(c.Context(), d.Pool, func(q *sqlc.Queries) error {
+	var linked uuid.UUID
+	err := store.Tx(c.Context(), d.Pool, func(q *sqlc.Queries) error {
 		// The provider may have been deleted or pointed at another issuer while the
 		// user was away at it. The profile is only good for the provider as it was used.
 		row, err := q.HoldLoginProvider(c.Context(), used.Key)
@@ -177,23 +197,40 @@ func oauthFinish(c fiber.Ctx, d *core.Deps, used sqlc.LoginProvider, stored sqlc
 			return err
 		}
 		link := func(userID uuid.UUID) error {
-			_, err := q.CreateIdentity(c.Context(), sqlc.CreateIdentityParams{
+			params := sqlc.CreateIdentityParams{
 				ID:            uuid.Must(uuid.NewV7()),
 				UserID:        userID,
 				Provider:      row.Key,
 				ExternalID:    profile.ExternalID,
 				DisplayName:   profile.DisplayName,
+				Username:      profile.Username,
 				ProviderToken: token,
 				CreatedAt:     now,
-			})
+			}
+			if profile.picture != nil {
+				params.Avatar, params.AvatarType = profile.picture.data, profile.picture.kind
+			}
+			created, err := q.CreateIdentity(c.Context(), params)
 			if err != nil {
 				return err
 			}
+			linked = created.ID
 			// A new identity can bring the user into reach of a connection.
 			return events.NotifyUser(c.Context(), q, events.SignalUser, userID)
 		}
 		refresh := func() error {
-			return q.RefreshIdentity(c.Context(), sqlc.RefreshIdentityParams{ID: identity.ID, DisplayName: profile.DisplayName, ProviderToken: token})
+			linked = identity.ID
+			params := sqlc.RefreshIdentityParams{
+				ID:            identity.ID,
+				DisplayName:   profile.DisplayName,
+				Username:      profile.Username,
+				ProviderToken: token,
+				SetAvatar:     !profile.keepPicture,
+			}
+			if profile.picture != nil {
+				params.Avatar, params.AvatarType = profile.picture.data, profile.picture.kind
+			}
+			return q.RefreshIdentity(c.Context(), params)
 		}
 
 		if stored.Intent == "link" {
@@ -254,4 +291,5 @@ func oauthFinish(c fiber.Ctx, d *core.Deps, used sqlc.LoginProvider, stored sqlc
 		}
 		return auth.StartSession(c, d, q, user.ID)
 	})
+	return linked, err
 }

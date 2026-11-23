@@ -44,7 +44,7 @@ def test_every_token_operation_has_a_method() -> None:
         if not name.startswith("_") and inspect.iscoroutinefunction(member)
     } - {"close"}
     assert actual == expected
-    assert len(expected) == 31
+    assert len(expected) == 33
 
 
 def test_every_route_is_a_call_of_the_api_and_the_other_way_round() -> None:

@@ -294,6 +294,21 @@ func TestInfoListsEnabledLoginMethods(t *testing.T) {
 	require.Equal(t, "Discord", after.Get("login_methods.1.name").String())
 }
 
+func TestInfoListsProvidersThatOnlyLink(t *testing.T) {
+	e := testkit.New(t)
+	testkit.EnableProvider(t, e, "discord")
+	testkit.EnableProvider(t, e, "github")
+	admin := e.Admin(t)
+	require.Equal(t, 200, admin.Do(t, "PUT", "/admin/providers/discord", J{"login_enabled": false, "link_enabled": true}).Status)
+	require.Equal(t, 200, admin.Do(t, "PUT", "/admin/providers/github", J{"login_enabled": false, "link_enabled": false}).Status)
+
+	info := e.Do(t, "GET", "/info", nil)
+	require.Equal(t, []string{"password", "discord"}, testkit.Strings(info, "login_methods.#.key"))
+	require.True(t, info.Get("login_methods.0.login").Bool())
+	require.False(t, info.Get("login_methods.1.login").Bool())
+	require.True(t, info.Get("login_methods.1.link").Bool())
+}
+
 func TestPendingInviteCodeIsNotStoredInPlaintext(t *testing.T) {
 	e := testkit.New(t)
 	testkit.EnableProvider(t, e, "discord")

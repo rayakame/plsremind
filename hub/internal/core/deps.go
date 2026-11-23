@@ -24,6 +24,8 @@ type Deps struct {
 	RateAuth *api.Limiter
 	RateConn *api.Limiter
 	RateAnon *api.Limiter
+	// RateTest limits tests of an app per user and app.
+	RateTest *api.Limiter
 
 	Gateway GatewayConfig
 
@@ -42,6 +44,8 @@ type OAuthEndpoints struct {
 	TokenURL  string
 	UserURL   string
 	RevokeURL string
+	// AvatarBase is the only origin pictures are fetched from.
+	AvatarBase string
 }
 
 // Box encrypts secrets that are stored in the database.

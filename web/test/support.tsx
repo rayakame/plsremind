@@ -57,7 +57,9 @@ export function fakeHub(options: HubOptions = {}) {
       gateway_url: "ws://hub.test/api/v1/gateway",
       setup_required: false,
       registration: "open",
-      login_methods: [{ key: "password", type: "password", name: "Password" }],
+      login_methods: [
+        { key: "password", type: "password", name: "Password", login: true, link: false },
+      ],
       ...options.info,
     },
   });
@@ -67,6 +69,7 @@ export function fakeHub(options: HubOptions = {}) {
 
   route("GET", /^\/users\/@me\/items\/[^/]+\/schedule/, { status: 200, body: [] });
   route("GET", "/users/@me/reminder-log", { status: 200, body: { data: [], next_cursor: null } });
+  route("GET", "/users/@me/connections", { status: 200, body: [] });
 
   const fetch = (async (input: RequestInfo | URL, init: RequestInit = {}) => {
     const url = new URL(String(input));
@@ -180,4 +183,21 @@ export async function connectedHub(options: HubOptions = {}) {
   await connecting;
   const view = optimistic(client);
   return { ...hub, client, view, own: { client, view, userId: "u1" }, mine: () => view.user()! };
+}
+
+/** An app as one user sees it, in the hub's form. */
+export function wireApp(overrides: Record<string, unknown> = {}) {
+  return {
+    id: "c1",
+    name: "plsremind",
+    description: "Reminders as direct messages",
+    provider: "discord",
+    linked: true,
+    enabled: true,
+    remind: true,
+    intents: ["users", "lists", "items", "deliveries"],
+    install_url: "",
+    last_delivery: null,
+    ...overrides,
+  };
 }

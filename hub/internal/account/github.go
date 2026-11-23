@@ -14,10 +14,11 @@ import (
 )
 
 var githubEndpoints = core.OAuthEndpoints{
-	AuthURL:   "https://github.com/login/oauth/authorize",
-	TokenURL:  "https://github.com/login/oauth/access_token",
-	UserURL:   "https://api.github.com/user",
-	RevokeURL: "https://api.github.com/applications/{client_id}/grant",
+	AuthURL:    "https://github.com/login/oauth/authorize",
+	TokenURL:   "https://github.com/login/oauth/access_token",
+	UserURL:    "https://api.github.com/user",
+	RevokeURL:  "https://api.github.com/applications/{client_id}/grant",
+	AvatarBase: "https://avatars.githubusercontent.com",
 }
 
 func newGitHub(d *core.Deps, clientID, clientSecret string) Provider {
@@ -32,14 +33,21 @@ func newGitHub(d *core.Deps, clientID, clientSecret string) Provider {
 		http: d.HTTP,
 		profile: func(ctx context.Context, token *oauth2.Token) (OAuthProfile, error) {
 			var user struct {
-				ID    json.Number `json:"id"`
-				Login string      `json:"login"`
-				Name  string      `json:"name"`
+				ID        json.Number `json:"id"`
+				Login     string      `json:"login"`
+				Name      string      `json:"name"`
+				AvatarURL string      `json:"avatar_url"`
 			}
 			if err := getJSON(ctx, d.HTTP, ep.UserURL, token.AccessToken, &user); err != nil {
 				return OAuthProfile{}, err
 			}
-			return OAuthProfile{ExternalID: user.ID.String(), DisplayName: firstNonEmpty(user.Name, user.Login)}, nil
+			return OAuthProfile{
+				ExternalID:  user.ID.String(),
+				DisplayName: firstNonEmpty(user.Name, user.Login),
+				Username:    user.Login,
+				AvatarURL:   user.AvatarURL,
+				avatar:      avatarPolicy{origin: originOf(ep.AvatarBase)},
+			}, nil
 		},
 		// GitHub has no RFC 7009 endpoint; an app deletes its own grant instead.
 		revoke: func(ctx context.Context, token string) error {

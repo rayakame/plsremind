@@ -18,7 +18,9 @@ DELETE FROM sessions WHERE token_hash = @token_hash;
 DELETE FROM sessions WHERE user_id = @user_id;
 
 -- name: ListLoginMethods :many
-SELECT key, type, name FROM login_providers WHERE login_enabled ORDER BY type = 'password' DESC, key;
+SELECT key, type, name, login_enabled, link_enabled FROM login_providers
+WHERE login_enabled OR link_enabled
+ORDER BY type = 'password' DESC, key;
 
 -- name: GetLoginProvider :one
 SELECT * FROM login_providers WHERE key = @key;

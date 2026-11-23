@@ -266,7 +266,7 @@ async def test_someone_who_is_not_linked_gets_the_hint(made: Made) -> None:
     kind, hidden, text = discord.answer(event.interaction)
     assert (kind, hidden) == (CREATE, True)
     assert "is not linked to plsremind" in text
-    assert "https://todo.example.com/settings" in text
+    assert "https://todo.example.com/settings/apps" in text
     assert made.hub.calls == []
 
 

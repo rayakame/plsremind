@@ -268,7 +268,8 @@ async def test_every_command_tells_someone_who_is_not_linked_how_to_link(hub: Fa
     hidden, text = discord.replied(ctx)
     assert hidden is True
     assert "is not linked to plsremind" in text
-    assert "https://todo.example.com/settings" in text
+    assert "connection" not in text
+    assert "https://todo.example.com/settings/apps" in text
     assert hub.calls == []
 
 

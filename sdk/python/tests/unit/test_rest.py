@@ -277,6 +277,14 @@ CASES = [
     Case(
         "list_identities", lambda r: r.list_identities(), "GET", f"{ME}/identities", [fixtures.IDENTITY], result=tuple
     ),
+    Case(
+        "get_identity_avatar",
+        lambda r: r.get_identity_avatar(ID("i1")),
+        "GET",
+        f"{ME}/identities/i1/avatar",
+        "png",
+        result=bytes,
+    ),
     Case("list_lists", lambda r: r.list_lists(), "GET", f"{ME}/lists", [fixtures.LIST], result=tuple),
     Case(
         "create_list",
@@ -531,6 +539,17 @@ CASES = [
         body={"status": "delivered"},
     ),
     Case(
+        "report_test",
+        lambda r: r.report_test(
+            ID(fixtures.TEST_ID), status=DeliveryStatus.FAILED, reason="direct messages are closed"
+        ),
+        "PUT",
+        f"/deliveries/tests/{fixtures.TEST_ID}",
+        fixtures.CONNECTION_TEST,
+        result=models.ConnectionTest,
+        body={"status": "failed", "reason": "direct messages are closed"},
+    ),
+    Case(
         "acknowledge_delivery_failed",
         lambda r: r.acknowledge_delivery(DEL, status=DeliveryStatus.FAILED, reason="direct messages are closed"),
         "PUT",
@@ -630,6 +649,23 @@ async def test_failed_delivery_needs_a_reason(hub: fakes.FakeHub) -> None:
         with pytest.raises(ValueError, match="DELIVERED or as FAILED"):
             await rest.acknowledge_delivery(DEL, status=DeliveryStatus.EXPIRED)
     assert hub.requests == []
+
+
+async def test_a_failed_test_needs_a_reason(hub: fakes.FakeHub) -> None:
+    async with client(hub) as rest:
+        with pytest.raises(ValueError, match="reason"):
+            await rest.report_test(ID(fixtures.TEST_ID), status=DeliveryStatus.FAILED)
+        with pytest.raises(ValueError, match="DELIVERED or as FAILED"):
+            await rest.report_test(ID(fixtures.TEST_ID), status=DeliveryStatus.EXPIRED)
+    assert hub.requests == []
+
+
+async def test_the_picture_of_a_linked_account_comes_as_bytes(hub: fakes.FakeHub) -> None:
+    hub.answer(
+        "GET", "/users/@me/identities/i1/avatar", fakes.Reply(body=b"png", headers={"Content-Type": "image/png"})
+    )
+    async with client(hub) as rest:
+        assert await rest.get_identity_avatar(ID("i1")) == b"png"
 
 
 async def test_paginate_walks_every_page(hub: fakes.FakeHub) -> None:
@@ -773,6 +809,7 @@ def test_calls_about_the_account_itself_take_no_user() -> None:
     names = [
         "update_user",
         "list_identities",
+        "get_identity_avatar",
         "set_reminder_plan",
         "reset_reminder_plan",
         "list_user_connections",

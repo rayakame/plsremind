@@ -21,6 +21,7 @@ type Connection struct {
 	CreatedAt      time.Time
 	LastUsedAt     *time.Time
 	AllowedIntents []string
+	InstallUrl     string
 }
 
 type ConnectionGrant struct {
@@ -28,6 +29,17 @@ type ConnectionGrant struct {
 	ConnectionID uuid.UUID
 	Enabled      *bool
 	Remind       *bool
+}
+
+type ConnectionTest struct {
+	ID           uuid.UUID
+	UserID       uuid.UUID
+	ConnectionID uuid.UUID
+	Status       string
+	Reason       string
+	CreatedAt    time.Time
+	SentAt       *time.Time
+	ClosedAt     *time.Time
 }
 
 type Delivery struct {
@@ -66,6 +78,9 @@ type Identity struct {
 	PasswordHash  *string
 	ProviderToken []byte
 	CreatedAt     time.Time
+	Username      string
+	Avatar        []byte
+	AvatarType    string
 }
 
 type InstanceSetting struct {

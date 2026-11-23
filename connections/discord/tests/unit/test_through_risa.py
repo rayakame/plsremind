@@ -94,7 +94,7 @@ async def test_a_click_by_anyone_but_the_owner_changes_nothing_and_is_answered_i
     assert made.hub.named("set_done") == []
     kind, hidden, said = wire.answered(rest)
     assert (kind, hidden) == (hikari.ResponseType.MESSAGE_CREATE, True)
-    assert "nicht mit plsremind verbunden" in wire.texts(said)
+    assert "nicht mit plsremind verknüpft" in wire.texts(said)
 
 
 async def test_a_fixed_snooze_sets_the_reminder_and_turns_the_message_into_the_notice(made: Made) -> None:

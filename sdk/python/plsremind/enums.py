@@ -11,6 +11,7 @@ if typing.TYPE_CHECKING:
 __all__ = [
     "ChannelKind",
     "ClientStatus",
+    "ConnectionTestStatus",
     "CredentialKind",
     "DeliveryStatus",
     "FollowUp",
@@ -81,6 +82,16 @@ class DeliveryStatus(_Received):
     SUPERSEDED = "superseded"
     CANCELLED = "cancelled"
     EXPIRED = "expired"
+    UNKNOWN = "unknown"
+
+
+class ConnectionTestStatus(_Received):
+    """What became of a test the user asked an app for."""
+
+    PENDING = "pending"
+    DELIVERED = "delivered"
+    FAILED = "failed"
+    UNANSWERED = "unanswered"
     UNKNOWN = "unknown"
 
 

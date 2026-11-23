@@ -54,6 +54,16 @@ test("at phone width everything is reachable by touch and nothing scrolls sidewa
   await expect(cell.locator(".n")).toHaveAttribute("aria-pressed", "true");
   expect((await cell.boundingBox())!.height).toBeGreaterThanOrEqual(44);
 
+  await page.goto("/settings");
+  await page
+    .getByRole("navigation", { name: "Settings" })
+    .getByRole("link", { name: "Apps" })
+    .tap();
+  await expect(page.getByRole("heading", { level: 1, name: "Apps" })).toBeVisible();
+  expect(await sideways(), "apps").toBe(0);
+  await page.getByRole("link", { name: "All settings" }).tap();
+  await expect(page.getByRole("heading", { level: 1, name: "Settings" })).toBeVisible();
+
   await page.goto("/settings/admin");
   await expect(page.getByRole("heading", { name: "Not found" })).toBeVisible();
 });

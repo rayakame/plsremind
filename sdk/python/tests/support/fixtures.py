@@ -117,7 +117,7 @@ INFO: dict[str, typing.Any] = {
     "gateway_url": "wss://remind.example.com/api/v1/gateway",
     "setup_required": False,
     "registration": "invite",
-    "login_methods": [{"key": "password", "type": "password", "name": "Password"}],
+    "login_methods": [{"key": "password", "type": "password", "name": "Password", "login": True, "link": False}],
 }
 LOOKUP_RESULT: dict[str, typing.Any] = {"id": USER_ID, "display_name": "Mia", "timezone": "Europe/Berlin"}
 DELIVERY: dict[str, typing.Any] = {
@@ -135,6 +135,25 @@ DELIVERY: dict[str, typing.Any] = {
     },
 }
 DELIVERY_RESULT: dict[str, typing.Any] = {"id": DELIVERY_ID, "status": "delivered", "reason": ""}
+TEST_ID = "01930000-0000-7000-8000-000000000091"
+CONNECTION_TEST: dict[str, typing.Any] = {
+    "id": TEST_ID,
+    "connection_id": CONNECTION_ID,
+    "status": "failed",
+    "reason": "direct messages are closed",
+    "created_at": "2026-11-12T18:00:00Z",
+    "closed_at": "2026-11-12T18:00:02Z",
+}
+DELIVERY_TEST: dict[str, typing.Any] = {
+    "id": TEST_ID,
+    "user": {
+        "id": USER_ID,
+        "display_name": "Mia",
+        "timezone": "Europe/Berlin",
+        "locale": "de",
+        "external_ids": ["1234"],
+    },
+}
 REMINDER_LOG_ENTRY: dict[str, typing.Any] = {
     "id": REMINDER_ID,
     "item_id": ITEM_ID,

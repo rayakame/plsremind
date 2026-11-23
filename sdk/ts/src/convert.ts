@@ -12,6 +12,8 @@ const instants = new Set([
   "expires_at",
   "used_at",
   "last_used_at",
+  "closed_at",
+  "at",
 ]);
 
 const camelNames = new Map<string, string>();

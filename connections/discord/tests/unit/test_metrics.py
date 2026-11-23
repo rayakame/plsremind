@@ -93,6 +93,8 @@ def test_every_counted_outcome_starts_at_zero() -> None:
     )
     for result in ("redrawn", "forgotten", "failed"):
         assert metrics.registry.get_sample_value("plsremind_discord_redraws_total", {"result": result}) == 0
+    for result in ("sent", "closed", "refused", "no_account", "trouble", "error"):
+        assert metrics.registry.get_sample_value("plsremind_discord_tests_total", {"result": result}) == 0
     assert metrics.registry.get_sample_value("plsremind_discord_dm_channels_opened_total") == 0
     assert metrics.registry.get_sample_value("plsremind_discord_write_echo_timeouts_total") == 0
     assert "_created" not in metrics.render().decode()

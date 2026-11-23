@@ -48,6 +48,7 @@ func TestOnlyDocumentedEventsAreSent(t *testing.T) {
 	mia.Do(t, "PUT", "/users/@me/reminder-plans/low", J{"before": []string{}, "follow_up": "never"})
 	mia.Do(t, "PATCH", "/users/@me/items/"+item, J{"status": "done"})
 	mia.Do(t, "DELETE", "/users/@me/items/"+item, nil)
+	mia.Do(t, "POST", "/users/@me/connections/"+bot.ID+"/tests", nil)
 	mia.Do(t, "PUT", "/users/@me/connections/"+bot.ID, J{"enabled": false})
 	own.Drain(t)
 	gw.Drain(t)

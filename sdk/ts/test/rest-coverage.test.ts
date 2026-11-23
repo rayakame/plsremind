@@ -8,7 +8,7 @@ const spec = parse(
   readFileSync(new URL("../../../docs/api/openapi.yaml", import.meta.url), "utf8"),
 );
 const outside = new Set(["connectGateway", "startOAuth", "finishOAuth"]);
-const helpers = new Set(["constructor", "pages", "oauthStartUrl"]);
+const helpers = new Set(["constructor", "pages", "oauthStartUrl", "identityAvatarUrl"]);
 
 const operations: { id: string; method: string; path: string }[] = [];
 for (const [path, entry] of Object.entries<Record<string, { operationId?: string }>>(spec.paths)) {

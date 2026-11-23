@@ -1,8 +1,10 @@
 package access
 
 import (
+	"context"
 	"fmt"
 	"net/http"
+	"net/url"
 	"regexp"
 	"slices"
 	"strings"
@@ -30,13 +32,16 @@ type Connection struct {
 	Provider    string    `json:"provider"`
 	Enabled     bool      `json:"enabled"`
 	// AllowedIntents is the data the admin lets the connection have.
-	AllowedIntents []string   `json:"allowed_intents"`
-	Token          string     `json:"token,omitempty"`
-	CreatedAt      time.Time  `json:"created_at"`
-	LastUsedAt     *time.Time `json:"last_used_at"`
+	AllowedIntents []string `json:"allowed_intents"`
+	InstallURL     string   `json:"install_url"`
+	// Reach is how many users the connection would remind now.
+	Reach      int        `json:"reach"`
+	Token      string     `json:"token,omitempty"`
+	CreatedAt  time.Time  `json:"created_at"`
+	LastUsedAt *time.Time `json:"last_used_at"`
 }
 
-func viewConnection(c sqlc.Connection) Connection {
+func viewConnection(c sqlc.Connection, reach int) Connection {
 	out := Connection{
 		ID:             c.ID,
 		Name:           c.Name,
@@ -44,6 +49,8 @@ func viewConnection(c sqlc.Connection) Connection {
 		Provider:       c.Provider,
 		Enabled:        c.Enabled,
 		AllowedIntents: c.AllowedIntents,
+		InstallURL:     c.InstallUrl,
+		Reach:          reach,
 		CreatedAt:      c.CreatedAt.UTC(),
 	}
 	if c.LastUsedAt != nil {
@@ -64,7 +71,17 @@ type UserConnection struct {
 	// Remind says whether the user is reminded through this connection.
 	Remind bool `json:"remind"`
 	// Intents is the data the connection may have, so users can see what they share.
-	Intents []string `json:"intents"`
+	Intents    []string `json:"intents"`
+	InstallURL string   `json:"install_url"`
+	// LastDelivery is the newest delivery through this connection to the user that says how it went.
+	LastDelivery *LastDelivery `json:"last_delivery"`
+}
+
+type LastDelivery struct {
+	Status string    `json:"status"`
+	Reason string    `json:"reason"`
+	At     time.Time `json:"at"`
+	Test   bool      `json:"test"`
 }
 
 func viewUserConnection(row sqlc.ListUserConnectionsRow) UserConnection {
@@ -85,7 +102,51 @@ func viewUserConnection(row sqlc.ListUserConnectionsRow) UserConnection {
 		Enabled:     enabled,
 		Remind:      remind,
 		Intents:     row.AllowedIntents,
+		InstallURL:  row.InstallUrl,
 	}
+}
+
+func userConnections(ctx context.Context, q *sqlc.Queries, userID uuid.UUID) ([]UserConnection, error) {
+	rows, err := q.ListUserConnections(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	last, err := q.LastDeliveries(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	byConnection := make(map[uuid.UUID]*LastDelivery, len(last))
+	for _, l := range last {
+		byConnection[l.ConnectionID] = &LastDelivery{Status: l.Status, Reason: l.Reason, At: l.At.UTC()}
+	}
+	tests, err := q.LastConnectionTests(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	for _, l := range tests {
+		if known := byConnection[l.ConnectionID]; known == nil || l.At.After(known.At) {
+			byConnection[l.ConnectionID] = &LastDelivery{Status: l.Status, Reason: l.Reason, At: l.At.UTC(), Test: true}
+		}
+	}
+	out := make([]UserConnection, 0, len(rows))
+	for _, row := range rows {
+		view := viewUserConnection(row)
+		view.LastDelivery = byConnection[row.ID]
+		out = append(out, view)
+	}
+	return out, nil
+}
+
+func reachOf(ctx context.Context, q *sqlc.Queries, id *uuid.UUID) (map[uuid.UUID]int, error) {
+	rows, err := q.ConnectionReach(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[uuid.UUID]int, len(rows))
+	for _, row := range rows {
+		out[row.ID] = int(row.Reach)
+	}
+	return out, nil
 }
 
 func RegisterConnections(root, user, admin fiber.Router, d *core.Deps) {
@@ -137,13 +198,9 @@ func lookupUser(d *core.Deps) fiber.Handler {
 
 func listUserConnections(d *core.Deps) fiber.Handler {
 	return func(c fiber.Ctx) error {
-		rows, err := d.Q().ListUserConnections(c.Context(), auth.Target(c))
+		connections, err := userConnections(c.Context(), d.Q(), auth.Target(c))
 		if err != nil {
 			return err
-		}
-		connections := make([]UserConnection, 0, len(rows))
-		for _, row := range rows {
-			connections = append(connections, viewUserConnection(row))
 		}
 		return c.JSON(connections)
 	}
@@ -187,14 +244,18 @@ func setGrant(d *core.Deps) fiber.Handler {
 					return goneOr(err)
 				}
 			}
-			rows, err := q.ListUserConnections(c.Context(), userID)
+			now := d.Now()
+			if err := delivery.SyncConnection(c.Context(), q, now, id, userID); err != nil {
+				return err
+			}
+			all, err := userConnections(c.Context(), q, userID)
 			if err != nil {
 				return err
 			}
 			found := false
-			for _, row := range rows {
-				if row.ID == id {
-					out = viewUserConnection(row)
+			for _, one := range all {
+				if one.ID == id {
+					out = one
 					found = true
 				}
 			}
@@ -202,11 +263,7 @@ func setGrant(d *core.Deps) fiber.Handler {
 			if !found {
 				return api.NotFound()
 			}
-			now := d.Now()
 			if err := events.Append(c.Context(), q, now, userID, auth.Actor(c), "connection.updated", out); err != nil {
-				return err
-			}
-			if err := delivery.SyncConnection(c.Context(), q, now, id, userID); err != nil {
 				return err
 			}
 			return events.SendSignal(c.Context(), q, events.Signal{Type: events.SignalGrant, UserID: &userID, ConnectionID: &id})
@@ -232,9 +289,13 @@ func listConnections(d *core.Deps) fiber.Handler {
 		if err != nil {
 			return err
 		}
+		reach, err := reachOf(c.Context(), d.Q(), nil)
+		if err != nil {
+			return err
+		}
 		connections := make([]Connection, 0, len(rows))
 		for _, row := range rows {
-			connections = append(connections, viewConnection(row))
+			connections = append(connections, viewConnection(row, reach[row.ID]))
 		}
 		return c.JSON(connections)
 	}
@@ -248,6 +309,16 @@ func checkText(fields map[string]string, name, value string, min, max int) {
 		fields[name] = fmt.Sprintf("Must be at most %d characters.", max)
 	default:
 		fields[name] = fmt.Sprintf("Must be %d to %d characters.", min, max)
+	}
+}
+
+func checkInstallURL(fields map[string]string, raw string) {
+	if raw == "" {
+		return
+	}
+	u, err := url.Parse(raw)
+	if err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil || utf8.RuneCountInString(raw) > 512 {
+		fields["install_url"] = "Must be empty or an https address of at most 512 characters."
 	}
 }
 
@@ -266,15 +337,18 @@ func createConnection(d *core.Deps) fiber.Handler {
 			Description    string    `json:"description"`
 			Provider       string    `json:"provider"`
 			AllowedIntents *[]string `json:"allowed_intents"`
+			InstallURL     string    `json:"install_url"`
 		}
 		if err := api.Body(c, &in); err != nil {
 			return err
 		}
 		in.Name = strings.TrimSpace(in.Name)
 		in.Description = strings.TrimSpace(in.Description)
+		in.InstallURL = strings.TrimSpace(in.InstallURL)
 		fields := map[string]string{}
 		checkText(fields, "name", in.Name, 1, 64)
 		checkText(fields, "description", in.Description, 0, 500)
+		checkInstallURL(fields, in.InstallURL)
 		if !providerPattern.MatchString(in.Provider) {
 			fields["provider"] = "Must be 1 to 32 characters: a-z, 0-9, underscore or dash."
 		}
@@ -286,19 +360,32 @@ func createConnection(d *core.Deps) fiber.Handler {
 			return api.Validation(fields)
 		}
 		plain, hash := core.NewToken(core.PrefixConnection)
-		row, err := d.Q().CreateConnection(c.Context(), sqlc.CreateConnectionParams{
-			ID:             uuid.Must(uuid.NewV7()),
-			Name:           in.Name,
-			Description:    in.Description,
-			Provider:       in.Provider,
-			AllowedIntents: intents,
-			TokenHash:      hash,
-			CreatedAt:      d.Now(),
+		var out Connection
+		// The token is only ever shown here, so nothing is kept unless the whole answer can be made.
+		err := store.Tx(c.Context(), d.Pool, func(q *sqlc.Queries) error {
+			row, err := q.CreateConnection(c.Context(), sqlc.CreateConnectionParams{
+				ID:             uuid.Must(uuid.NewV7()),
+				Name:           in.Name,
+				Description:    in.Description,
+				Provider:       in.Provider,
+				AllowedIntents: intents,
+				InstallUrl:     in.InstallURL,
+				TokenHash:      hash,
+				CreatedAt:      d.Now(),
+			})
+			if err != nil {
+				return err
+			}
+			reach, err := reachOf(c.Context(), q, &row.ID)
+			if err != nil {
+				return err
+			}
+			out = viewConnection(row, reach[row.ID])
+			return nil
 		})
 		if err != nil {
 			return err
 		}
-		out := viewConnection(row)
 		out.Token = plain
 		return c.Status(http.StatusCreated).JSON(out)
 	}
@@ -315,6 +402,7 @@ func updateConnection(d *core.Deps) fiber.Handler {
 			Description    *string   `json:"description"`
 			Enabled        *bool     `json:"enabled"`
 			AllowedIntents *[]string `json:"allowed_intents"`
+			InstallURL     *string   `json:"install_url"`
 		}
 		if err := api.Body(c, &in); err != nil {
 			return err
@@ -331,6 +419,7 @@ func updateConnection(d *core.Deps) fiber.Handler {
 			params := sqlc.UpdateConnectionParams{
 				ID: id, Name: current.Name, Description: current.Description,
 				Enabled: current.Enabled, AllowedIntents: current.AllowedIntents,
+				InstallUrl: current.InstallUrl,
 			}
 			fields := map[string]string{}
 			if in.Name != nil {
@@ -346,6 +435,10 @@ func updateConnection(d *core.Deps) fiber.Handler {
 			}
 			if in.AllowedIntents != nil {
 				params.AllowedIntents = checkIntents(fields, *in.AllowedIntents)
+			}
+			if in.InstallURL != nil {
+				params.InstallUrl = strings.TrimSpace(*in.InstallURL)
+				checkInstallURL(fields, params.InstallUrl)
 			}
 			if len(fields) > 0 {
 				return api.Validation(fields)
@@ -364,7 +457,11 @@ func updateConnection(d *core.Deps) fiber.Handler {
 		if err != nil {
 			return err
 		}
-		return c.JSON(viewConnection(updated))
+		reach, err := reachOf(c.Context(), d.Q(), &id)
+		if err != nil {
+			return err
+		}
+		return c.JSON(viewConnection(updated, reach[id]))
 	}
 }
 
@@ -401,21 +498,25 @@ func rotateToken(d *core.Deps) fiber.Handler {
 			return err
 		}
 		plain, hash := core.NewToken(core.PrefixConnection)
-		var row sqlc.Connection
+		var out Connection
 		err = store.Tx(c.Context(), d.Pool, func(q *sqlc.Queries) error {
-			row, err = q.SetConnectionToken(c.Context(), sqlc.SetConnectionTokenParams{ID: id, TokenHash: hash})
+			row, err := q.SetConnectionToken(c.Context(), sqlc.SetConnectionTokenParams{ID: id, TokenHash: hash})
 			if store.IsNotFound(err) {
 				return api.NotFound()
 			}
 			if err != nil {
 				return err
 			}
+			reach, err := reachOf(c.Context(), q, &id)
+			if err != nil {
+				return err
+			}
+			out = viewConnection(row, reach[id])
 			return events.NotifyConnection(c.Context(), q, id)
 		})
 		if err != nil {
 			return err
 		}
-		out := viewConnection(row)
 		out.Token = plain
 		return c.JSON(out)
 	}

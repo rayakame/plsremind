@@ -23,9 +23,17 @@ import (
 )
 
 type OAuthUser struct {
-	ID   string
-	Name string
+	ID       string
+	Name     string
+	Username string
+	// Avatar is the Discord avatar hash, or for GitHub and OIDC a path under /avatars/ on the fake.
+	Avatar string
+	// Picture overrides the OIDC picture claim with any address.
+	Picture string
 }
+
+// TinyPNG is a picture the fake hands out by default.
+var TinyPNG = []byte("\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x06\x00\x00\x00\x1f\x15\xc4\x89")
 
 // FakeOAuth stands in for GitHub, Discord or an OIDC provider.
 type FakeOAuth struct {
@@ -36,6 +44,10 @@ type FakeOAuth struct {
 	FailWith string
 	// BadSignature makes the OIDC ID token fail verification.
 	BadSignature bool
+	// Image and ImageType are what /avatars/ serves; ImageStatus other than 0 replaces the answer.
+	Image       []byte
+	ImageType   string
+	ImageStatus int
 
 	kind   string
 	server *httptest.Server
@@ -46,6 +58,14 @@ type FakeOAuth struct {
 	tokens      int
 	revoked     []string
 	discoveries int
+	images      []string
+}
+
+// ImagePaths lists the picture paths the hub fetched.
+func (f *FakeOAuth) ImagePaths() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]string{}, f.images...)
 }
 
 // Discoveries counts how often the OIDC configuration was fetched.
@@ -66,7 +86,7 @@ func NewFakeOAuth(t *testing.T, kind string) *FakeOAuth {
 	t.Helper()
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
 	require.NoError(t, err)
-	f := &FakeOAuth{kind: kind, key: key, User: OAuthUser{ID: "1234", Name: "Mia"}, challenges: map[string]string{}}
+	f := &FakeOAuth{kind: kind, key: key, User: OAuthUser{ID: "1234", Name: "Mia"}, challenges: map[string]string{}, Image: TinyPNG, ImageType: "image/png"}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /authorize", f.authorize)
@@ -76,16 +96,18 @@ func NewFakeOAuth(t *testing.T, kind string) *FakeOAuth {
 	mux.HandleFunc("DELETE /applications/{client}/grant", f.revokeGitHub)
 	mux.HandleFunc("GET /.well-known/openid-configuration", f.discovery)
 	mux.HandleFunc("GET /jwks", f.jwks)
+	mux.HandleFunc("GET /avatars/{path...}", f.avatar)
 	f.server = httptest.NewServer(mux)
 	t.Cleanup(f.server.Close)
 
 	base := f.server.URL
 	f.IssuerURL = base
 	f.Endpoints = core.OAuthEndpoints{
-		AuthURL:   base + "/authorize",
-		TokenURL:  base + "/token",
-		UserURL:   base + "/user",
-		RevokeURL: base + "/revoke",
+		AuthURL:    base + "/authorize",
+		TokenURL:   base + "/token",
+		UserURL:    base + "/user",
+		RevokeURL:  base + "/revoke",
+		AvatarBase: base,
 	}
 	if kind == "github" {
 		f.Endpoints.RevokeURL = base + "/applications/{client_id}/grant"
@@ -150,14 +172,24 @@ func (f *FakeOAuth) idToken(audience string) string {
 		panic(err)
 	}
 	now := time.Now()
-	token, err := jwt.Signed(signer).Claims(map[string]any{
+	claims := map[string]any{
 		"iss":  f.IssuerURL,
 		"sub":  f.User.ID,
 		"aud":  audience,
 		"exp":  now.Add(time.Hour).Unix(),
 		"iat":  now.Unix(),
 		"name": f.User.Name,
-	}).Serialize()
+	}
+	if f.User.Username != "" {
+		claims["preferred_username"] = f.User.Username
+	}
+	switch {
+	case f.User.Picture != "":
+		claims["picture"] = f.User.Picture
+	case f.User.Avatar != "":
+		claims["picture"] = f.IssuerURL + "/avatars/" + f.User.Avatar
+	}
+	token, err := jwt.Signed(signer).Claims(claims).Serialize()
 	if err != nil {
 		panic(err)
 	}
@@ -171,11 +203,41 @@ func (f *FakeOAuth) user(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	if f.kind == "github" {
+		login := firstSet(f.User.Username, "octo")
+		picture := ""
+		if f.User.Avatar != "" {
+			picture = f.server.URL + "/avatars/" + f.User.Avatar
+		}
 		// GitHub user IDs are JSON numbers.
-		fmt.Fprintf(w, `{"id": %s, "login": "octo", "name": %q}`, f.User.ID, f.User.Name)
+		fmt.Fprintf(w, `{"id": %s, "login": %q, "name": %q, "avatar_url": %q}`, f.User.ID, login, f.User.Name, picture)
 		return
 	}
-	_ = json.NewEncoder(w).Encode(map[string]any{"id": f.User.ID, "username": "user", "global_name": f.User.Name})
+	body := map[string]any{"id": f.User.ID, "username": firstSet(f.User.Username, "user"), "global_name": f.User.Name}
+	if f.User.Avatar != "" {
+		body["avatar"] = f.User.Avatar
+	}
+	_ = json.NewEncoder(w).Encode(body)
+}
+
+func (f *FakeOAuth) avatar(w http.ResponseWriter, r *http.Request) {
+	f.mu.Lock()
+	f.images = append(f.images, r.URL.Path)
+	f.mu.Unlock()
+	if f.ImageStatus != 0 {
+		w.WriteHeader(f.ImageStatus)
+		return
+	}
+	w.Header().Set("Content-Type", f.ImageType)
+	_, _ = w.Write(f.Image)
+}
+
+func firstSet(values ...string) string {
+	for _, v := range values {
+		if v != "" {
+			return v
+		}
+	}
+	return ""
 }
 
 func (f *FakeOAuth) revokeForm(w http.ResponseWriter, r *http.Request) {
@@ -269,11 +331,25 @@ func (c *Client) OAuthLink(t *testing.T, provider string) *Resp {
 	return c.env.OAuthFlow(t, provider, "intent=link", c.opts...)
 }
 
-// AuthError extracts the error code from a failed flow's redirect.
+// AuthError extracts the error code from a failed flow's redirect, whether it went
+// home or to the confirmation of a link.
 func (r *Resp) AuthError() string {
 	u, err := url.Parse(r.Header.Get("Location"))
 	if err != nil {
 		return ""
 	}
+	if strings.HasPrefix(u.Path, "/linked/") {
+		return u.Query().Get("error")
+	}
 	return u.Query().Get("auth_error")
+}
+
+// Linked reads the confirmation a link flow returns to: the provider, and the linked
+// identity or the error code.
+func (r *Resp) Linked() (provider, identity, code string) {
+	u, err := url.Parse(r.Header.Get("Location"))
+	if err != nil || !strings.HasPrefix(u.Path, "/linked/") {
+		return "", "", ""
+	}
+	return strings.TrimPrefix(u.Path, "/linked/"), u.Query().Get("identity"), u.Query().Get("error")
 }

@@ -14,6 +14,7 @@ from plsremind import errors
 from plsremind.enums import DeliveryStatus
 from plsremind.internal import codec
 from plsremind.internal import routes
+from plsremind.models import ConnectionTest
 from plsremind.models import Delivery
 from plsremind.models import DeliveryResult
 from plsremind.models import Identity
@@ -268,6 +269,10 @@ class RESTClient:
     async def list_identities(self) -> tuple[Identity, ...]:
         """List the accounts the user signs in with or has linked."""
         return await self._fetch(tuple[Identity, ...], routes.LIST_IDENTITIES.compile(user=self._account()))
+
+    async def get_identity_avatar(self, identity_id: ID) -> bytes:
+        """Fetch the picture of a linked account, as the hub keeps it."""
+        return await self._send(routes.GET_IDENTITY_AVATAR.compile(user=self._account(), id=identity_id))
 
     async def list_lists(self, *, user: ID | None = None) -> tuple[List, ...]:
         """List a user's lists in their order."""
@@ -554,6 +559,30 @@ class RESTClient:
             raise ValueError(msg)
         route = routes.ACKNOWLEDGE_DELIVERY.compile(id=delivery_id)
         return await self._fetch(DeliveryResult, route, body={"status": status, "reason": reason})
+
+    async def report_test(
+        self, test_id: ID, *, status: DeliveryStatus, reason: str | _Unset = _UNSET
+    ) -> ConnectionTest:
+        """Tell the hub how a test the user asked for went, after `DeliveryTestEvent`.
+
+        The reason of a failed test is shown to the user.
+
+        Raises
+        ------
+        ValueError
+            If the status is neither `DELIVERED` nor `FAILED`, or a failure comes without a reason.
+        ConflictError
+            With the code `test_closed` if the test already ended, for one because it was not answered in time.
+        """
+        if status is DeliveryStatus.FAILED:
+            if not reason:
+                msg = "A failed test needs a reason, which the user gets to see."
+                raise ValueError(msg)
+        elif status is not DeliveryStatus.DELIVERED:
+            msg = "A test is reported as DELIVERED or as FAILED."
+            raise ValueError(msg)
+        route = routes.REPORT_TEST.compile(id=test_id)
+        return await self._fetch(ConnectionTest, route, body={"status": status, "reason": reason})
 
     async def list_reminder_log(
         self,

@@ -81,6 +81,9 @@ func New(d *core.Deps) *Server {
 	if d.RateAnon == nil {
 		d.RateAnon = api.NewLimiter(20, time.Minute, d.Now)
 	}
+	if d.RateTest == nil {
+		d.RateTest = api.NewLimiter(1, 30*time.Second, d.Now)
+	}
 
 	app.Use(measure(d.Metrics))
 	// Outside the API, so that neither a login nor the rate limit stands between a probe and the answer.

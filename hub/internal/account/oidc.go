@@ -62,7 +62,7 @@ func (s *OAuth) discover(row sqlc.LoginProvider) (*oidc.Provider, error) {
 	return provider, nil
 }
 
-func newOIDC(d *core.Deps, provider *oidc.Provider, clientID, clientSecret string) Provider {
+func newOIDC(d *core.Deps, provider *oidc.Provider, issuer, clientID, clientSecret string) Provider {
 	var metadata struct {
 		RevocationEndpoint string `json:"revocation_endpoint"`
 	}
@@ -89,11 +89,19 @@ func newOIDC(d *core.Deps, provider *oidc.Provider, clientID, clientSecret strin
 			var claims struct {
 				Name              string `json:"name"`
 				PreferredUsername string `json:"preferred_username"`
+				Picture           string `json:"picture"`
 			}
 			if err := idToken.Claims(&claims); err != nil {
 				return OAuthProfile{}, err
 			}
-			return OAuthProfile{ExternalID: idToken.Subject, DisplayName: firstNonEmpty(claims.Name, claims.PreferredUsername)}, nil
+			return OAuthProfile{
+				ExternalID:  idToken.Subject,
+				DisplayName: firstNonEmpty(claims.Name, claims.PreferredUsername),
+				Username:    claims.PreferredUsername,
+				AvatarURL:   claims.Picture,
+				// The picture claim can name any address; the issuer the admin set up is trusted.
+				avatar: avatarPolicy{origin: originOf(issuer), public: true},
+			}, nil
 		},
 	}
 	if metadata.RevocationEndpoint != "" {

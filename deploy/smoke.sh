@@ -54,6 +54,15 @@ echo "ok  the alert rules load"
 docker run --rm -v "$PWD/monitoring:/rules:ro" victoriametrics/vmalert-tool:v1.156.0 unittest --files=/rules/alerts.test.yml >/dev/null 2>&1 \
   || fail "the alert rules do not pass their cases in monitoring/alerts.test.yml"
 echo "ok  the alert rules pass their cases"
+generated="$(mktemp)"
+python3 monitoring/grafana/dashboard.py "$generated" >/dev/null
+cmp -s "$generated" monitoring/grafana/plsremind.json \
+  || fail "monitoring/grafana/plsremind.json differs from what monitoring/grafana/dashboard.py writes"
+rm -f "$generated"
+echo "ok  the dashboard is what its generator writes"
+docker compose -f compose.yaml -f examples/another-discord-bot.yaml --profile discord config --quiet \
+  || fail "the example for another Discord bot does not fit the compose file"
+echo "ok  the example for another Discord bot fits"
 expect "vmalert runs" "$(docker inspect -f '{{.State.Status}}' "$(docker compose ps -q vmalert)")" running
 
 expect "fresh instance needs setup" \

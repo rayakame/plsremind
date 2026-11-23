@@ -93,6 +93,15 @@ func (h *Hub) sendUnsent(ctx context.Context) error {
 				return err
 			}
 		}
+		tests, err := delivery.UnsentTests(ctx, h.d.Q(), h.d.Now(), channel)
+		if err != nil {
+			return err
+		}
+		for _, id := range tests {
+			if err := h.sendTest(ctx, id); err != nil {
+				return err
+			}
+		}
 	}
 	return nil
 }
@@ -128,6 +137,10 @@ func (h *Hub) handle(s events.Signal) {
 	case events.SignalDelivery:
 		if s.DeliveryID != nil {
 			h.enqueue(outgoing{id: *s.DeliveryID})
+		}
+	case events.SignalTest:
+		if s.TestID != nil {
+			h.enqueue(outgoing{id: *s.TestID, test: true})
 		}
 	case events.SignalClosed:
 		// Acknowledged deliveries need no announcement: whoever confirmed them knows.
@@ -182,6 +195,7 @@ func (h *Hub) eachCovering(userID uuid.UUID, fn func(*Session)) {
 // outgoing is a delivery to announce: a new one, or one that was closed.
 type outgoing struct {
 	id      uuid.UUID
+	test    bool
 	closed  bool
 	channel uuid.UUID
 	userID  uuid.UUID
@@ -219,11 +233,43 @@ func (h *Hub) deliver(ctx context.Context) {
 				})
 				continue
 			}
+			if o.test {
+				if err := h.sendTest(ctx, o.id); err != nil && ctx.Err() == nil {
+					slog.Error("gateway could not send a test", "test", o.id, "err", err)
+				}
+				continue
+			}
 			if err := h.deliverOne(ctx, o.id); err != nil && ctx.Err() == nil {
 				slog.Error("gateway could not send a delivery", "delivery", o.id, "err", err)
 			}
 		}
 	}
+}
+
+// sendTest hands a test to the sessions of its app, or ends it when no session is there to take it.
+func (h *Hub) sendTest(ctx context.Context, id uuid.UUID) error {
+	q := h.d.Q()
+	app, ok, err := delivery.TestToSend(ctx, q, h.d.Now(), id)
+	if err != nil || !ok {
+		return err
+	}
+	var targets []*Session
+	h.each(func(sess *Session) bool {
+		return sess.principal.CredentialID == app && sess.wants("deliveries") && sess.attached()
+	}, func(sess *Session) {
+		targets = append(targets, sess)
+	})
+	if len(targets) == 0 {
+		return delivery.CloseTest(ctx, q, h.d.Now(), id, "unanswered", "not_connected")
+	}
+	claimed, err := delivery.ClaimTest(ctx, q, h.d.Now(), id)
+	if err != nil || !claimed {
+		return err
+	}
+	for _, sess := range targets {
+		sess.box.post(func(m *mailbox) { m.frames = append(m.frames, loose{event: "delivery.test", test: id}) })
+	}
+	return nil
 }
 
 func (h *Hub) deliverOne(ctx context.Context, id uuid.UUID) error {

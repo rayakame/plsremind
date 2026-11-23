@@ -25,6 +25,8 @@ const (
 	SignalDelivery = "delivery"
 	// Closed: an open delivery was closed without being acknowledged.
 	SignalClosed = "closed"
+	// Test: a user asked an app for a test.
+	SignalTest = "test"
 )
 
 // Signal tells the gateway that something changed. It travels as a PostgreSQL
@@ -38,6 +40,7 @@ type Signal struct {
 	// the delivery itself may already be gone when the signal arrives.
 	TokenID *uuid.UUID `json:"token_id,omitempty"`
 	Status  string     `json:"status,omitempty"`
+	TestID  *uuid.UUID `json:"test_id,omitempty"`
 }
 
 // SendSignal queues the signal in q's transaction.

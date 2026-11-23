@@ -92,14 +92,17 @@ export function Segmented<T extends string>(props: {
   value: T;
   options: readonly { value: T; label: string }[];
   onChange: (value: T) => void;
+  disabled?: boolean | undefined;
+  describedBy?: string | undefined;
 }) {
   return (
-    <div className="seg" role="group" aria-label={props.label}>
+    <div className="seg" role="group" aria-label={props.label} aria-describedby={props.describedBy}>
       {props.options.map((option) => (
         <button
           key={option.value}
           type="button"
           aria-pressed={option.value === props.value}
+          disabled={props.disabled}
           onClick={() => props.onChange(option.value)}
         >
           {option.label}

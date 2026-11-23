@@ -36,6 +36,9 @@ type loose struct {
 	// session's epoch it was made for.
 	delivery uuid.UUID
 	epoch    int
+	// test is set for a test, which is only read when it is written, so that
+	// access withdrawn while it waited here still counts.
+	test uuid.UUID
 }
 
 func newMailbox() *mailbox {
@@ -154,6 +157,10 @@ func (s *Session) do(ctx context.Context, w work) error {
 			s.deliver(f.epoch, f.delivery, f.data)
 			continue
 		}
+		if f.test != uuid.Nil {
+			s.sendTest(ctx, f.test)
+			continue
+		}
 		s.emit(f.event, false, f.data)
 	}
 	if w.start || w.resumed {
@@ -189,4 +196,17 @@ func (s *Session) sendPending(ctx context.Context) error {
 		s.deliver(epoch, view.ID, envelope{UserID: view.User.ID, Data: view})
 	}
 	return nil
+}
+
+// sendTest writes a test if it may still go out. A test that cannot be read is left to end
+// unanswered rather than end the session over something outside its state.
+func (s *Session) sendTest(ctx context.Context, id uuid.UUID) {
+	view, ok, err := delivery.TestFor(ctx, s.hub.d.Q(), s.hub.d.Now(), id)
+	if err != nil {
+		slog.Error("gateway could not read a test", "session", s.id, "test", id, "err", err)
+		return
+	}
+	if ok {
+		s.emit("delivery.test", false, envelope{UserID: view.User.ID, Data: view})
+	}
 }

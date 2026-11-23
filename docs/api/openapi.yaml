@@ -1221,6 +1221,59 @@ paths:
                 $ref: "#/components/schemas/UserConnection"
         default:
           $ref: "#/components/responses/Error"
+  /users/{user}/connections/{id}/tests:
+    parameters:
+      - $ref: "#/components/parameters/User"
+      - $ref: "#/components/parameters/Nonce"
+      - $ref: "#/components/parameters/Id"
+    post:
+      tags: [Connections]
+      operationId: startConnectionTest
+      summary: Ask an app to send a test reminder
+      description: |
+        Session only. The app gets the gateway event `delivery.test` and writes to the user
+        the way it would remind them. Only for an app that reminds, may act for the user and
+        knows an account of theirs, otherwise `409` with the code `test_unavailable`. One test
+        per app and user every 30 seconds, otherwise `429`. A test no session of the app can
+        take ends at once as `unanswered` with the reason `not_connected`; one the app does
+        not answer within a minute ends as `unanswered` with `no_answer`.
+      security:
+        - session: []
+      responses:
+        "201":
+          description: The test, still pending.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConnectionTest"
+        default:
+          $ref: "#/components/responses/Error"
+  /users/{user}/connections/{id}/tests/{test}:
+    parameters:
+      - $ref: "#/components/parameters/User"
+      - $ref: "#/components/parameters/Nonce"
+      - $ref: "#/components/parameters/Id"
+      - name: test
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      tags: [Connections]
+      operationId: getConnectionTest
+      summary: See how a test went
+      security:
+        - session: []
+      responses:
+        "200":
+          description: The test.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConnectionTest"
+        default:
+          $ref: "#/components/responses/Error"
   /admin/connections:
     get:
       tags: [Admin]
@@ -1266,6 +1319,9 @@ paths:
                   description: Defaults to all intents.
                   items:
                     type: string
+                install_url:
+                  type: string
+                  description: Where users add the app on the provider's side, such as a Discord install link. Empty or an https address of at most 512 characters.
       responses:
         "201":
           description: The connection. `token` is only shown this once.
@@ -1301,6 +1357,8 @@ paths:
                   type: array
                   items:
                     type: string
+                install_url:
+                  type: string
       responses:
         "200":
           description: The updated connection.
@@ -1355,10 +1413,13 @@ paths:
         provider account is not known yet. With `intent=link` the provider account is added
         to the logged-in user.
 
-        Every outcome ends with a redirect to the dashboard. On failure the address carries
-        `?auth_error=` with one of `invalid_state`, `provider_error`, `login_disabled`,
-        `link_disabled`, `registration_closed`, `invalid_invite`, `identity_taken` or
-        `account_disabled`.
+        Every outcome ends with a redirect to the dashboard. A login ends at `/`; on failure the
+        address carries `?auth_error=` with one of `invalid_state`, `provider_error`,
+        `login_disabled`, `registration_closed`, `invalid_invite` or `account_disabled`. A link
+        ends at `/linked/{provider}` with `?identity=` and the id of the linked identity, or
+        on failure with `?error=` and one of `invalid_state`, `provider_error`, `link_disabled`
+        or `identity_taken`. A state the hub does not know belongs to no flow and ends at
+        `/?auth_error=invalid_state`.
       security: []
       parameters:
         - name: intent
@@ -1374,7 +1435,7 @@ paths:
             type: string
       responses:
         "302":
-          description: Redirect to the provider, or to the dashboard with `auth_error`.
+          description: Redirect to the provider, or to the dashboard with the error.
         default:
           $ref: "#/components/responses/Error"
   /auth/oauth/{provider}/callback:
@@ -1401,7 +1462,7 @@ paths:
             type: string
       responses:
         "302":
-          description: Redirect to the dashboard, with `auth_error` on failure.
+          description: Redirect to the dashboard, with the outcome.
         default:
           $ref: "#/components/responses/Error"
   /users/{user}/identities/{id}:
@@ -1421,6 +1482,52 @@ paths:
       responses:
         "204":
           description: The account is unlinked.
+        default:
+          $ref: "#/components/responses/Error"
+  /users/{user}/identities/{id}/avatar:
+    parameters:
+      - $ref: "#/components/parameters/User"
+      - $ref: "#/components/parameters/Nonce"
+      - $ref: "#/components/parameters/Id"
+    get:
+      tags: [Account]
+      operationId: getIdentityAvatar
+      summary: Fetch the picture of a linked account
+      description: |
+        The hub fetches the picture from the provider when the account is linked and at every
+        login with it, and serves its own copy, so the browser never asks the provider.
+      parameters:
+        - name: If-None-Match
+          in: header
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: The picture.
+          headers:
+            ETag:
+              schema:
+                type: string
+          content:
+            image/png:
+              schema:
+                type: string
+                format: binary
+            image/jpeg:
+              schema:
+                type: string
+                format: binary
+            image/gif:
+              schema:
+                type: string
+                format: binary
+            image/webp:
+              schema:
+                type: string
+                format: binary
+        "304":
+          description: The picture has not changed.
         default:
           $ref: "#/components/responses/Error"
   /admin/providers:
@@ -1525,6 +1632,42 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/Delivery"
+        default:
+          $ref: "#/components/responses/Error"
+  /deliveries/tests/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    put:
+      tags: [Deliveries]
+      operationId: reportTest
+      summary: Report the outcome of a test
+      description: |
+        Only the app the test was sent to can report on it, the same way it reports on a
+        delivery. Reporting the same outcome twice is fine; a different outcome for a test
+        that already ended, or any answer more than a minute after the test began, answers
+        `409` with the code `test_closed`.
+      security:
+        - bearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                status:
+                  type: string
+                  description: "`delivered` or `failed`."
+                reason:
+                  type: string
+                  description: Required for `failed`, at most 500 characters. Shown to the user.
+      responses:
+        "200":
+          description: The test.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConnectionTest"
         default:
           $ref: "#/components/responses/Error"
   /deliveries/{id}:
@@ -1729,9 +1872,10 @@ components:
           enum: [open, invite]
         login_methods:
           type: array
+          description: Every provider that allows logging in, linking or both.
           items:
             type: object
-            required: [key, type, name]
+            required: [key, type, name, login, link]
             properties:
               key:
                 type: string
@@ -1740,6 +1884,12 @@ components:
                 enum: [password, github, discord, oidc]
               name:
                 type: string
+              login:
+                type: boolean
+                description: Whether people can log in with it.
+              link:
+                type: boolean
+                description: Whether logged-in users can link their account there.
     OptionalQuietHours:
       description: Null while quiet hours are off, which is the default.
       oneOf:
@@ -1847,7 +1997,7 @@ components:
       description: Pass as `cursor` to get the next page. Null on the last page.
     Identity:
       type: object
-      required: [id, provider, external_id, display_name, created_at]
+      required: [id, provider, external_id, display_name, username, has_avatar, created_at]
       properties:
         id:
           type: string
@@ -1860,6 +2010,12 @@ components:
           description: The user's ID at the provider. For `password` this is the username.
         display_name:
           type: string
+        username:
+          type: string
+          description: The handle at the provider, such as a Discord username. Empty when the provider has none or the account was linked before the hub kept it.
+        has_avatar:
+          type: boolean
+          description: Whether `GET /users/{user}/identities/{id}/avatar` has a picture.
         created_at:
           type: string
           format: date-time
@@ -2159,7 +2315,7 @@ components:
           format: date-time
     Connection:
       type: object
-      required: [id, name, description, provider, enabled, allowed_intents, created_at, last_used_at]
+      required: [id, name, description, provider, enabled, allowed_intents, install_url, reach, created_at, last_used_at]
       properties:
         id:
           type: string
@@ -2174,6 +2330,12 @@ components:
           type: boolean
         allowed_intents:
           $ref: "#/components/schemas/Intents"
+        install_url:
+          type: string
+          description: Where users add the app on the provider's side; empty when there is no such place.
+        reach:
+          type: integer
+          description: How many users the connection can remind now, counting only those with an account at its provider.
         token:
           type: string
           description: Only present right after creating the connection or replacing its token.
@@ -2185,7 +2347,7 @@ components:
           format: date-time
     UserConnection:
       type: object
-      required: [id, name, description, provider, linked, enabled, remind, intents]
+      required: [id, name, description, provider, linked, enabled, remind, intents, install_url, last_delivery]
       properties:
         id:
           type: string
@@ -2207,6 +2369,53 @@ components:
           description: Whether the user is reminded through this connection. On unless the user turns it off.
         intents:
           $ref: "#/components/schemas/Intents"
+        install_url:
+          type: string
+          description: Where the user adds the app on the provider's side; empty when there is no such place.
+        last_delivery:
+          description: How the newest delivery through this connection to the user went, null before the first.
+          oneOf:
+            - type: "null"
+            - $ref: "#/components/schemas/LastDelivery"
+    ConnectionTest:
+      type: object
+      required: [id, connection_id, status, reason, created_at, closed_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        connection_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [pending, delivered, failed, unanswered]
+        reason:
+          type: string
+          description: For `failed` what the app reported; for `unanswered` `not_connected` or `no_answer`.
+        created_at:
+          type: string
+          format: date-time
+        closed_at:
+          type: [string, "null"]
+          format: date-time
+    LastDelivery:
+      type: object
+      required: [status, reason, at, test]
+      properties:
+        status:
+          type: string
+          enum: [pending, delivered, failed, expired]
+        reason:
+          type: string
+          description: What the connection reported when it failed; empty otherwise.
+        at:
+          type: string
+          format: date-time
+          description: When it was closed, or created while it is still pending.
+        test:
+          type: boolean
+          description: True when it was a test the user sent, not a reminder.
     LoginProvider:
       type: object
       required: [key, type, name, login_enabled, link_enabled, client_id, has_client_secret, issuer_url]

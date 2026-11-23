@@ -120,7 +120,7 @@ func (q *Queries) DeleteLoginProvider(ctx context.Context, key string) error {
 }
 
 const getUserIdentity = `-- name: GetUserIdentity :one
-SELECT id, user_id, provider, external_id, display_name, password_hash, provider_token, created_at FROM identities WHERE id = $1 AND user_id = $2
+SELECT id, user_id, provider, external_id, display_name, password_hash, provider_token, created_at, username, avatar, avatar_type FROM identities WHERE id = $1 AND user_id = $2
 `
 
 type GetUserIdentityParams struct {
@@ -140,6 +140,9 @@ func (q *Queries) GetUserIdentity(ctx context.Context, arg GetUserIdentityParams
 		&i.PasswordHash,
 		&i.ProviderToken,
 		&i.CreatedAt,
+		&i.Username,
+		&i.Avatar,
+		&i.AvatarType,
 	)
 	return i, err
 }
@@ -218,17 +221,35 @@ func (q *Queries) LockLoginProvider(ctx context.Context, key string) (LoginProvi
 }
 
 const refreshIdentity = `-- name: RefreshIdentity :exec
-UPDATE identities SET display_name = $1, provider_token = $2 WHERE id = $3
+UPDATE identities SET
+    display_name = $1,
+    username = $2,
+    provider_token = $3,
+    avatar = CASE WHEN $4::boolean THEN $5 ELSE avatar END,
+    avatar_type = CASE WHEN $4::boolean THEN $6 ELSE avatar_type END
+WHERE id = $7
 `
 
 type RefreshIdentityParams struct {
 	DisplayName   string
+	Username      string
 	ProviderToken []byte
+	SetAvatar     bool
+	Avatar        []byte
+	AvatarType    string
 	ID            uuid.UUID
 }
 
 func (q *Queries) RefreshIdentity(ctx context.Context, arg RefreshIdentityParams) error {
-	_, err := q.db.Exec(ctx, refreshIdentity, arg.DisplayName, arg.ProviderToken, arg.ID)
+	_, err := q.db.Exec(ctx, refreshIdentity,
+		arg.DisplayName,
+		arg.Username,
+		arg.ProviderToken,
+		arg.SetAvatar,
+		arg.Avatar,
+		arg.AvatarType,
+		arg.ID,
+	)
 	return err
 }
 

@@ -10,6 +10,7 @@ from plsremind.enums import DeliveryStatus
 from plsremind.events import ConnectionUpdateEvent
 from plsremind.events import DeliveryCloseEvent
 from plsremind.events import DeliveryCreateEvent
+from plsremind.events import DeliveryTestEvent
 from plsremind.events import Event
 from plsremind.events import ItemCreateEvent
 from plsremind.events import ItemDeleteEvent
@@ -140,6 +141,7 @@ _BUILDERS: typing.Final[dict[str, tuple[type[Event], _Builder]]] = {
     "plan.updated": (PlanUpdateEvent, _direct(PlanUpdateEvent)),
     "delivery.created": (DeliveryCreateEvent, _direct(DeliveryCreateEvent)),
     "delivery.closed": (DeliveryCloseEvent, _delivery_closed),
+    "delivery.test": (DeliveryTestEvent, _direct(DeliveryTestEvent)),
 }
 
 EVENT_CLASSES: typing.Final[collections.abc.Mapping[str, type[Event]]] = types.MappingProxyType(
