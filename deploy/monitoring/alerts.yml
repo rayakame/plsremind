@@ -36,16 +36,17 @@ groups:
         annotations:
           summary: More than five percent of the hub's requests end in a server error.
 
+      # Connections only: a personal token's adapter on a laptop that is off for a day is nothing to wake anyone for.
       - alert: PlsremindDeliveriesExpired
-        expr: increase(plsremind_deliveries_expired_total[1h]) > 0
+        expr: increase(plsremind_deliveries_expired_total{channel="connection"}[1h]) > 0
         labels:
           severity: warning
         annotations:
-          summary: Deliveries expired because no channel confirmed them within a day.
+          summary: Deliveries to a connection expired because it confirmed none of them within a day.
 
-      # Only once the bot has been up, so that an instance without it stays quiet.
+      # Only once the bot has been up within the retention, so that an instance without it stays quiet.
       - alert: PlsremindBotDown
-        expr: up{job="plsremind-discord"} == 0 and max_over_time(up{job="plsremind-discord"}[6h]) == 1
+        expr: up{job="plsremind-discord"} == 0 and max_over_time(up{job="plsremind-discord"}[30d]) == 1
         for: 2m
         labels:
           severity: critical

@@ -15,15 +15,62 @@
   "graphTooltip": 1,
   "panels": [
     {
+      "type": "table",
+      "title": "Firing alerts",
+      "description": "Alerts vmalert holds as firing right now. Empty while all is well.",
+      "id": 1,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "victoriametrics"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "victoriametrics"
+          },
+          "expr": "sum by (alertname, severity) (ALERTS{alertstate=\"firing\"})",
+          "refId": "A",
+          "instant": true,
+          "format": "table"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "Value": true
+            }
+          }
+        }
+      ]
+    },
+    {
       "type": "row",
       "title": "Reminders",
-      "id": 1,
+      "id": 2,
       "collapsed": false,
       "gridPos": {
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 0
+        "y": 5
       },
       "panels": []
     },
@@ -31,7 +78,7 @@
       "type": "stat",
       "title": "Open deliveries",
       "description": "Deliveries waiting for a channel to confirm them.",
-      "id": 2,
+      "id": 3,
       "datasource": {
         "type": "prometheus",
         "uid": "victoriametrics"
@@ -40,7 +87,7 @@
         "h": 4,
         "w": 4,
         "x": 0,
-        "y": 1
+        "y": 6
       },
       "fieldConfig": {
         "defaults": {
@@ -81,7 +128,7 @@
       "type": "stat",
       "title": "Late, p95 over 10 min",
       "description": "How late the slowest five percent of reminders fired.",
-      "id": 3,
+      "id": 4,
       "datasource": {
         "type": "prometheus",
         "uid": "victoriametrics"
@@ -90,7 +137,7 @@
         "h": 4,
         "w": 4,
         "x": 4,
-        "y": 1
+        "y": 6
       },
       "fieldConfig": {
         "defaults": {
@@ -131,7 +178,7 @@
       "type": "stat",
       "title": "Since the ticker last succeeded",
       "description": "",
-      "id": 4,
+      "id": 5,
       "datasource": {
         "type": "prometheus",
         "uid": "victoriametrics"
@@ -140,7 +187,7 @@
         "h": 4,
         "w": 4,
         "x": 8,
-        "y": 1
+        "y": 6
       },
       "fieldConfig": {
         "defaults": {
@@ -181,7 +228,7 @@
       "type": "stat",
       "title": "Waiting in the bot",
       "description": "Deliveries the Discord bot tries again later.",
-      "id": 5,
+      "id": 6,
       "datasource": {
         "type": "prometheus",
         "uid": "victoriametrics"
@@ -190,7 +237,7 @@
         "h": 4,
         "w": 4,
         "x": 12,
-        "y": 1
+        "y": 6
       },
       "fieldConfig": {
         "defaults": {
@@ -231,7 +278,7 @@
       "type": "stat",
       "title": "Bot connected to the hub",
       "description": "",
-      "id": 6,
+      "id": 7,
       "datasource": {
         "type": "prometheus",
         "uid": "victoriametrics"
@@ -240,7 +287,7 @@
         "h": 4,
         "w": 4,
         "x": 16,
-        "y": 1
+        "y": 6
       },
       "fieldConfig": {
         "defaults": {
@@ -281,7 +328,7 @@
       "type": "stat",
       "title": "Hub version",
       "description": "",
-      "id": 7,
+      "id": 8,
       "datasource": {
         "type": "prometheus",
         "uid": "victoriametrics"
@@ -290,7 +337,7 @@
         "h": 4,
         "w": 4,
         "x": 20,
-        "y": 1
+        "y": 6
       },
       "fieldConfig": {
         "defaults": {
@@ -332,7 +379,7 @@
       "type": "timeseries",
       "title": "Reminders by outcome",
       "description": "",
-      "id": 8,
+      "id": 9,
       "datasource": {
         "type": "prometheus",
         "uid": "victoriametrics"
@@ -341,7 +388,7 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 5
+        "y": 10
       },
       "fieldConfig": {
         "defaults": {
@@ -385,7 +432,7 @@
       "type": "timeseries",
       "title": "How late reminders fire",
       "description": "",
-      "id": 9,
+      "id": 10,
       "datasource": {
         "type": "prometheus",
         "uid": "victoriametrics"
@@ -394,7 +441,7 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 5
+        "y": 10
       },
       "fieldConfig": {
         "defaults": {
@@ -447,7 +494,7 @@
       "type": "timeseries",
       "title": "Deliveries confirmed and expired",
       "description": "",
-      "id": 10,
+      "id": 11,
       "datasource": {
         "type": "prometheus",
         "uid": "victoriametrics"
@@ -456,7 +503,7 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 5
+        "y": 10
       },
       "fieldConfig": {
         "defaults": {
@@ -499,8 +546,8 @@
             "type": "prometheus",
             "uid": "victoriametrics"
           },
-          "expr": "sum(rate(plsremind_deliveries_expired_total[5m]))",
-          "legendFormat": "expired",
+          "expr": "sum by (channel) (rate(plsremind_deliveries_expired_total[5m]))",
+          "legendFormat": "expired on {{channel}}",
           "refId": "B"
         }
       ]
@@ -508,13 +555,13 @@
     {
       "type": "row",
       "title": "Hub",
-      "id": 11,
+      "id": 12,
       "collapsed": false,
       "gridPos": {
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 13
+        "y": 18
       },
       "panels": []
     },
@@ -522,7 +569,7 @@
       "type": "timeseries",
       "title": "Requests by status",
       "description": "",
-      "id": 12,
+      "id": 13,
       "datasource": {
         "type": "prometheus",
         "uid": "victoriametrics"
@@ -531,7 +578,7 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 14
+        "y": 19
       },
       "fieldConfig": {
         "defaults": {
@@ -575,7 +622,7 @@
       "type": "timeseries",
       "title": "Slowest routes, p95",
       "description": "",
-      "id": 13,
+      "id": 14,
       "datasource": {
         "type": "prometheus",
         "uid": "victoriametrics"
@@ -584,7 +631,7 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 14
+        "y": 19
       },
       "fieldConfig": {
         "defaults": {
@@ -628,7 +675,7 @@
       "type": "timeseries",
       "title": "Ticker rounds",
       "description": "",
-      "id": 14,
+      "id": 15,
       "datasource": {
         "type": "prometheus",
         "uid": "victoriametrics"
@@ -637,7 +684,7 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 14
+        "y": 19
       },
       "fieldConfig": {
         "defaults": {
@@ -681,7 +728,7 @@
       "type": "timeseries",
       "title": "Gateway sessions",
       "description": "",
-      "id": 15,
+      "id": 16,
       "datasource": {
         "type": "prometheus",
         "uid": "victoriametrics"
@@ -690,7 +737,7 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 22
+        "y": 27
       },
       "fieldConfig": {
         "defaults": {
@@ -734,7 +781,7 @@
       "type": "timeseries",
       "title": "Gateway connections ended, by code",
       "description": "",
-      "id": 16,
+      "id": 17,
       "datasource": {
         "type": "prometheus",
         "uid": "victoriametrics"
@@ -743,7 +790,7 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 22
+        "y": 27
       },
       "fieldConfig": {
         "defaults": {
@@ -787,7 +834,7 @@
       "type": "timeseries",
       "title": "Database connections",
       "description": "",
-      "id": 17,
+      "id": 18,
       "datasource": {
         "type": "prometheus",
         "uid": "victoriametrics"
@@ -796,7 +843,7 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 22
+        "y": 27
       },
       "fieldConfig": {
         "defaults": {
@@ -837,21 +884,8 @@
       ]
     },
     {
-      "type": "row",
-      "title": "Discord bot",
-      "id": 18,
-      "collapsed": false,
-      "gridPos": {
-        "h": 1,
-        "w": 24,
-        "x": 0,
-        "y": 30
-      },
-      "panels": []
-    },
-    {
       "type": "timeseries",
-      "title": "Tries to send a reminder",
+      "title": "Server errors by route",
       "description": "",
       "id": 19,
       "datasource": {
@@ -862,7 +896,179 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 31
+        "y": 35
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 0,
+            "showPoints": "never",
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "victoriametrics"
+          },
+          "expr": "sum by (route) (rate(plsremind_http_requests_total{status=~\"5..\"}[5m]))",
+          "legendFormat": "{{route}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Waits for a database connection",
+      "description": "Requests for a connection that found none free. A steady rate means the pool is too small.",
+      "id": 20,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "victoriametrics"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 35
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 0,
+            "showPoints": "never",
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "victoriametrics"
+          },
+          "expr": "sum(rate(plsremind_db_pool_empty_acquires_total[5m]))",
+          "legendFormat": "had to wait",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Time spent getting a connection",
+      "description": "",
+      "id": 21,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "victoriametrics"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 35
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 0,
+            "showPoints": "never",
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "victoriametrics"
+          },
+          "expr": "sum(rate(plsremind_db_pool_acquire_seconds_total[5m]))",
+          "legendFormat": "seconds per second",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "row",
+      "title": "Discord bot",
+      "id": 22,
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 43
+      },
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "title": "Tries to send a reminder",
+      "description": "",
+      "id": 23,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "victoriametrics"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 44
       },
       "fieldConfig": {
         "defaults": {
@@ -906,7 +1112,7 @@
       "type": "timeseries",
       "title": "Interactions",
       "description": "",
-      "id": 20,
+      "id": 24,
       "datasource": {
         "type": "prometheus",
         "uid": "victoriametrics"
@@ -915,7 +1121,7 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 31
+        "y": 44
       },
       "fieldConfig": {
         "defaults": {
@@ -959,7 +1165,7 @@
       "type": "timeseries",
       "title": "Interactions that failed",
       "description": "",
-      "id": 21,
+      "id": 25,
       "datasource": {
         "type": "prometheus",
         "uid": "victoriametrics"
@@ -968,7 +1174,7 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 31
+        "y": 44
       },
       "fieldConfig": {
         "defaults": {
@@ -1012,7 +1218,7 @@
       "type": "timeseries",
       "title": "Messages drawn again",
       "description": "",
-      "id": 22,
+      "id": 26,
       "datasource": {
         "type": "prometheus",
         "uid": "victoriametrics"
@@ -1021,7 +1227,7 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 39
+        "y": 52
       },
       "fieldConfig": {
         "defaults": {
@@ -1065,7 +1271,7 @@
       "type": "timeseries",
       "title": "DM channels opened",
       "description": "A channel is kept once opened, so this stays near zero after the first reminder to each account.",
-      "id": 23,
+      "id": 27,
       "datasource": {
         "type": "prometheus",
         "uid": "victoriametrics"
@@ -1074,7 +1280,7 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 39
+        "y": 52
       },
       "fieldConfig": {
         "defaults": {
@@ -1118,7 +1324,7 @@
       "type": "timeseries",
       "title": "Heartbeat latency to Discord",
       "description": "",
-      "id": 24,
+      "id": 28,
       "datasource": {
         "type": "prometheus",
         "uid": "victoriametrics"
@@ -1127,7 +1333,7 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 39
+        "y": 52
       },
       "fieldConfig": {
         "defaults": {
@@ -1163,6 +1369,59 @@
           },
           "expr": "max(plsremind_discord_discord_latency_seconds)",
           "legendFormat": "latency",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Writes whose event did not come back",
+      "description": "The bot's own writes the hub's gateway did not report within two seconds.",
+      "id": 29,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "victoriametrics"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 60
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 0,
+            "showPoints": "never",
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "victoriametrics"
+          },
+          "expr": "sum(rate(plsremind_discord_write_echo_timeouts_total[5m]))",
+          "legendFormat": "timed out",
           "refId": "A"
         }
       ]

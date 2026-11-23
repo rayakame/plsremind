@@ -163,7 +163,8 @@ item, and the compose file keeps the metrics ports inside its own network.
 The compose file uses `/readyz` as the hub's healthcheck, and the Discord bot starts only
 once the hub is healthy.
 
-For a dashboard and alerts, start the `monitoring` profile, alone or beside `discord`:
+For a dashboard and alerts, set a password for Grafana and start the `monitoring`
+profile, alone or beside `discord`. Without the password Grafana does not start:
 
 ```sh
 echo "PLSREMIND_GRAFANA_PASSWORD=$(openssl rand -hex 16)" >> .env
@@ -178,25 +179,14 @@ It adds three services:
   server errors, expired deliveries, the bot not connected to the hub, Discord refusing
   reminders.
 - **Grafana** opens on `http://127.0.0.1:3000` (`PLSREMIND_GRAFANA_PORT` to change it)
-  with the plsremind dashboard. Log in as `admin` with `PLSREMIND_GRAFANA_PASSWORD`. Set it
-  before the first start: without it Grafana starts with `admin` / `admin` and asks for a
-  new password at the first login. It is only reachable from the machine itself; put it
-  behind your reverse proxy to reach it from elsewhere.
+  with the plsremind dashboard. Log in as `admin` with `PLSREMIND_GRAFANA_PASSWORD`; the
+  password is set when Grafana first starts, so change it there afterwards. Grafana is
+  only reachable from the machine itself; put it behind your reverse proxy to reach it
+  from elsewhere. Its own telemetry, update checks and plugin downloads are off.
 
-Alerts show in vmalert and on the dashboard. To have them sent, run an Alertmanager and
-point vmalert at it with an override file next to the compose file:
-
-```yaml
-# compose.override.yaml
-services:
-  vmalert:
-    command:
-      - -rule=/etc/plsremind/alerts.yml
-      - -datasource.url=http://victoriametrics:8428
-      - -remoteWrite.url=http://victoriametrics:8428
-      - -remoteRead.url=http://victoriametrics:8428
-      - -notifier.url=http://alertmanager:9093
-```
+Firing alerts show at the top of the dashboard and in Grafana's alert list. To have them
+sent, run an Alertmanager and set `PLSREMIND_ALERTMANAGER_URL`, for example to
+`http://alertmanager:9093`; vmalert then passes every alert on to it.
 
 Prometheus, Grafana Alloy or any other tool that reads the Prometheus format works as
 well: use [`deploy/monitoring/scrape.yml`](../deploy/monitoring/scrape.yml) as the scrape
@@ -223,8 +213,8 @@ git pull
 docker compose up -d --build
 ```
 
-With the Discord bot or the monitoring, name their profiles, or they keep running their old
-images:
+Name the profiles you use, or their services keep running their old images. With the
+Discord bot and the monitoring, for example:
 
 ```sh
 docker compose --profile discord --profile monitoring up -d --build

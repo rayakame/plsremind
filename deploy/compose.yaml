@@ -23,7 +23,9 @@ services:
       interval: 10s
       timeout: 5s
       retries: 3
-      start_period: 30s
+      # Migrations run before the hub listens; a long one must not count as a failure.
+      start_period: 5m
+      start_interval: 2s
 
   db:
     image: postgres:18
@@ -71,6 +73,8 @@ services:
       - -promscrape.config=/etc/plsremind/scrape.yml
       - -retentionPeriod=30d
       - -storageDataPath=/storage
+      # Lets Grafana list the alert rules and their state through this data source.
+      - -vmalert.proxyURL=http://vmalert:8880
     volumes:
       - ./monitoring/scrape.yml:/etc/plsremind/scrape.yml:ro
       - metrics:/storage
@@ -86,8 +90,8 @@ services:
       - -datasource.url=http://victoriametrics:8428
       - -remoteWrite.url=http://victoriametrics:8428
       - -remoteRead.url=http://victoriametrics:8428
-      # Alerts show in vmalert and Grafana; to send them on, see "Monitoring" in docs/self-hosting.md.
-      - -notifier.blackhole
+      # Without an Alertmanager alerts are only shown, on the dashboard and in Grafana's alert list.
+      - ${PLSREMIND_ALERTMANAGER_URL:+-notifier.url=}${PLSREMIND_ALERTMANAGER_URL:--notifier.blackhole}
     volumes:
       - ./monitoring/alerts.yml:/etc/plsremind/alerts.yml:ro
 
@@ -97,6 +101,11 @@ services:
     restart: unless-stopped
     depends_on:
       - victoriametrics
+    # Compose cannot require a variable for one profile only, so Grafana refuses to start without it.
+    entrypoint:
+      - sh
+      - -c
+      - '[ -n "$$GF_SECURITY_ADMIN_PASSWORD" ] || { echo "Set PLSREMIND_GRAFANA_PASSWORD for the monitoring profile." >&2; exit 1; }; exec /run.sh'
     environment:
       GF_SECURITY_ADMIN_PASSWORD: ${PLSREMIND_GRAFANA_PASSWORD:-}
       GF_USERS_ALLOW_SIGN_UP: "false"
@@ -105,6 +114,11 @@ services:
       GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
       GF_ANALYTICS_CHECK_FOR_PLUGIN_UPDATES: "false"
       GF_NEWS_NEWS_FEED_ENABLED: "false"
+      GF_PLUGINS_PREINSTALL_DISABLED: "true"
+      GF_PLUGINS_PUBLIC_KEY_RETRIEVAL_DISABLED: "true"
+      GF_PLUGINS_PLUGIN_ADMIN_ENABLED: "false"
+      GF_SECURITY_DISABLE_GRAVATAR: "true"
+      GF_SNAPSHOTS_EXTERNAL_ENABLED: "false"
       GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/plsremind.json
     ports:
       - "127.0.0.1:${PLSREMIND_GRAFANA_PORT:-3000}:3000"
