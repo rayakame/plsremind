@@ -16,6 +16,7 @@ from plsremind_discord.db import queries
 
 _DELIVERIES_KEPT: typing.Final = datetime.timedelta(hours=48)
 _MESSAGES_KEPT: typing.Final = datetime.timedelta(days=30)
+_DM_CHANNELS_KEPT: typing.Final = datetime.timedelta(days=30)
 
 
 class Sent(msgspec.Struct, frozen=True):
@@ -93,10 +94,22 @@ class Store:
         async with self._write():
             await queries.forget_user(self._db, user_id=user_id)
 
+    async def dm_channel(self, account_id: int) -> int | None:
+        return await queries.find_dm_channel(self._db, account_id=account_id)
+
+    async def keep_dm_channel(self, account_id: int, channel_id: int, *, now: datetime.datetime) -> None:
+        async with self._write():
+            await queries.keep_dm_channel(self._db, account_id=account_id, channel_id=channel_id, opened_at=_utc(now))
+
+    async def forget_dm_channel(self, account_id: int, channel_id: int) -> None:
+        async with self._write():
+            await queries.forget_dm_channel(self._db, account_id=account_id, channel_id=channel_id)
+
     async def purge(self, now: datetime.datetime) -> None:
         async with self._write():
             await queries.purge_deliveries(self._db, sent_at=_utc(now - _DELIVERIES_KEPT))
             await queries.purge_messages(self._db, sent_at=_utc(now - _MESSAGES_KEPT))
+            await queries.purge_dm_channels(self._db, opened_at=_utc(now - _DM_CHANNELS_KEPT))
 
     def _write(self) -> _Write:
         return _Write(self._db, self._writing)

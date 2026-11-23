@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import collections.abc
 import datetime
+import importlib.resources
 import pathlib
 import sqlite3
 import zoneinfo
@@ -67,7 +68,7 @@ async def test_opening_again_keeps_the_rows_and_the_schema(tmp_path: pathlib.Pat
     first = await Store.open(path)
     await record(first, "d1", 100)
     await first.close()
-    assert await version(path) == 1
+    assert await version(path) == 2
 
     second = await Store.open(path)
     try:
@@ -75,7 +76,7 @@ async def test_opening_again_keeps_the_rows_and_the_schema(tmp_path: pathlib.Pat
         assert [row.message_id for row in await second.messages_for_item(ITEM)] == [100]
     finally:
         await second.close()
-    assert await version(path) == 1
+    assert await version(path) == 2
 
 
 async def test_a_folder_that_does_not_exist_yet_is_made(tmp_path: pathlib.Path) -> None:
@@ -189,3 +190,51 @@ async def test_age_counts_the_same_whatever_zone_a_time_came_in(store: Store) ->
     await store.purge(NOW + datetime.timedelta(days=30, minutes=15))
     assert await store.messages_for_item(ITEM) == []
     assert not await store.knows_delivery("d1")
+
+
+async def test_a_dm_channel_is_kept_and_replaced(store: Store) -> None:
+    assert await store.dm_channel(1234) is None
+    await store.keep_dm_channel(1234, 70, now=NOW)
+    await store.keep_dm_channel(5678, 80, now=NOW)
+    await store.keep_dm_channel(1234, 71, now=NOW)
+    assert [await store.dm_channel(account) for account in (1234, 5678)] == [71, 80]
+
+
+async def test_a_dm_channel_is_only_forgotten_while_it_is_the_one_named(store: Store) -> None:
+    await store.keep_dm_channel(1234, 71, now=NOW)
+    await store.forget_dm_channel(1234, 70)
+    assert await store.dm_channel(1234) == 71
+    await store.forget_dm_channel(1234, 71)
+    assert await store.dm_channel(1234) is None
+
+
+async def test_dm_channels_opened_a_month_ago_are_purged(store: Store) -> None:
+    days = datetime.timedelta(days=1)
+    await store.keep_dm_channel(1, 10, now=NOW - 29 * days)
+    await store.keep_dm_channel(2, 20, now=NOW - 31 * days)
+    await store.purge(NOW)
+    assert [await store.dm_channel(account) for account in (1, 2)] == [10, None]
+
+
+async def test_a_store_from_before_dm_channels_gains_them_and_keeps_its_rows(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = tmp_path / "discord.db"
+    first_step = (importlib.resources.files("plsremind_discord") / "sql" / "migrations" / "0001_init.sql").read_text(
+        encoding="utf-8"
+    )
+    monkeypatch.setattr(store_module, "_migrations", lambda: [(1, first_step)])
+    first = await Store.open(path)
+    await record(first, "d1", 100)
+    await first.close()
+    assert await version(path) == 1
+
+    monkeypatch.undo()
+    second = await Store.open(path)
+    try:
+        assert await second.knows_delivery("d1")
+        await second.keep_dm_channel(1234, 70, now=NOW)
+        assert await second.dm_channel(1234) == 70
+    finally:
+        await second.close()
+    assert await version(path) == 2

@@ -6,6 +6,7 @@ from __future__ import annotations
 
 __all__: collections.abc.Sequence[str] = (
     "Delivery",
+    "DmChannel",
     "Message",
 )
 
@@ -17,6 +18,12 @@ import datetime
 class Delivery(msgspec.Struct):
     delivery_id: str
     sent_at: datetime.datetime
+
+
+class DmChannel(msgspec.Struct):
+    account_id: int
+    channel_id: int
+    opened_at: datetime.datetime
 
 
 class Message(msgspec.Struct):

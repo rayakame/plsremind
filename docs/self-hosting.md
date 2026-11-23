@@ -146,7 +146,8 @@ account in the dashboard under Settings, and get their reminders as direct messa
 | `PLSREMIND_PUBLIC_URL` | yes | The address of the dashboard, for the links in the bot's messages. |
 | `PLSREMIND_DISCORD_DB` | no | Where the bot keeps its SQLite file. In the image it is `/data/discord.db`, on a volume. |
 
-The file holds which reminders went out and which message shows which item. If it is lost,
+The file holds which reminders went out, which message shows which item and the DM channel
+of each Discord account. If it is lost, the DM channels are simply opened again, but
 a reminder that was still waiting for its confirmation may arrive a second time, and
 older messages only catch up when someone clicks them. Nothing else depends on it.
 

@@ -31,3 +31,16 @@ DELETE FROM messages WHERE user_id = ?;
 
 -- name: PurgeMessages :execrows
 DELETE FROM messages WHERE sent_at < ?;
+
+-- name: FindDmChannel :one
+SELECT channel_id FROM dm_channels WHERE account_id = ?;
+
+-- name: KeepDmChannel :exec
+INSERT INTO dm_channels (account_id, channel_id, opened_at) VALUES (?, ?, ?)
+ON CONFLICT (account_id) DO UPDATE SET channel_id = excluded.channel_id, opened_at = excluded.opened_at;
+
+-- name: ForgetDmChannel :exec
+DELETE FROM dm_channels WHERE account_id = ? AND channel_id = ?;
+
+-- name: PurgeDmChannels :execrows
+DELETE FROM dm_channels WHERE opened_at < ?;

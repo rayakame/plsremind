@@ -10,12 +10,16 @@ __all__: collections.abc.Sequence[str] = (
     "add_delivery",
     "add_message",
     "find_delivery",
+    "find_dm_channel",
     "find_message",
+    "forget_dm_channel",
     "forget_message",
     "forget_user",
+    "keep_dm_channel",
     "messages_for_item",
     "messages_for_user",
     "purge_deliveries",
+    "purge_dm_channels",
     "purge_messages",
     "stamp_message",
 )
@@ -89,6 +93,23 @@ DELETE FROM messages WHERE user_id = ?
 
 PURGE_MESSAGES: typing.Final[str] = """-- name: PurgeMessages :execrows
 DELETE FROM messages WHERE sent_at < ?
+"""
+
+FIND_DM_CHANNEL: typing.Final[str] = """-- name: FindDmChannel :one
+SELECT channel_id FROM dm_channels WHERE account_id = ?
+"""
+
+KEEP_DM_CHANNEL: typing.Final[str] = """-- name: KeepDmChannel :exec
+INSERT INTO dm_channels (account_id, channel_id, opened_at) VALUES (?, ?, ?)
+ON CONFLICT (account_id) DO UPDATE SET channel_id = excluded.channel_id, opened_at = excluded.opened_at
+"""
+
+FORGET_DM_CHANNEL: typing.Final[str] = """-- name: ForgetDmChannel :exec
+DELETE FROM dm_channels WHERE account_id = ? AND channel_id = ?
+"""
+
+PURGE_DM_CHANNELS: typing.Final[str] = """-- name: PurgeDmChannels :execrows
+DELETE FROM dm_channels WHERE opened_at < ?
 """
 
 
@@ -188,3 +209,22 @@ async def forget_user(conn: aiosqlite.Connection, *, user_id: str) -> int:
 
 async def purge_messages(conn: aiosqlite.Connection, *, sent_at: datetime.datetime) -> int:
     return (await conn.execute(PURGE_MESSAGES, (sent_at,))).rowcount
+
+
+async def find_dm_channel(conn: aiosqlite.Connection, *, account_id: int) -> int | None:
+    row = await (await conn.execute(FIND_DM_CHANNEL, (account_id,))).fetchone()
+    if row is None:
+        return None
+    return row[0]
+
+
+async def keep_dm_channel(conn: aiosqlite.Connection, *, account_id: int, channel_id: int, opened_at: datetime.datetime) -> None:
+    await conn.execute(KEEP_DM_CHANNEL, (account_id, channel_id, opened_at))
+
+
+async def forget_dm_channel(conn: aiosqlite.Connection, *, account_id: int, channel_id: int) -> None:
+    await conn.execute(FORGET_DM_CHANNEL, (account_id, channel_id))
+
+
+async def purge_dm_channels(conn: aiosqlite.Connection, *, opened_at: datetime.datetime) -> int:
+    return (await conn.execute(PURGE_DM_CHANNELS, (opened_at,))).rowcount

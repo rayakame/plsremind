@@ -169,6 +169,7 @@ async def test_a_dm_channel_discord_no_longer_knows_is_opened_again(made: Made) 
     assert made.rest.create_dm_channel.await_count == 2
     rows = await made.store.messages_for_item(ITEM.id)
     assert [row.channel_id for row in rows] == [CHANNEL + 1234, NEW_CHANNEL]
+    assert await made.store.dm_channel(1234) == NEW_CHANNEL
     assert len(made.hub.named("delivered")) == 2
     assert made.hub.named("failed") == []
 
@@ -213,6 +214,7 @@ async def test_a_dm_channel_that_cannot_be_opened_again_counts_as_closed(
     made.rest.create_dm_channel.side_effect = trouble()
     await made.reminders.deliver(things.delivery(2, of=ITEM, to=english))
     assert str(made.hub.named("failed")[0]["reason"]).startswith("Discord did not accept")
+    assert await made.store.dm_channel(1234) is None
 
 
 async def test_closed_dms_on_the_new_dm_channel_count_as_closed(made: Made) -> None:
@@ -248,6 +250,38 @@ async def test_passing_trouble_on_the_new_dm_channel_keeps_it_for_the_next_try(m
     targets = [call.args[0] for call in made.rest.create_message.await_args_list]
     assert targets == [CHANNEL + 1234, CHANNEL + 1234, NEW_CHANNEL, NEW_CHANNEL]
     assert made.rest.create_dm_channel.await_count == 2
+
+
+async def test_a_dm_channel_kept_before_a_restart_is_used_again(made: Made) -> None:
+    await made.reminders.deliver(delivery())
+    restarted, _ = held(made)
+    try:
+        await restarted.deliver(things.delivery(2, of=ITEM))
+    finally:
+        await restarted.close()
+    made.rest.create_dm_channel.assert_awaited_once_with(1234)
+    assert [call.args[0] for call in made.rest.create_message.await_args_list] == [CHANNEL + 1234] * 2
+
+
+@pytest.mark.parametrize("step", ["dm_channel", "keep_dm_channel"])
+async def test_trouble_with_the_store_does_not_hold_a_reminder_up(
+    made: Made, step: str, caplog: pytest.LogCaptureFixture
+) -> None:
+    with mock.patch.object(made.store, step, side_effect=sqlite3.OperationalError("disk I/O error")):
+        await made.reminders.deliver(delivery())
+    assert len(made.hub.named("delivered")) == 1
+    assert "disk I/O error" in caplog.text
+
+
+async def test_a_dm_channel_that_cannot_be_forgotten_in_the_store_is_still_replaced(made: Made) -> None:
+    await made.reminders.deliver(delivery())
+    made.rest.create_dm_channel.side_effect = [mock.Mock(id=hikari.Snowflake(NEW_CHANNEL))]
+    made.rest.create_message.side_effect = unknown_on_the_old_channel
+    forget = mock.AsyncMock(side_effect=sqlite3.OperationalError("disk I/O error"))
+    with mock.patch.object(made.store, "forget_dm_channel", forget):
+        await made.reminders.deliver(things.delivery(2, of=ITEM))
+    assert len(made.hub.named("delivered")) == 2
+    assert await made.store.dm_channel(1234) == NEW_CHANNEL
 
 
 async def test_each_account_keeps_its_own_dm_channel(made: Made) -> None:
