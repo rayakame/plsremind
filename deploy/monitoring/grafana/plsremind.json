@@ -45,7 +45,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "sum by (alertname, severity) (ALERTS{alertstate=\"firing\"})",
+          "expr": "sum by (alertname, severity, instance) (ALERTS{alertstate=\"firing\"})",
           "refId": "A",
           "instant": true,
           "format": "table"
@@ -231,8 +231,8 @@
     },
     {
       "type": "stat",
-      "title": "Waiting in the bot",
-      "description": "Deliveries the Discord bot tries again later.",
+      "title": "Waiting in the bots",
+      "description": "Deliveries the chosen Discord bots try again later.",
       "id": 6,
       "datasource": {
         "type": "prometheus",
@@ -274,7 +274,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "sum(plsremind_discord_deliveries_waiting)",
+          "expr": "sum(plsremind_discord_deliveries_waiting{instance=~\"$bot\"})",
           "refId": "A",
           "instant": true
         }
@@ -282,8 +282,8 @@
     },
     {
       "type": "stat",
-      "title": "Bot connected to the hub",
-      "description": "",
+      "title": "Bots connected to the hub",
+      "description": "No as soon as one of the chosen bots is not connected.",
       "id": 7,
       "datasource": {
         "type": "prometheus",
@@ -325,7 +325,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "max(plsremind_discord_hub_connected)",
+          "expr": "min(plsremind_discord_hub_connected{instance=~\"$bot\"})",
           "refId": "A",
           "instant": true
         }
@@ -1064,7 +1064,7 @@
     },
     {
       "type": "row",
-      "title": "Discord bot",
+      "title": "Discord bots",
       "id": 22,
       "collapsed": false,
       "gridPos": {
@@ -1123,8 +1123,8 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "sum by (result) (rate(plsremind_discord_delivery_attempts_total[5m]))",
-          "legendFormat": "{{result}}",
+          "expr": "sum by (instance, result) (rate(plsremind_discord_delivery_attempts_total{instance=~\"$bot\"}[5m]))",
+          "legendFormat": "{{instance}} {{result}}",
           "refId": "A"
         }
       ]
@@ -1177,8 +1177,8 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "sum by (kind) (rate(plsremind_discord_interactions_total[5m]))",
-          "legendFormat": "{{kind}}",
+          "expr": "sum by (instance, kind) (rate(plsremind_discord_interactions_total{instance=~\"$bot\"}[5m]))",
+          "legendFormat": "{{instance}} {{kind}}",
           "refId": "A"
         }
       ]
@@ -1231,8 +1231,8 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "sum by (kind) (rate(plsremind_discord_interaction_failures_total[5m]))",
-          "legendFormat": "{{kind}}",
+          "expr": "sum by (instance, kind) (rate(plsremind_discord_interaction_failures_total{instance=~\"$bot\"}[5m]))",
+          "legendFormat": "{{instance}} {{kind}}",
           "refId": "A"
         }
       ]
@@ -1285,8 +1285,8 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "sum by (result) (rate(plsremind_discord_redraws_total[5m]))",
-          "legendFormat": "{{result}}",
+          "expr": "sum by (instance, result) (rate(plsremind_discord_redraws_total{instance=~\"$bot\"}[5m]))",
+          "legendFormat": "{{instance}} {{result}}",
           "refId": "A"
         }
       ]
@@ -1339,8 +1339,8 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "sum(rate(plsremind_discord_dm_channels_opened_total[5m]))",
-          "legendFormat": "opened",
+          "expr": "sum by (instance) (rate(plsremind_discord_dm_channels_opened_total{instance=~\"$bot\"}[5m]))",
+          "legendFormat": "{{instance}}",
           "refId": "A"
         }
       ]
@@ -1393,8 +1393,8 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "max(plsremind_discord_discord_latency_seconds)",
-          "legendFormat": "latency",
+          "expr": "max by (instance) (plsremind_discord_discord_latency_seconds{instance=~\"$bot\"})",
+          "legendFormat": "{{instance}}",
           "refId": "A"
         }
       ]
@@ -1447,8 +1447,62 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "sum(rate(plsremind_discord_write_echo_timeouts_total[5m]))",
-          "legendFormat": "timed out",
+          "expr": "sum by (instance) (rate(plsremind_discord_write_echo_timeouts_total{instance=~\"$bot\"}[5m]))",
+          "legendFormat": "{{instance}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Test reminders",
+      "description": "Tests users asked for to see that a bot reaches them.",
+      "id": 30,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 60
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "noValue": "no bot data",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 0,
+            "showPoints": "never",
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum by (instance, result) (rate(plsremind_discord_tests_total{instance=~\"$bot\"}[5m]))",
+          "legendFormat": "{{instance}} {{result}}",
           "refId": "A"
         }
       ]
@@ -1467,6 +1521,30 @@
         },
         "hide": 0,
         "refresh": 1
+      },
+      {
+        "name": "bot",
+        "label": "Bot",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${datasource}"
+        },
+        "definition": "label_values(up{job=\"plsremind-discord\"}, instance)",
+        "query": {
+          "query": "label_values(up{job=\"plsremind-discord\"}, instance)",
+          "refId": "bots"
+        },
+        "multi": true,
+        "includeAll": true,
+        "allValue": ".*",
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        },
+        "hide": 0,
+        "refresh": 2,
+        "sort": 1
       }
     ]
   },
