@@ -968,3 +968,22 @@ async def test_a_try_that_does_not_go_through_is_counted_by_why(
     await made.reminders.deliver(delivery())
     assert discord.counted(made.metrics, "plsremind_discord_delivery_attempts_total", result=result) >= 1
     assert discord.counted(made.metrics, "plsremind_discord_delivery_attempts_total", result="sent") == 0
+
+
+async def test_a_try_that_breaks_unexpectedly_is_counted_as_an_error(made: Made) -> None:
+    made.rest.create_message.side_effect = RuntimeError("boom")
+    await made.reminders.deliver(delivery())
+    assert discord.counted(made.metrics, "plsremind_discord_delivery_attempts_total", result="error") >= 1
+    assert made.reminders.waiting == frozenset({things.uid(9001)})
+
+
+@pytest.mark.parametrize(("step", "result"), [("failed", "refused"), ("delivered", "sent")])
+async def test_a_result_is_counted_once_however_often_telling_the_hub_is_tried(
+    made: Made, step: str, result: str
+) -> None:
+    if result == "refused":
+        made.rest.create_message.side_effect = refused()
+    made.hub.fail[step] = plsremind.NetworkError("the hub is away")
+    await made.reminders.deliver(delivery())
+    await discord.until(lambda: len(made.slept) >= 3)
+    assert discord.counted(made.metrics, "plsremind_discord_delivery_attempts_total", result=result) == 1

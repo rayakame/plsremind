@@ -66,7 +66,12 @@ class Config(msgspec.Struct, frozen=True, kw_only=True):
 
 def _address(value: str) -> tuple[str, int]:
     host, colon, port = value.rpartition(":")
-    if not colon or not port.isdigit() or int(port) not in _PORTS or (":" in host and not host.startswith("[")):
+    if (
+        not colon
+        or not (port.isascii() and port.isdigit())
+        or int(port) not in _PORTS
+        or (":" in host and not host.startswith("["))
+    ):
         msg = f"{_METRICS} must be host:port, for example 0.0.0.0:9091."
         raise ConfigError(msg)
     return host.strip("[]") or "0.0.0.0", int(port)  # ruff: ignore[hardcoded-bind-all-interfaces]

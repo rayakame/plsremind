@@ -180,6 +180,11 @@ def listen(client: plsremind.Client, *, reminders: Reminders, sync: Sync, gate: 
     client.subscribe(plsremind.UserGoneEvent, once_up(sync.user_gone))
 
 
+def discord_connected(discord: hikari.GatewayBot) -> bool:
+    # is_alive only says the bot was started and not closed, not that its shards are connected right now.
+    return discord.is_alive and all(shard.is_connected for shard in discord.shards.values())
+
+
 def ready(gate: Gate, hub: plsremind.ClientStatus, *, discord_alive: bool) -> bool:
     """Whether the bot can take a click and pass a reminder on: the hub and Discord are both there."""
     return gate.is_open and hub is plsremind.ClientStatus.CONNECTED and discord_alive
@@ -275,7 +280,7 @@ async def _serve(config: Config, store: Store) -> int:
 
 async def _serve_metrics(parts: Parts, hub: hub_.Hub, address: tuple[str, int]) -> aiohttp.web.AppRunner:
     def answer() -> bool:
-        return ready(parts.gate, hub.client.status, discord_alive=parts.discord.is_alive)
+        return ready(parts.gate, hub.client.status, discord_alive=discord_connected(parts.discord))
 
     try:
         return await serve(parts.metrics, address, answer)

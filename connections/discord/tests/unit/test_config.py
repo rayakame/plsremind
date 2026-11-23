@@ -96,7 +96,7 @@ def test_a_metrics_address_is_read(value: str, address: tuple[str, int]) -> None
     assert Config.from_env({**FULL, "PLSREMIND_DISCORD_METRICS_ADDR": value}).metrics_address == address
 
 
-@pytest.mark.parametrize("value", ["9091", "host:", "host:port", "host:70000"])
+@pytest.mark.parametrize("value", ["9091", "host:", "host:port", "host:70000", "host:\u00b2"])
 def test_a_metrics_address_without_a_port_is_refused(value: str) -> None:
     with pytest.raises(ConfigError, match="PLSREMIND_DISCORD_METRICS_ADDR"):
         Config.from_env({**FULL, "PLSREMIND_DISCORD_METRICS_ADDR": value})

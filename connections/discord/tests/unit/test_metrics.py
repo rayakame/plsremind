@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import socket
+from unittest import mock
 
 import aiohttp
+import hikari
 import plsremind
 import pytest
 
@@ -79,7 +81,7 @@ def test_the_bot_is_ready_only_when_both_sides_are_there(
 
 def test_every_counted_outcome_starts_at_zero() -> None:
     metrics = Metrics()
-    for result in ("sent", "closed", "refused", "no_account", "passing", "unreadable"):
+    for result in ("sent", "closed", "refused", "no_account", "passing", "unreadable", "error"):
         assert metrics.registry.get_sample_value("plsremind_discord_delivery_attempts_total", {"result": result}) == 0
     for kind in ("command", "component", "modal", "autocomplete"):
         assert metrics.registry.get_sample_value("plsremind_discord_interactions_total", {"kind": kind}) == 0
@@ -109,3 +111,16 @@ def test_the_waiting_deliveries_are_read_at_each_scrape() -> None:
     waiting = 3
     metrics.deliveries_waiting.set_function(lambda: waiting)
     assert "plsremind_discord_deliveries_waiting 3.0" in metrics.render().decode()
+
+
+@pytest.mark.parametrize(
+    ("alive", "shards", "expected"),
+    [(True, [True], True), (True, [True, False], False), (False, [True], False), (True, [], True)],
+)
+def test_discord_counts_as_connected_only_while_every_shard_is(
+    *, alive: bool, shards: list[bool], expected: bool
+) -> None:
+    gateway = mock.Mock(spec=hikari.GatewayBot)
+    gateway.is_alive = alive
+    gateway.shards = {number: mock.Mock(is_connected=connected) for number, connected in enumerate(shards)}
+    assert bot.discord_connected(gateway) is expected

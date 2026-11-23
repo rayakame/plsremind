@@ -210,11 +210,13 @@ async def test_a_click_while_the_bot_is_starting_says_so_instead_of_blaming_the_
     hub.ready.clear()
     ctx = discord.click()
     pipeline = risa.ExecutionPipeline([risa.Failure(common.StartingError(), risa.FailureStage.HOOK)])
-    assert await bot.click_failed(pipeline, typing.cast("risa.ComponentContext", ctx), tools(hub)) is True
+    given = tools(hub)
+    assert await bot.click_failed(pipeline, typing.cast("risa.ComponentContext", ctx), given) is True
     built = [builder.build()[0] for builder in ctx.respond.await_args.kwargs["components"]]
     said = "\n".join(discord.payload_texts(built))
     assert "Der Bot startet gerade" in said
     assert "nicht mit plsremind verbunden" not in said
+    assert discord.counted(given.metrics, "plsremind_discord_interaction_failures_total", kind="component") == 0
 
 
 async def test_a_click_that_can_no_longer_be_answered_is_only_logged(caplog: pytest.LogCaptureFixture) -> None:

@@ -228,5 +228,4 @@ def followed_up(responder: mock.Mock) -> tuple[bool, str]:
 
 
 def counted(metrics: Metrics, name: str, **labels: str) -> float:
-    """The value of one sample in the bot's registry, 0 when it is not there."""
     return metrics.registry.get_sample_value(name, labels) or 0.0

@@ -154,6 +154,7 @@ class Reminders:
         except Exception:
             # Whatever it was, the reminder must not be lost over it.
             _LOGGER.exception("delivery %s could not be handled and is tried again", delivery.id)
+            self._metrics.attempts.labels("error").inc()
             outcome = _Outcome.PASSING
         finally:
             self._busy.discard(delivery.id)
