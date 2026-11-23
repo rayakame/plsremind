@@ -38,6 +38,7 @@ The hub now listens on port 8080 and applies its database migrations on every st
 | `PLSREMIND_PUBLIC_URL` | yes | The address users reach the hub at, without a trailing slash. Login redirects and the browser security check depend on it being exact. |
 | `PLSREMIND_SECRET_KEY` | yes | 32 random bytes, base64 encoded. |
 | `PLSREMIND_LISTEN_ADDR` | no | Defaults to `:8080`. |
+| `PLSREMIND_METRICS_ADDR` | no | Where the hub serves `/metrics`, for example `:9090`. Off when empty. Compose sets it inside its network only. See [Monitoring](#monitoring). |
 | `PLSREMIND_PROXY_HEADER` | behind a proxy | Set to `X-Forwarded-For` whenever the hub runs behind a reverse proxy. Without it every visitor appears to come from the proxy and they all share one rate limit, so logging in fails for everyone once a few people try at the same time. The header is only trusted from loopback and private addresses. |
 
 Compose also reads `POSTGRES_PASSWORD` and `PLSREMIND_PORT` from `.env`. Set
@@ -145,11 +146,61 @@ account in the dashboard under Settings, and get their reminders as direct messa
 | `PLSREMIND_URL` | yes | Where the bot reaches the hub. Compose sets it to `http://hub:8080`. |
 | `PLSREMIND_PUBLIC_URL` | yes | The address of the dashboard, for the links in the bot's messages. |
 | `PLSREMIND_DISCORD_DB` | no | Where the bot keeps its SQLite file. In the image it is `/data/discord.db`, on a volume. |
+| `PLSREMIND_DISCORD_METRICS_ADDR` | no | `host:port` for the bot's `/metrics`, `/healthz` and `/readyz`, for example `0.0.0.0:9091`. Off when empty. Compose sets it inside its network only. |
 
 The file holds which reminders went out, which message shows which item and the DM
 channels of the accounts reminded in the last 30 days. If it is lost, the DM channels are
 opened again, a reminder that was still waiting for its confirmation may arrive a second
 time, and older messages only catch up when someone clicks them. Nothing else depends on it.
+
+## Monitoring
+
+The hub and the bot can expose metrics in the Prometheus format, and the hub answers
+`/healthz` and `/readyz` on its public port. [`docs/metrics.md`](metrics.md) lists every
+metric. Nothing is sent anywhere by the services themselves, no label names a user or an
+item, and the compose file keeps the metrics ports inside its own network.
+
+The compose file uses `/readyz` as the hub's healthcheck, and the Discord bot starts only
+once the hub is healthy.
+
+For a dashboard and alerts, start the `monitoring` profile, alone or beside `discord`:
+
+```sh
+echo "PLSREMIND_GRAFANA_PASSWORD=$(openssl rand -hex 16)" >> .env
+docker compose --profile monitoring up -d
+```
+
+It adds three services:
+
+- **VictoriaMetrics** scrapes the hub and the bot every 15 seconds and keeps 30 days.
+- **vmalert** evaluates [`deploy/monitoring/alerts.yml`](../deploy/monitoring/alerts.yml):
+  the hub or the bot down, the ticker stalled, reminders more than two minutes late,
+  server errors, expired deliveries, the bot not connected to the hub, Discord refusing
+  reminders.
+- **Grafana** opens on `http://127.0.0.1:3000` (`PLSREMIND_GRAFANA_PORT` to change it)
+  with the plsremind dashboard. Log in as `admin` with `PLSREMIND_GRAFANA_PASSWORD`. Set it
+  before the first start: without it Grafana starts with `admin` / `admin` and asks for a
+  new password at the first login. It is only reachable from the machine itself; put it
+  behind your reverse proxy to reach it from elsewhere.
+
+Alerts show in vmalert and on the dashboard. To have them sent, run an Alertmanager and
+point vmalert at it with an override file next to the compose file:
+
+```yaml
+# compose.override.yaml
+services:
+  vmalert:
+    command:
+      - -rule=/etc/plsremind/alerts.yml
+      - -datasource.url=http://victoriametrics:8428
+      - -remoteWrite.url=http://victoriametrics:8428
+      - -remoteRead.url=http://victoriametrics:8428
+      - -notifier.url=http://alertmanager:9093
+```
+
+Prometheus, Grafana Alloy or any other tool that reads the Prometheus format works as
+well: use [`deploy/monitoring/scrape.yml`](../deploy/monitoring/scrape.yml) as the scrape
+configuration, and the rules and the dashboard as they are.
 
 ## Behind a reverse proxy
 
@@ -172,10 +223,11 @@ git pull
 docker compose up -d --build
 ```
 
-With the Discord bot, name its profile, or the bot keeps running its old image:
+With the Discord bot or the monitoring, name their profiles, or they keep running their old
+images:
 
 ```sh
-docker compose --profile discord up -d --build
+docker compose --profile discord --profile monitoring up -d --build
 ```
 
 ## Backups

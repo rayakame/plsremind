@@ -14,8 +14,16 @@ services:
       PLSREMIND_PUBLIC_URL: ${PLSREMIND_PUBLIC_URL:-http://localhost:${PLSREMIND_PORT:-8080}}
       PLSREMIND_SECRET_KEY: ${PLSREMIND_SECRET_KEY:?set PLSREMIND_SECRET_KEY, see docs/self-hosting.md}
       PLSREMIND_PROXY_HEADER: ${PLSREMIND_PROXY_HEADER:-}
+      # Reachable inside this network only; the port is not published.
+      PLSREMIND_METRICS_ADDR: ":9090"
     ports:
       - "${PLSREMIND_PORT:-8080}:8080"
+    healthcheck:
+      test: ["CMD", "/plsremind", "health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
 
   db:
     image: postgres:18
@@ -42,16 +50,72 @@ services:
     # A message on its way to Discord gets up to ten seconds to be sent and recorded.
     stop_grace_period: 20s
     depends_on:
-      - hub
+      hub:
+        condition: service_healthy
     environment:
       DISCORD_TOKEN: ${DISCORD_TOKEN:-}
       PLSREMIND_TOKEN: ${PLSREMIND_DISCORD_TOKEN:-}
       # Inside the compose network the bot reaches the hub directly, not through the public address.
       PLSREMIND_URL: http://hub:8080
       PLSREMIND_PUBLIC_URL: ${PLSREMIND_PUBLIC_URL:-http://localhost:${PLSREMIND_PORT:-8080}}
+      PLSREMIND_DISCORD_METRICS_ADDR: "0.0.0.0:9091"
     volumes:
       - discord:/data
+
+  # Metrics, alerts and a dashboard. They only start with "docker compose --profile monitoring up".
+  victoriametrics:
+    profiles: ["monitoring"]
+    image: victoriametrics/victoria-metrics:v1.156.0
+    restart: unless-stopped
+    command:
+      - -promscrape.config=/etc/plsremind/scrape.yml
+      - -retentionPeriod=30d
+      - -storageDataPath=/storage
+    volumes:
+      - ./monitoring/scrape.yml:/etc/plsremind/scrape.yml:ro
+      - metrics:/storage
+
+  vmalert:
+    profiles: ["monitoring"]
+    image: victoriametrics/vmalert:v1.156.0
+    restart: unless-stopped
+    depends_on:
+      - victoriametrics
+    command:
+      - -rule=/etc/plsremind/alerts.yml
+      - -datasource.url=http://victoriametrics:8428
+      - -remoteWrite.url=http://victoriametrics:8428
+      - -remoteRead.url=http://victoriametrics:8428
+      # Alerts show in vmalert and Grafana; to send them on, see "Monitoring" in docs/self-hosting.md.
+      - -notifier.blackhole
+    volumes:
+      - ./monitoring/alerts.yml:/etc/plsremind/alerts.yml:ro
+
+  grafana:
+    profiles: ["monitoring"]
+    image: grafana/grafana:13.2.4
+    restart: unless-stopped
+    depends_on:
+      - victoriametrics
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${PLSREMIND_GRAFANA_PASSWORD:-}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      # Grafana itself must not phone home either.
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_ANALYTICS_CHECK_FOR_PLUGIN_UPDATES: "false"
+      GF_NEWS_NEWS_FEED_ENABLED: "false"
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/plsremind.json
+    ports:
+      - "127.0.0.1:${PLSREMIND_GRAFANA_PORT:-3000}:3000"
+    volumes:
+      - ./monitoring/grafana/datasource.yml:/etc/grafana/provisioning/datasources/plsremind.yml:ro
+      - ./monitoring/grafana/dashboards.yml:/etc/grafana/provisioning/dashboards/plsremind.yml:ro
+      - ./monitoring/grafana/plsremind.json:/var/lib/grafana/dashboards/plsremind.json:ro
+      - grafana:/var/lib/grafana
 
 volumes:
   db:
   discord:
+  metrics:
+  grafana:
