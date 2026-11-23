@@ -72,7 +72,7 @@ var Events = []string{
 	"subitem.created", "subitem.updated", "subitem.deleted",
 	"reminder.created", "reminder.deleted",
 	"plan.updated",
-	"delivery.created", "delivery.closed",
+	"delivery.created", "delivery.closed", "delivery.test",
 }
 
 type inbound struct {

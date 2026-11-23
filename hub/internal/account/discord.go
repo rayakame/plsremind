@@ -10,9 +10,9 @@ import (
 )
 
 var discordEndpoints = core.OAuthEndpoints{
-	AuthURL:   "https://discord.com/oauth2/authorize",
-	TokenURL:  "https://discord.com/api/oauth2/token",
-	UserURL:   "https://discord.com/api/users/@me",
+	AuthURL:    "https://discord.com/oauth2/authorize",
+	TokenURL:   "https://discord.com/api/oauth2/token",
+	UserURL:    "https://discord.com/api/users/@me",
 	RevokeURL:  "https://discord.com/api/oauth2/token/revoke",
 	AvatarBase: "https://cdn.discordapp.com",
 }

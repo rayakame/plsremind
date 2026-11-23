@@ -1221,6 +1221,59 @@ paths:
                 $ref: "#/components/schemas/UserConnection"
         default:
           $ref: "#/components/responses/Error"
+  /users/{user}/connections/{id}/tests:
+    parameters:
+      - $ref: "#/components/parameters/User"
+      - $ref: "#/components/parameters/Nonce"
+      - $ref: "#/components/parameters/Id"
+    post:
+      tags: [Connections]
+      operationId: startConnectionTest
+      summary: Ask an app to send a test reminder
+      description: |
+        Session only. The app gets the gateway event `delivery.test` and writes to the user
+        the way it would remind them. Only for an app that reminds, may act for the user and
+        knows an account of theirs, otherwise `409` with the code `test_unavailable`. One test
+        per app and user every 30 seconds, otherwise `429`. A test no session of the app can
+        take ends at once as `unanswered` with the reason `not_connected`; one the app does
+        not answer within a minute ends as `unanswered` with `no_answer`.
+      security:
+        - session: []
+      responses:
+        "201":
+          description: The test, still pending.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConnectionTest"
+        default:
+          $ref: "#/components/responses/Error"
+  /users/{user}/connections/{id}/tests/{test}:
+    parameters:
+      - $ref: "#/components/parameters/User"
+      - $ref: "#/components/parameters/Nonce"
+      - $ref: "#/components/parameters/Id"
+      - name: test
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      tags: [Connections]
+      operationId: getConnectionTest
+      summary: See how a test went
+      security:
+        - session: []
+      responses:
+        "200":
+          description: The test.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConnectionTest"
+        default:
+          $ref: "#/components/responses/Error"
   /admin/connections:
     get:
       tags: [Admin]
@@ -1579,6 +1632,41 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/Delivery"
+        default:
+          $ref: "#/components/responses/Error"
+  /deliveries/tests/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    put:
+      tags: [Deliveries]
+      operationId: reportTest
+      summary: Report the outcome of a test
+      description: |
+        Only the app the test was sent to can report on it, the same way it reports on a
+        delivery. Reporting the same outcome twice is fine; a different outcome for a test
+        that already ended answers `409` with the code `test_closed`.
+      security:
+        - bearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                status:
+                  type: string
+                  description: "`delivered` or `failed`."
+                reason:
+                  type: string
+                  description: Required for `failed`, at most 500 characters. Shown to the user.
+      responses:
+        "200":
+          description: The test.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConnectionTest"
         default:
           $ref: "#/components/responses/Error"
   /deliveries/{id}:
@@ -2288,6 +2376,28 @@ components:
           oneOf:
             - type: "null"
             - $ref: "#/components/schemas/LastDelivery"
+    ConnectionTest:
+      type: object
+      required: [id, connection_id, status, reason, created_at, closed_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        connection_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [pending, delivered, failed, unanswered]
+        reason:
+          type: string
+          description: For `failed` what the app reported; for `unanswered` `not_connected` or `no_answer`.
+        created_at:
+          type: string
+          format: date-time
+        closed_at:
+          type: [string, "null"]
+          format: date-time
     LastDelivery:
       type: object
       required: [status, reason, at, test]

@@ -119,6 +119,15 @@ func userConnections(ctx context.Context, q *sqlc.Queries, userID uuid.UUID) ([]
 	for _, l := range last {
 		byConnection[l.ConnectionID] = &LastDelivery{Status: l.Status, Reason: l.Reason, At: l.At.UTC()}
 	}
+	tests, err := q.LastConnectionTests(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	for _, l := range tests {
+		if known := byConnection[l.ConnectionID]; known == nil || l.At.After(known.At) {
+			byConnection[l.ConnectionID] = &LastDelivery{Status: l.Status, Reason: l.Reason, At: l.At.UTC(), Test: true}
+		}
+	}
 	out := make([]UserConnection, 0, len(rows))
 	for _, row := range rows {
 		view := viewUserConnection(row)

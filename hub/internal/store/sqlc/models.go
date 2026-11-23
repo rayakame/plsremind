@@ -31,6 +31,16 @@ type ConnectionGrant struct {
 	Remind       *bool
 }
 
+type ConnectionTest struct {
+	ID           uuid.UUID
+	UserID       uuid.UUID
+	ConnectionID uuid.UUID
+	Status       string
+	Reason       string
+	CreatedAt    time.Time
+	ClosedAt     *time.Time
+}
+
 type Delivery struct {
 	ID           uuid.UUID
 	ReminderID   uuid.UUID

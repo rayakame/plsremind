@@ -83,7 +83,7 @@ You only get what you ask for. `intents` in Identify is required and must not be
 | `items` | `items` | `item.created`, `item.updated`, `item.deleted`, `subitem.created`, `subitem.updated`, `subitem.deleted`, `reminder.created`, `reminder.deleted` |
 | `plans` | `plans` | `plan.updated` |
 | `history` | `history`, `history_cursor` | none of its own |
-| `deliveries` | none | `delivery.created`, `delivery.closed` |
+| `deliveries` | none | `delivery.created`, `delivery.closed`, `delivery.test` |
 
 - An adapter that only reminds asks for `deliveries` and keeps no state at all. Every
   delivery carries the item and the user it is about.
@@ -308,6 +308,26 @@ before it ever reached you, while you were offline or during quiet hours, just n
 Delivery events carry `s: null`. They are not part of the sequence that Resume replays,
 because open deliveries are sent again after every login anyway.
 
+### `delivery.test`
+
+```json
+{"op": 0, "t": "delivery.test", "s": null, "d": {"user_id": "0193...", "actor": null, "nonce": null, "data": {
+  "id": "0193...",
+  "user": {"id": "0193...", "display_name": "Mia", "timezone": "Europe/Berlin", "locale": "de", "external_ids": ["1234"]}
+}}}
+```
+
+A user asked you to show that you reach them. Write to them the way you would remind them,
+with a short message that says it is a test, then report how it went:
+`PUT /api/v1/deliveries/tests/{id}` with `{"status": "delivered"}`, or
+`{"status": "failed", "reason": "direct messages are closed"}`. The reason is shown to the
+user.
+
+A test is sent once, only to sessions that are connected at that moment, and never again
+after a login or a resume. Do not try again later: answer within a minute or the hub
+gives up on it. An adapter that does not know the event ignores it, and the user sees that
+the test was not answered.
+
 ### Without the gateway
 
 `GET /api/v1/deliveries` returns the open deliveries of the calling token in the same
@@ -363,6 +383,7 @@ is closed with 4014.
 | `plan.updated` | `plans` | the reminder plan |
 | `delivery.created` | `deliveries` | the delivery |
 | `delivery.closed` | `deliveries` | `{"id", "status"}` |
+| `delivery.test` | `deliveries` | `{"id", "user"}` |
 
 ## Example
 

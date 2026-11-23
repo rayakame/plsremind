@@ -14,9 +14,9 @@ import (
 )
 
 var githubEndpoints = core.OAuthEndpoints{
-	AuthURL:   "https://github.com/login/oauth/authorize",
-	TokenURL:  "https://github.com/login/oauth/access_token",
-	UserURL:   "https://api.github.com/user",
+	AuthURL:    "https://github.com/login/oauth/authorize",
+	TokenURL:   "https://github.com/login/oauth/access_token",
+	UserURL:    "https://api.github.com/user",
 	RevokeURL:  "https://api.github.com/applications/{client_id}/grant",
 	AvatarBase: "https://avatars.githubusercontent.com",
 }
@@ -33,8 +33,8 @@ func newGitHub(d *core.Deps, clientID, clientSecret string) Provider {
 		http: d.HTTP,
 		profile: func(ctx context.Context, token *oauth2.Token) (OAuthProfile, error) {
 			var user struct {
-				ID    json.Number `json:"id"`
-				Login string      `json:"login"`
+				ID        json.Number `json:"id"`
+				Login     string      `json:"login"`
 				Name      string      `json:"name"`
 				AvatarURL string      `json:"avatar_url"`
 			}

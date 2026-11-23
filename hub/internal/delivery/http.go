@@ -21,6 +21,29 @@ func Register(root, user fiber.Router, d *core.Deps) {
 	root.Get("/deliveries", fetch(d))
 	root.Put("/deliveries/:id", acknowledge(d))
 	user.Get("/reminder-log", history(d))
+	registerTests(root, user, d)
+}
+
+// outcome reads what a channel reports about a delivery or a test.
+func outcome(c fiber.Ctx) (status, reason string, err error) {
+	var in struct {
+		Status string `json:"status"`
+		Reason string `json:"reason"`
+	}
+	if err := api.Body(c, &in); err != nil {
+		return "", "", err
+	}
+	in.Reason = strings.TrimSpace(in.Reason)
+	switch in.Status {
+	case "delivered":
+		return in.Status, "", nil
+	case "failed":
+		if n := utf8.RuneCountInString(in.Reason); n < 1 || n > maxReasonLen {
+			return "", "", api.Field("reason", "A failure needs a reason of at most 500 characters.")
+		}
+		return in.Status, in.Reason, nil
+	}
+	return "", "", api.Field("status", `Must be "delivered" or "failed".`)
 }
 
 // channel resolves the caller to the channel it speaks for.
@@ -70,24 +93,11 @@ func acknowledge(d *core.Deps) fiber.Handler {
 		if err != nil {
 			return err
 		}
-		var in struct {
-			Status string `json:"status"`
-			Reason string `json:"reason"`
-		}
-		if err := api.Body(c, &in); err != nil {
+		status, reason, err := outcome(c)
+		if err != nil {
 			return err
 		}
-		in.Reason = strings.TrimSpace(in.Reason)
-		switch in.Status {
-		case "delivered":
-			in.Reason = ""
-		case "failed":
-			if n := utf8.RuneCountInString(in.Reason); n < 1 || n > maxReasonLen {
-				return api.Field("reason", "A failed delivery needs a reason of at most 500 characters.")
-			}
-		default:
-			return api.Field("status", `Must be "delivered" or "failed".`)
-		}
+		in := struct{ Status, Reason string }{status, reason}
 
 		var out sqlc.Delivery
 		closed := false

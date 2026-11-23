@@ -24,6 +24,8 @@ type Deps struct {
 	RateAuth *api.Limiter
 	RateConn *api.Limiter
 	RateAnon *api.Limiter
+	// RateTest limits tests of an app per user and app.
+	RateTest *api.Limiter
 
 	Gateway GatewayConfig
 

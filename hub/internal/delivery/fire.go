@@ -50,6 +50,9 @@ func RunOnce(ctx context.Context, d *core.Deps) error {
 		if err != nil {
 			return err
 		}
+		if err := expireTests(ctx, q, now); err != nil {
+			return err
+		}
 		return announceNew(ctx, q, released)
 	})
 	if err != nil {
