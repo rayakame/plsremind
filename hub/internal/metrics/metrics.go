@@ -102,7 +102,7 @@ func New(version string) *Metrics {
 	}, []string{"code"})
 	m.GatewayDispatches = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Name: "plsremind_gateway_dispatches_total",
-		Help: "Dispatches produced for gateway sessions, by event.",
+		Help: "Dispatches produced for gateway sessions, by event, including those kept for a client that resumes.",
 	}, []string{"event"})
 	reg.MustRegister(m.Requests, m.Durations, m.Reminders, m.Lateness, m.Acknowledged, m.Expired,
 		m.TickerRuns, m.TickerDuration, m.TickerLastSuccess, m.GatewayCloses, m.GatewayDispatches)
@@ -165,10 +165,10 @@ func (s *sessions) Collect(ch chan<- prometheus.Metric) {
 func (m *Metrics) WatchPool(stat func() *pgxpool.Stat) {
 	if m.pool == nil {
 		m.pool = &pool{
-			conns:   prometheus.NewDesc("plsremind_db_pool_connections", "Database connections of the pool, by state.", []string{"state"}, nil),
-			acquire: prometheus.NewDesc("plsremind_db_pool_acquire_seconds_total", "Time spent getting a connection from the pool.", nil, nil),
-			empty:   prometheus.NewDesc("plsremind_db_pool_empty_acquires_total", "Requests for a connection that had to wait because none was free.", nil, nil),
-			stat:    stat,
+			conns: prometheus.NewDesc("plsremind_db_pool_connections", "Database connections of the pool, by state.", []string{"state"}, nil),
+			wait:  prometheus.NewDesc("plsremind_db_pool_acquire_wait_seconds_total", "Time requests waited for a connection because none was free.", nil, nil),
+			empty: prometheus.NewDesc("plsremind_db_pool_empty_acquires_total", "Requests for a connection that found none free and waited for one to be released or made.", nil, nil),
+			stat:  stat,
 		}
 		m.registry.MustRegister(m.pool)
 		return
@@ -179,14 +179,14 @@ func (m *Metrics) WatchPool(stat func() *pgxpool.Stat) {
 }
 
 type pool struct {
-	conns, acquire, empty *prometheus.Desc
-	mu                    sync.Mutex
-	stat                  func() *pgxpool.Stat
+	conns, wait, empty *prometheus.Desc
+	mu                 sync.Mutex
+	stat               func() *pgxpool.Stat
 }
 
 func (p *pool) Describe(ch chan<- *prometheus.Desc) {
 	ch <- p.conns
-	ch <- p.acquire
+	ch <- p.wait
 	ch <- p.empty
 }
 
@@ -199,7 +199,7 @@ func (p *pool) Collect(ch chan<- prometheus.Metric) {
 	} {
 		ch <- prometheus.MustNewConstMetric(p.conns, prometheus.GaugeValue, float64(n), state)
 	}
-	ch <- prometheus.MustNewConstMetric(p.acquire, prometheus.CounterValue, stat.AcquireDuration().Seconds())
+	ch <- prometheus.MustNewConstMetric(p.wait, prometheus.CounterValue, stat.EmptyAcquireWaitTime().Seconds())
 	ch <- prometheus.MustNewConstMetric(p.empty, prometheus.CounterValue, float64(stat.EmptyAcquireCount()))
 }
 
@@ -229,10 +229,11 @@ func (m *Metrics) Acknowledge(result string) {
 }
 
 // Tick runs one round of the ticker and notes how long it took and how it ended.
-func (m *Metrics) Tick(run func() error) error {
+func (m *Metrics) Tick(ctx context.Context, run func() error) error {
 	start := time.Now()
 	err := run()
-	if m == nil {
+	// A round the shutdown cut short did not fail.
+	if m == nil || (err != nil && ctx.Err() != nil) {
 		return err
 	}
 	m.TickerDuration.Observe(time.Since(start).Seconds())

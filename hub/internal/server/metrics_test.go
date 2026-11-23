@@ -81,7 +81,7 @@ func TestTheDatabasePoolIsReported(t *testing.T) {
 	}
 	require.Equal(t, float64(e.Pool.Stat().MaxConns()), found["plsremind_db_pool_connections max"])
 	for _, key := range []string{"plsremind_db_pool_connections acquired", "plsremind_db_pool_connections idle",
-		"plsremind_db_pool_connections total", "plsremind_db_pool_acquire_seconds_total", "plsremind_db_pool_empty_acquires_total"} {
+		"plsremind_db_pool_connections total", "plsremind_db_pool_acquire_wait_seconds_total", "plsremind_db_pool_empty_acquires_total"} {
 		_, ok := found[key]
 		require.True(t, ok, key)
 	}

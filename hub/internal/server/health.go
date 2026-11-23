@@ -9,8 +9,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// readiness pings the database at most once a second: /readyz has no login and no rate
-// limit, so a flood of probes must not reach the pool.
+// /readyz has no login and no rate limit, so a flood of probes must not reach the pool.
 type readiness struct {
 	mu      sync.Mutex
 	ping    func(context.Context) error

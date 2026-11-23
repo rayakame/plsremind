@@ -79,8 +79,8 @@ func TestStartServesMetricsUntilItsContextEnds(t *testing.T) {
 
 func TestTickNotesHowARoundEnded(t *testing.T) {
 	m := metrics.New("dev")
-	require.NoError(t, m.Tick(func() error { return nil }))
-	require.Error(t, m.Tick(func() error { return errors.New("database away") }))
+	require.NoError(t, m.Tick(context.Background(), func() error { return nil }))
+	require.Error(t, m.Tick(context.Background(), func() error { return errors.New("database away") }))
 	require.Equal(t, 1.0, testutil.ToFloat64(m.TickerRuns.WithLabelValues("ok")))
 	require.Equal(t, 1.0, testutil.ToFloat64(m.TickerRuns.WithLabelValues("error")))
 	require.Positive(t, testutil.ToFloat64(m.TickerLastSuccess))
@@ -122,7 +122,15 @@ func TestANilRegistryCountsNothingAndDoesNotFail(t *testing.T) {
 	m.Reminder("due", "fired", time.Second)
 	m.Expire("connection", 2)
 	m.Acknowledge("delivered")
-	require.NoError(t, m.Tick(func() error { return nil }))
+	require.NoError(t, m.Tick(context.Background(), func() error { return nil }))
+}
+
+func TestARoundCutShortByTheShutdownIsNoError(t *testing.T) {
+	m := metrics.New("dev")
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	require.Error(t, m.Tick(ctx, func() error { return ctx.Err() }))
+	require.Zero(t, testutil.ToFloat64(m.TickerRuns.WithLabelValues("error")))
 }
 
 func TestCountingOpenDeliveriesAgainReplacesTheCount(t *testing.T) {

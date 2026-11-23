@@ -86,7 +86,7 @@ func run() error {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				if err := d.Metrics.Tick(func() error { return delivery.RunOnce(ctx, d) }); err != nil && ctx.Err() == nil {
+				if err := d.Metrics.Tick(ctx, func() error { return delivery.RunOnce(ctx, d) }); err != nil && ctx.Err() == nil {
 					slog.Error("fire reminders", "err", err)
 				}
 			}
@@ -125,7 +125,7 @@ func readyURL(listen string) string {
 	if err != nil {
 		return "http://" + listen + "/readyz"
 	}
-	// Go listens on both families for "[::]", and IPv4 loopback exists where IPv6 may be switched off.
+	// Fiber listens on IPv4 only, so 127.0.0.1 reaches a hub that listens on every address.
 	if ip := net.ParseIP(host); host == "" || (ip != nil && ip.IsUnspecified()) {
 		host = "127.0.0.1"
 	}

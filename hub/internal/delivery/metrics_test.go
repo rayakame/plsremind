@@ -124,3 +124,15 @@ func TestABatchThatRollsBackIsNotCounted(t *testing.T) {
 	e.Fire(t)
 	require.Equal(t, 1.0, testutil.ToFloat64(e.Deps.Metrics.Reminders.WithLabelValues("due", "fired")))
 }
+
+func TestExpiredDeliveriesToAConnectionAreCountedAsSuch(t *testing.T) {
+	e := testkit.New(t)
+	mia := e.User(t, "mia")
+	e.Connection(t, "discord")
+	e.GiveIdentity(t, mia.UserID, "discord", "1234")
+	testkit.DueSoon(t, e, mia)
+	e.Clock.Advance(24*time.Hour + time.Second)
+	e.Fire(t)
+	require.Equal(t, 1.0, testutil.ToFloat64(e.Deps.Metrics.Expired.WithLabelValues("connection")))
+	require.Zero(t, testutil.ToFloat64(e.Deps.Metrics.Expired.WithLabelValues("personal_token")))
+}
