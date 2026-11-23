@@ -188,6 +188,12 @@ def test_a_test_of_an_app() -> None:
     )
 
 
+def test_a_login_method_from_an_older_hub_logs_in_and_does_not_link() -> None:
+    info = decode(models.Info, {**fixtures.INFO, "login_methods": [{"key": "gh", "type": "github", "name": "GitHub"}]})
+    assert info.login_methods[0].login is True
+    assert info.login_methods[0].link is False
+
+
 def test_delivery() -> None:
     delivery = decode(models.Delivery, fixtures.DELIVERY)
     assert delivery.reminder.kind is ReminderKind.BEFORE

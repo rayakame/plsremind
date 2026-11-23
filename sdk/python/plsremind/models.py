@@ -142,9 +142,9 @@ class LoginMethod(msgspec.Struct, frozen=True, kw_only=True, gc=False):
     key: str
     type: ProviderType
     name: str
-    login: bool
-    """Whether people can log in with it."""
-    link: bool
+    login: bool = True
+    """Whether people can log in with it. Hubs that do not say only list those that allow it."""
+    link: bool = False
     """Whether logged-in users can link their account there."""
 
 
