@@ -127,6 +127,8 @@ type Env struct {
 	admin   *Client
 	dbURL   string
 	baseURL string
+	// cut is the listening connection KillListener ended last.
+	cut int32
 }
 
 // Deps is the hub's dependency set, for tests that change it before the server is built.

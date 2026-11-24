@@ -30,6 +30,8 @@ type OAuthUser struct {
 	Avatar string
 	// Picture overrides the OIDC picture claim with any address.
 	Picture string
+	// Locale is the language the provider knows the user by, for Discord and OIDC.
+	Locale string
 }
 
 // TinyPNG is a picture the fake hands out by default.
@@ -183,6 +185,9 @@ func (f *FakeOAuth) idToken(audience string) string {
 	if f.User.Username != "" {
 		claims["preferred_username"] = f.User.Username
 	}
+	if f.User.Locale != "" {
+		claims["locale"] = f.User.Locale
+	}
 	switch {
 	case f.User.Picture != "":
 		claims["picture"] = f.User.Picture
@@ -215,6 +220,9 @@ func (f *FakeOAuth) user(w http.ResponseWriter, r *http.Request) {
 	body := map[string]any{"id": f.User.ID, "username": firstSet(f.User.Username, "user"), "global_name": f.User.Name}
 	if f.User.Avatar != "" {
 		body["avatar"] = f.User.Avatar
+	}
+	if f.User.Locale != "" {
+		body["locale"] = f.User.Locale
 	}
 	_ = json.NewEncoder(w).Encode(body)
 }

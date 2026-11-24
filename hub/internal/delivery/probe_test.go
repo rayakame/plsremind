@@ -223,8 +223,10 @@ func TestATestWhoseSignalWasLostStillGoesOutOnce(t *testing.T) {
 	gw.ExpectQuiet(t)
 
 	e.KillListener(t)
+	e.WaitListening(t)
 	gw.Expect(t, "delivery.test")
 	e.KillListener(t)
+	e.WaitListening(t)
 	gw.ExpectQuiet(t)
 }
 
@@ -261,6 +263,7 @@ func TestATestIsNotSentForSomeoneWhoSwitchedTheAppOff(t *testing.T) {
 	require.Equal(t, 200, mia.Do(t, "PUT", "/users/@me/connections/"+bot.ID, J{"enabled": false}).Status)
 
 	e.KillListener(t)
+	e.WaitListening(t)
 	// Tests go out oldest first, so Mia's would come before Tom's.
 	frame := gw.Expect(t, "delivery.test")
 	require.Equal(t, tom.UserID, frame.Get("data.user.id").String())
@@ -302,6 +305,7 @@ func TestATestIsNotSentToSomeoneWhoWasDisabled(t *testing.T) {
 	require.Equal(t, 200, e.Admin(t).Do(t, "PATCH", "/admin/users/"+mia.UserID, J{"disabled": true}).Status)
 
 	e.KillListener(t)
+	e.WaitListening(t)
 	frame := gw.Expect(t, "delivery.test")
 	require.Equal(t, tom.UserID, frame.Get("data.user.id").String())
 }

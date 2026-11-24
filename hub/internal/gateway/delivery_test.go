@@ -362,6 +362,7 @@ func TestDetachedSessionDoesNotSwallowWhatTheHubMissed(t *testing.T) {
 
 		e.KillListener(t)
 		testkit.DueSoon(t, e, mia)
+		e.WaitListening(t)
 		// Every connected session of the channel gets it, as with any delivery.
 		require.Equal(t, int64(1), first.Expect(t, "delivery.created").Get("data.attempt").Int(), "round %d", round)
 		require.Equal(t, int64(1), second.Expect(t, "delivery.created").Get("data.attempt").Int(), "round %d", round)

@@ -42,6 +42,7 @@ func newDiscord(d *core.Deps, clientID, clientSecret string, bot bool) Provider 
 				Username   string `json:"username"`
 				GlobalName string `json:"global_name"`
 				Avatar     string `json:"avatar"`
+				Locale     string `json:"locale"`
 			}
 			if err := getJSON(ctx, d.HTTP, ep.UserURL, token.AccessToken, &user); err != nil {
 				return OAuthProfile{}, err
@@ -50,6 +51,7 @@ func newDiscord(d *core.Deps, clientID, clientSecret string, bot bool) Provider 
 				ExternalID:  user.ID,
 				DisplayName: firstNonEmpty(user.GlobalName, user.Username),
 				Username:    user.Username,
+				Locale:      user.Locale,
 				avatar:      avatarPolicy{origin: originOf(ep.AvatarBase)},
 			}
 			if user.Avatar != "" {

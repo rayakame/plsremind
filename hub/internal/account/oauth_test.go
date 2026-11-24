@@ -424,3 +424,33 @@ func TestDiscordSignInAddsTheBotOfItsApplication(t *testing.T) {
 	require.Equal(t, "identify applications.commands", query.Get("scope"))
 	require.Equal(t, "1", query.Get("integration_type"))
 }
+
+func TestASignUpSpeaksTheLanguageOfTheProviderOrTheBrowser(t *testing.T) {
+	e := testkit.New(t)
+	fake := testkit.EnableProvider(t, e, "discord")
+	localeOf := func(r *testkit.Resp) string {
+		t.Helper()
+		return e.Do(t, "GET", "/users/@me", nil, sessionOf(r)).Get("locale").Raw
+	}
+	fake.User = testkit.OAuthUser{ID: "1", Name: "Mia", Locale: "de"}
+	require.Equal(t, `"de"`, localeOf(e.OAuthLogin(t, "discord", testkit.Header("Accept-Language", "en-US"))))
+
+	// Bots cannot see a browser, so a new account must not start without a language.
+	fake.User = testkit.OAuthUser{ID: "2", Name: "Tom"}
+	require.Equal(t, `"fr-CH"`, localeOf(e.OAuthLogin(t, "discord", testkit.Header("Accept-Language", "fr-CH, fr;q=0.9, en;q=0.8"))))
+
+	fake.User = testkit.OAuthUser{ID: "4", Name: "Kai"}
+	require.Equal(t, `"fr"`, localeOf(e.OAuthLogin(t, "discord", testkit.Header("Accept-Language", "de;q=0, en-GB;q=0.5, fr"))), "the weights decide, and q=0 refuses")
+
+	fake.User = testkit.OAuthUser{ID: "5", Name: "Lea"}
+	require.Equal(t, `"de"`, localeOf(e.OAuthLogin(t, "discord", testkit.Header("Accept-Language", "zz, de;q=0.8, en;q=0.5"))), "an unknown language does not spoil the others")
+
+	fake.User = testkit.OAuthUser{ID: "6", Name: "Ida"}
+	require.Equal(t, `"de"`, localeOf(e.OAuthLogin(t, "discord", testkit.Header("Accept-Language", "und, de;q=0.8"))), "und names no language")
+
+	fake.User = testkit.OAuthUser{ID: "7", Name: "Ole", Locale: "und"}
+	require.Equal(t, `"de"`, localeOf(e.OAuthLogin(t, "discord", testkit.Header("Accept-Language", "de"))), "nor does it from the provider")
+
+	fake.User = testkit.OAuthUser{ID: "3", Name: "Ann", Locale: "not a tag!"}
+	require.Equal(t, "null", localeOf(e.OAuthLogin(t, "discord", testkit.Header("Accept-Language", "*"))))
+}

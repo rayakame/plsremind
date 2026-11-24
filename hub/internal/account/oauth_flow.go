@@ -1,11 +1,14 @@
 package account
 
 import (
+	"cmp"
 	"crypto/subtle"
 	"errors"
+	"golang.org/x/text/language"
 	"log/slog"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 	"time"
 
@@ -279,7 +282,7 @@ func oauthFinish(c fiber.Ctx, d *core.Deps, used sqlc.LoginProvider, stored sqlc
 		if err != nil {
 			return err
 		}
-		user, err := CreateUser(c.Context(), q, now, NewUser{DisplayName: profile.DisplayName})
+		user, err := CreateUser(c.Context(), q, now, NewUser{DisplayName: profile.DisplayName, Locale: signUpLocale(profile.Locale, c.Get("Accept-Language"))})
 		if err != nil {
 			return err
 		}
@@ -292,4 +295,48 @@ func oauthFinish(c fiber.Ctx, d *core.Deps, used sqlc.LoginProvider, stored sqlc
 		return auth.StartSession(c, d, q, user.ID)
 	})
 	return linked, err
+}
+
+// signUpLocale picks the language of an account made by signing in elsewhere. Bots cannot see a
+// browser, so the account takes the provider's language, or else the one the browser asked for.
+func signUpLocale(provider, acceptLanguage string) *string {
+	candidates := append([]string{provider}, browserLanguages(acceptLanguage)...)
+	for _, candidate := range candidates {
+		if tag, ok := namedLanguage(candidate); ok && len(tag) <= maxLocaleLen && localePattern.MatchString(tag) {
+			return &tag
+		}
+	}
+	return nil
+}
+
+// namedLanguage reads a language tag; "und" and "mul" name none. Raw, as Base would guess one.
+func namedLanguage(raw string) (string, bool) {
+	tag, err := language.Parse(strings.TrimSpace(raw))
+	if err != nil {
+		return "", false
+	}
+	base, _, _ := tag.Raw()
+	return tag.String(), base.String() != "und" && base.String() != "mul"
+}
+
+// browserLanguages reads the entries one by one, as the library drops the whole list over a
+// single unknown language.
+func browserLanguages(header string) []string {
+	type weighted struct {
+		tag string
+		q   float32
+	}
+	var asked []weighted
+	for _, entry := range strings.Split(header, ",") {
+		tags, q, err := language.ParseAcceptLanguage(entry)
+		if err == nil && len(tags) > 0 {
+			asked = append(asked, weighted{tags[0].String(), q[0]})
+		}
+	}
+	slices.SortStableFunc(asked, func(a, b weighted) int { return cmp.Compare(b.q, a.q) })
+	out := make([]string, 0, len(asked))
+	for _, one := range asked {
+		out = append(out, one.tag)
+	}
+	return out
 }

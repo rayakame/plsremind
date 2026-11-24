@@ -48,7 +48,10 @@ export function ProfileSettings() {
           <option key={one} value={one} />
         ))}
       </datalist>
-      <Field label={t("personal.language")}>
+      <Field
+        label={t("personal.language")}
+        hint={language === "" ? t("personal.languageBrowserHint") : undefined}
+      >
         <Select
           value={language}
           onChange={(event) =>

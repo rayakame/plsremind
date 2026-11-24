@@ -90,6 +90,7 @@ func newOIDC(d *core.Deps, provider *oidc.Provider, issuer, clientID, clientSecr
 				Name              string `json:"name"`
 				PreferredUsername string `json:"preferred_username"`
 				Picture           string `json:"picture"`
+				Locale            string `json:"locale"`
 			}
 			if err := idToken.Claims(&claims); err != nil {
 				return OAuthProfile{}, err
@@ -99,6 +100,7 @@ func newOIDC(d *core.Deps, provider *oidc.Provider, issuer, clientID, clientSecr
 				DisplayName: firstNonEmpty(claims.Name, claims.PreferredUsername),
 				Username:    claims.PreferredUsername,
 				AvatarURL:   claims.Picture,
+				Locale:      claims.Locale,
 				// The picture claim can name any address; the issuer the admin set up is trusted.
 				avatar: avatarPolicy{origin: originOf(issuer), public: true},
 			}, nil

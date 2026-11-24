@@ -23,6 +23,8 @@ type OAuthProfile struct {
 	DisplayName string
 	Username    string
 	AvatarURL   string
+	// Locale is the language the provider knows the user by, if it says.
+	Locale string
 	// Token is the refresh token if the provider issued one, otherwise the access token.
 	// It is only kept to revoke the grant when the account is unlinked.
 	Token string
