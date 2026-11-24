@@ -15,6 +15,8 @@ jobs:
   release-please:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
+    # The app key lives in this environment, which only main may use.
+    environment: release
     outputs:
       server: ${{ steps.release.outputs.release_created }}
       server-version: ${{ steps.release.outputs.version }}
@@ -34,12 +36,35 @@ jobs:
           permission-contents: write
           permission-pull-requests: write
           permission-issues: write
+      # Releases first, on their own: if the pull requests fail afterwards, a rerun still publishes.
       - id: release
         uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
         with:
           token: ${{ steps.app.outputs.token }}
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
+          skip-github-pull-request: true
+
+  release-pull-requests:
+    needs: release-please
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    environment: release
+    steps:
+      - id: app
+        uses: actions/create-github-app-token@f418cff399f7aef4c2f0ad47e25ca7a6abbdd6fc # v3.4.0
+        with:
+          client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_APP_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+          permission-issues: write
+      - uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
+        with:
+          token: ${{ steps.app.outputs.token }}
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+          skip-github-release: true
 
   images:
     needs: release-please
@@ -123,7 +148,10 @@ jobs:
           have="$(npm --version)"
           [ "$(printf '11.5.1\n%s\n' "$have" | sort -V | head -n 1)" = 11.5.1 ] \
             || { echo "npm $have is too old for trusted publishing" >&2; exit 1; }
-      - run: npm ci
+      # No install scripts in a job that can mint a publishing token.
+      - run: npm ci --ignore-scripts --workspace sdk/ts
+      - run: npm run build
+        working-directory: sdk/ts
       - run: npm run check:pack
         working-directory: sdk/ts
       - run: npm publish
