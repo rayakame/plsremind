@@ -72,10 +72,13 @@ services:
       - -promscrape.suppressScrapeErrorsDelay=1h
       # So that a change to scrape.yml applies without a restart.
       - -promscrape.configCheckInterval=1m
+      # So that a new file in monitoring/targets/ is picked up soon.
+      - -promscrape.fileSDCheckInterval=30s
       # Lets Grafana list the alert rules and their state through this data source.
       - -vmalert.proxyURL=http://vmalert:8880
     volumes:
       - ./monitoring/scrape.yml:/etc/plsremind/scrape.yml:ro
+      - ./monitoring/targets:/etc/plsremind/targets:ro
       - metrics:/storage
 
   vmalert:

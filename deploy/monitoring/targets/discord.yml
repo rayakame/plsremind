@@ -1,0 +1,2 @@
+# The Discord bot of compose.yaml. Each further bot gets a file of its own next to this one.
+- targets: ["discord:9091"]

@@ -24,7 +24,7 @@ adapter_log="$(mktemp)"
 cleanup() {
   [ -n "$adapter_pid" ] && kill "$adapter_pid" >/dev/null 2>&1 || true
   docker compose down -v --remove-orphans >/dev/null 2>&1 || true
-  rm -f "$jar" "$adapter_log"
+  rm -f "$jar" "$adapter_log" monitoring/targets/smoke-extra.yml
 }
 trap cleanup EXIT
 
@@ -151,6 +151,15 @@ for _ in $(seq 1 60); do
 done
 expect "the fired reminder shows in the metrics" "${scraped##*,}" '"1"]'
 expect "the hub is scraped" "$(query 'up{job="plsremind-hub"}' | grep -o '"value":\[[^]]*\]' | sed 's/.*,//')" '"1"]'
+# A target of one's own goes in a file of its own, and is picked up without a restart.
+printf -- '- targets: ["smoke-extra:9091"]\n' > monitoring/targets/smoke-extra.yml
+extra=""
+for _ in $(seq 1 45); do
+  extra="$(query 'up{job="plsremind-discord",instance="smoke-extra:9091"}' 2>/dev/null | grep -o '"instance":"smoke-extra:9091"' || true)"
+  [ -n "$extra" ] && break
+  sleep 2
+done
+expect "an extra target file is scraped" "$extra" '"instance":"smoke-extra:9091"'
 expect "the dashboard is there" \
   "$(curl -fsS -u "admin:${PLSREMIND_GRAFANA_PASSWORD}" "${grafana}/api/search?query=plsremind" | grep -o '"uid":"plsremind"')" '"uid":"plsremind"'
 

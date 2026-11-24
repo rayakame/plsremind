@@ -190,9 +190,15 @@ echo "PLSREMIND_DISCORD_TEAM_TOKEN=plsr_con_..." >> .env
 docker compose --profile discord up -d
 ```
 
-For the monitoring, add `discord-team:9091` to the targets of the `plsremind-discord` job
-in [`deploy/monitoring/scrape.yml`](../deploy/monitoring/scrape.yml). Every further bot
-works the same way with its own service name, variables and volume.
+For the monitoring, give it a file of its own next to
+[`deploy/monitoring/targets/discord.yml`](../deploy/monitoring/targets/discord.yml):
+
+```sh
+echo '- targets: ["discord-team:9091"]' > monitoring/targets/discord-team.yml
+```
+
+VictoriaMetrics picks it up within 30 seconds. Every further bot works the same way with its
+own service name, variables, volume and target file.
 
 ## Monitoring
 
@@ -219,11 +225,11 @@ It adds three services:
   the hub or the bot down, the ticker stalled, reminders more than two minutes late,
   server errors, expired deliveries to a connection, the bot not connected to the hub,
   Discord refusing reminders, errors in the bot nobody foresaw. With several bots, each is
-  watched and reported on its own. If you take a bot away for good, remove its target, or
-  the whole `plsremind-discord` job, from
-  [`deploy/monitoring/scrape.yml`](../deploy/monitoring/scrape.yml), or its alert keeps
-  firing until its last scrape has left the 30 days. VictoriaMetrics rereads the file
-  within a minute.
+  watched and reported on its own. If you take a further bot away for good, delete its
+  file in `monitoring/targets/`, or its alert keeps firing until its last scrape has left
+  the 30 days. The bot of `compose.yaml` keeps `targets/discord.yml`; if you stop running
+  it, its alert ends once that last scrape is 30 days old, or at once if you delete the
+  file (an update brings it back).
 - **Grafana** opens on `http://127.0.0.1:3000` (`PLSREMIND_GRAFANA_PORT` to change it)
   with the plsremind dashboard, which shows the bots one line each and can be narrowed to
   some of them. Log in as `admin` with `PLSREMIND_GRAFANA_PASSWORD`; the
@@ -246,9 +252,10 @@ from there: a public address, or a service added in an override file, such as
 Prometheus, Grafana Alloy or any other tool that reads the Prometheus format works as
 well. Inside the compose network,
 [`deploy/monitoring/scrape.yml`](../deploy/monitoring/scrape.yml) serves as its scrape
-configuration as it is. Outside it, publish the metrics ports yourself and replace `hub:9090`
-and `discord:9091` with the host's address and those ports, since the service names only
-resolve inside the network. The rules work as they are, and the dashboard asks which
+configuration as it is, with the target files of `monitoring/targets/` mounted at
+`/etc/plsremind/targets/`. Outside it, publish the metrics ports yourself and replace
+`hub:9090` and `discord:9091` with the host's address and those ports, since the service
+names only resolve inside the network. The rules work as they are, and the dashboard asks which
 Prometheus data source to use.
 
 ## Behind a reverse proxy
