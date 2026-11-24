@@ -76,9 +76,10 @@ services:
       - -promscrape.fileSDCheckInterval=30s
       # Lets Grafana list the alert rules and their state through this data source.
       - -vmalert.proxyURL=http://vmalert:8880
+    # Folders rather than single files: unpacking a new bundle replaces the files, and a mount of
+    # a single file would keep showing the old one.
     volumes:
-      - ./monitoring/scrape.yml:/etc/plsremind/scrape.yml:ro
-      - ./monitoring/targets:/etc/plsremind/targets:ro
+      - ./monitoring:/etc/plsremind:ro
       - metrics:/storage
 
   vmalert:
@@ -89,13 +90,14 @@ services:
       - victoriametrics
     command:
       - -rule=/etc/plsremind/alerts.yml
+      - -configCheckInterval=1m
       - -datasource.url=http://victoriametrics:8428
       - -remoteWrite.url=http://victoriametrics:8428
       - -remoteRead.url=http://victoriametrics:8428
       # Without an Alertmanager alerts are only shown, on the dashboard and in Grafana's alert list.
       - ${PLSREMIND_ALERTMANAGER_URL:+-notifier.url=}${PLSREMIND_ALERTMANAGER_URL:--notifier.blackhole}
     volumes:
-      - ./monitoring/alerts.yml:/etc/plsremind/alerts.yml:ro
+      - ./monitoring:/etc/plsremind:ro
 
   grafana:
     profiles: ["monitoring"]
@@ -125,9 +127,9 @@ services:
     ports:
       - "127.0.0.1:${PLSREMIND_GRAFANA_PORT:-3000}:3000"
     volumes:
-      - ./monitoring/grafana/datasource.yml:/etc/grafana/provisioning/datasources/plsremind.yml:ro
-      - ./monitoring/grafana/dashboards.yml:/etc/grafana/provisioning/dashboards/plsremind.yml:ro
-      - ./monitoring/grafana/plsremind.json:/etc/grafana/dashboards/plsremind.json:ro
+      - ./monitoring/grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro
+      - ./monitoring/grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./monitoring/grafana:/etc/grafana/dashboards:ro
       - grafana:/var/lib/grafana
 
 volumes:

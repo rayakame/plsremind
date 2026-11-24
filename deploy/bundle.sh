@@ -25,8 +25,8 @@ shipped = [
     "monitoring/scrape.yml",
     "monitoring/alerts.yml",
     "monitoring/targets/discord.yml",
-    "monitoring/grafana/dashboards.yml",
-    "monitoring/grafana/datasource.yml",
+    "monitoring/grafana/provisioning/dashboards/plsremind.yml",
+    "monitoring/grafana/provisioning/datasources/plsremind.yml",
     "monitoring/grafana/plsremind.json",
     *sorted(str(path) for path in pathlib.Path("examples").glob("*.yaml")),
 ]
