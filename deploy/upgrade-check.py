@@ -93,7 +93,7 @@ def snapshot(hub: Hub, state: dict[str, object]) -> None:
     state["reads"] = {path: hub.call("GET", path) for path in reads}
 
 
-# Values that use changes on its own: a token's last use, a delivery or a test still on its way.
+# Values that change through use alone: a token's last use, a delivery or a test still on its way.
 VOLATILE = ("last_used_at",)
 VOLATILE_IN_FLIGHT = ("status", "attempts", "reason", "sent_at", "closed_at")
 
