@@ -489,7 +489,6 @@ wheels = [
 
 [[package]]
 name = "plsremind"
-version = "0.1.0"
 source = { editable = "../../sdk/python" }
 dependencies = [
     { name = "aiohttp" },
@@ -520,7 +519,6 @@ ruff = [{ name = "ruff", specifier = "==0.17.5" }]
 
 [[package]]
 name = "plsremind-discord"
-version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "aiohttp" },

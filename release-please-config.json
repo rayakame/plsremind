@@ -1,0 +1,46 @@
+{
+  "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
+  "separate-pull-requests": true,
+  "bump-minor-pre-major": true,
+  "pull-request-title-pattern": "chore: release ${component} ${version}",
+  "packages": {
+    ".": {
+      "release-type": "simple",
+      "component": "plsremind",
+      "include-component-in-tag": false,
+      "release-as": "0.1.0",
+      "extra-files": [
+        {
+          "type": "generic",
+          "path": "connections/discord/plsremind_discord/about.py"
+        },
+        { "type": "json", "path": "web/package.json", "jsonpath": "$.version" },
+        {
+          "type": "json",
+          "path": "package-lock.json",
+          "jsonpath": "$.packages.web.version"
+        }
+      ]
+    },
+    "sdk/python": {
+      "release-type": "simple",
+      "component": "sdk-python",
+      "release-as": "0.1.0",
+      "extra-files": [
+        { "type": "generic", "path": "plsremind/internal/about.py" }
+      ]
+    },
+    "sdk/ts": {
+      "release-type": "node",
+      "component": "sdk-ts",
+      "release-as": "0.1.0",
+      "extra-files": [
+        {
+          "type": "json",
+          "path": "/package-lock.json",
+          "jsonpath": "$.packages['sdk/ts'].version"
+        }
+      ]
+    }
+  }
+}

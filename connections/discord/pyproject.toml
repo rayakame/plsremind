@@ -1,6 +1,6 @@
 [project]
 name = "plsremind-discord"
-version = "0.1.0"
+dynamic = ["version"]
 description = "The Discord bot for plsremind: reminders as direct messages, and commands to keep up with them."
 readme = "README.md"
 authors = [{ name = "rayakame" }]
@@ -19,6 +19,10 @@ dependencies = [
 [build-system]
 requires = ["hatchling>=1.27"]
 build-backend = "hatchling.build"
+
+[tool.hatch.version]
+path = "plsremind_discord/about.py"
+pattern = '__version__: typing.Final = "(?P<version>[^"]+)"'
 
 [tool.hatch.build.targets.wheel]
 packages = ["plsremind_discord"]
@@ -69,3 +73,8 @@ asyncio_default_fixture_loop_scope = "function"
 xfail_strict = true
 markers = ["hub: needs a real hub, built from this repository, and Docker"]
 filterwarnings = ["error"]
+
+[tool.uv]
+# The version is read from plsremind_discord/about.py when the package is built.
+cache-keys = [{ file = "pyproject.toml" }, { file = "plsremind_discord/about.py" }]
+
