@@ -25,7 +25,10 @@ adapter_log="$(mktemp)"
 
 bundle_dir="$(mktemp -d)"
 
+replacing=""
+
 cleanup() {
+  [ -n "$replacing" ] && mv "$bundle_dir/original" "$replacing"
   [ -n "$adapter_pid" ] && kill "$adapter_pid" >/dev/null 2>&1 || true
   docker compose down -v --remove-orphans >/dev/null 2>&1 || true
   rm -f "$jar" "$adapter_log" monitoring/targets/smoke-extra.yml
@@ -190,6 +193,23 @@ done
 expect "an extra target file is scraped" "$extra" '"instance":"smoke-extra:9091"'
 expect "the dashboard is there" \
   "$(curl -fsS -u "admin:${PLSREMIND_GRAFANA_PASSWORD}" "${grafana}/api/search?query=plsremind" | grep -o '"uid":"plsremind"')" '"uid":"plsremind"'
+# Unpacking a new bundle replaces these files instead of rewriting them; the running services must
+# see the new ones, which a mount of the single file would not.
+for shipped in victoriametrics:/etc/plsremind/scrape.yml:monitoring/scrape.yml \
+  vmalert:/etc/plsremind/alerts.yml:monitoring/alerts.yml \
+  grafana:/etc/grafana/dashboards/plsremind.json:monitoring/grafana/plsremind.json; do
+  IFS=: read -r service inside file <<< "$shipped"
+  cp -p "$file" "$bundle_dir/original"
+  replacing="$file"
+  { cat "$bundle_dir/original"; echo; } > "$file.new"
+  mv "$file.new" "$file"
+  want="$(cksum < "$file")"
+  got="$(docker compose cp "$service:$inside" - | tar -xO | cksum)"
+  mv "$bundle_dir/original" "$file"
+  replacing=""
+  [ "$got" = "$want" ] || fail "$service still sees the $file it started with"
+done
+echo "ok  replaced monitoring files reach the running services"
 
 # A backup taken now and restored later brings back exactly what was there.
 backup="$(./backup.sh)"
