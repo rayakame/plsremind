@@ -25,7 +25,29 @@ fail() {
   exit 1
 }
 
-# The hub runs the given image; everything else comes from the bundle unpacked into the folder.
+sql() {
+  (cd "$server" && docker compose exec -T db psql --username plsremind --dbname plsremind -v ON_ERROR_STOP=1 -tA "$@")
+}
+
+# What the API cannot write: accounts linked through a provider, which need a real sign-in.
+seed() {
+  python3 upgrade-check.py seed "$base" "$work/state.json"
+  sql -c "INSERT INTO identities (id, user_id, provider, external_id, display_name, username, created_at)
+    SELECT gen_random_uuid(), id, p.provider, p.external_id, 'Ada', 'ada', now()
+    FROM users, (VALUES ('github', '1815'), ('discord', '1843')) AS p (provider, external_id)" >/dev/null
+  python3 upgrade-check.py snapshot "$base" "$work/state.json"
+}
+
+# Every table, also one no read covers yet, must hold rows and keep them through the update.
+count_rows() {
+  sql -c "SELECT table_name || ' ' || (xpath('/row/n/text()', query_to_xml(
+      format('SELECT count(*) AS n FROM %I', table_name), false, true, '')))[1]::text
+    FROM information_schema.tables
+    WHERE table_schema = 'public' AND table_type = 'BASE TABLE'
+      AND table_name NOT IN ('goose_db_version', 'oauth_states')
+    ORDER BY 1" > "$1"
+}
+
 use_hub() {
   printf 'services:\n  hub:\n    image: %s\n    pull_policy: %s\n' "$1" "$2" > "$server/compose.override.yaml"
 }
@@ -52,17 +74,25 @@ if [ "$previous" != "none" ]; then
     use_hub "$PREVIOUS_HUB_IMAGE" never
   fi
   start
-  python3 upgrade-check.py seed "$base" "$work/state.json"
+  seed
+  count_rows "$work/before.txt"
   echo "ok  seeded release ${previous}"
 fi
 
-# The candidate's bundle over the old folder, as a self-hoster updates.
 tar -xzf "$(./bundle.sh "$work")" -C "$server" --strip-components=1
 use_hub "$candidate" never
 start
 if [ "$previous" = "none" ]; then
-  python3 upgrade-check.py seed "$base" "$work/state.json"
+  seed
+  count_rows "$work/before.txt"
   echo "ok  seeded a fresh install"
 fi
 python3 upgrade-check.py verify "$base" "$work/state.json" || fail "data changed or went missing"
+count_rows "$work/after.txt"
+problems="$(awk 'NR == FNR { after[$1] = $2; next }
+  $2 == 0 { print $1 ": the seed wrote no rows, so the update is not checked for it" }
+  !($1 in after) { print $1 ": gone" ; next }
+  after[$1] < $2 { print $1 ": had " $2 " rows, now " after[$1] }' "$work/after.txt" "$work/before.txt")"
+[ -z "$problems" ] || fail "$problems"
+echo "ok  $(wc -l < "$work/before.txt" | tr -d ' ') tables kept their rows"
 echo "upgrade: all good"

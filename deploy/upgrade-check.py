@@ -19,6 +19,7 @@ READS = [
     "/users/@me/identities",
     "/users/@me/reminder-log",
     "/admin/settings",
+    "/admin/providers",
     "/admin/connections",
     "/admin/invites",
     "/admin/users",
@@ -49,6 +50,14 @@ class Hub:
 def seed(hub: Hub) -> dict[str, object]:
     hub.call("POST", "/setup", {"username": "admin", "password": PASSWORD})
     hub.call("PATCH", "/admin/settings", {"name": "Upgrade test"})
+    hub.call(
+        "PUT", "/admin/providers/github", {"client_id": "upgrade-test", "client_secret": "s3cret", "link_enabled": True}
+    )
+    hub.call(
+        "PUT",
+        "/admin/providers/company",
+        {"type": "oidc", "name": "Company", "client_id": "plsremind", "issuer_url": "https://login.example.com"},
+    )
     hub.call("POST", "/admin/invites", {})
     hub.call("PATCH", "/users/@me", {"display_name": "Ada", "timezone": "Europe/Berlin", "locale": "de"})
     work = hub.call("POST", "/users/@me/lists", {"name": "Work"})
@@ -74,17 +83,25 @@ def seed(hub: Hub) -> dict[str, object]:
         if time.monotonic() > deadline:
             raise SystemExit("the reminder did not fire within two minutes")
         time.sleep(3)
-    return {"token": token, "reads": {path: hub.call("GET", path) for path in READS}}
+    return {"token": token, "app": app["id"]}
 
 
-# Values that use changes on its own: a token's last use, a delivery still on its way.
+def snapshot(hub: Hub, state: dict[str, object]) -> None:
+    # Needs the Discord identity upgrade-test.sh writes, since only a linked account can be tested.
+    test = hub.call("POST", f"/users/@me/connections/{state['app']}/tests")
+    reads = [*READS, f"/users/@me/connections/{state['app']}/tests/{test['id']}"]
+    state["reads"] = {path: hub.call("GET", path) for path in reads}
+
+
+# Values that use changes on its own: a token's last use, a delivery or a test still on its way.
 VOLATILE = ("last_used_at",)
-VOLATILE_IN_DELIVERIES = ("status", "attempts", "reason", "closed_at")
+VOLATILE_IN_FLIGHT = ("status", "attempts", "reason", "sent_at", "closed_at")
 
 
 def volatile(where: str) -> bool:
     key = where.rsplit(".", 1)[-1]
-    return key in VOLATILE or (".deliveries[" in where and key in VOLATILE_IN_DELIVERIES)
+    in_flight = ".deliveries[" in where or "/tests/" in where
+    return key in VOLATILE or (in_flight and key in VOLATILE_IN_FLIGHT)
 
 
 def still_there(before: object, after: object, where: str) -> list[str]:
@@ -131,21 +148,27 @@ def verify(hub: Hub, state: dict[str, object]) -> list[str]:
 
 
 def main() -> None:
-    if len(sys.argv) != 4 or sys.argv[1] not in ("seed", "verify"):
-        raise SystemExit("usage: upgrade-check.py seed|verify <base url> <state file>")
+    if len(sys.argv) != 4 or sys.argv[1] not in ("seed", "snapshot", "verify"):
+        raise SystemExit("usage: upgrade-check.py seed|snapshot|verify <base url> <state file>")
     command, base, state_file = sys.argv[1:4]
     cookies = http.cookiejar.LWPCookieJar(state_file + ".cookies")
     if command == "seed":
-        hub = Hub(base, cookies)
-        state = seed(hub)
+        state = seed(Hub(base, cookies))
         cookies.save(ignore_discard=True)
         with open(state_file, "w") as out:
             json.dump(state, out)
-        print(f"seeded {len(READS)} reads")
+        print("seeded")
         return
     cookies.load(ignore_discard=True)
     with open(state_file) as source:
-        problems = verify(Hub(base, cookies), json.load(source))
+        state = json.load(source)
+    if command == "snapshot":
+        snapshot(Hub(base, cookies), state)
+        with open(state_file, "w") as out:
+            json.dump(state, out)
+        print(f"read {len(state['reads'])} paths")
+        return
+    problems = verify(Hub(base, cookies), state)
     if problems:
         print("\n".join(problems), file=sys.stderr)
         raise SystemExit(1)
