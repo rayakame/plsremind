@@ -48,6 +48,10 @@ expect() {
 # The deploy bundle holds what a server needs, and a new one unpacks over an old one without
 # touching what belongs to the self-hoster.
 bundle="$(./bundle.sh "$bundle_dir")"
+relative="$(cd .. && deploy/bundle.sh "smoke-bundle-test")"
+rm -rf smoke-bundle-test
+(cd .. && [ -s "$relative" ]) || fail "bundle.sh printed $relative, which is not where it wrote the bundle"
+rm -rf ../smoke-bundle-test
 mkdir -p "$bundle_dir/server/backups" "$bundle_dir/server/monitoring/targets"
 printf 'MINE=1\n' > "$bundle_dir/server/.env"
 printf 'services: {}\n' > "$bundle_dir/server/compose.override.yaml"
@@ -193,11 +197,20 @@ backup="$(./backup.sh)"
 echo "ok  backup.sh wrote $backup"
 curl -fsS -o /dev/null -b "$jar" -H 'Content-Type: application/json' -H "Origin: ${PLSREMIND_PUBLIC_URL}" \
   -d '{"title":"after the backup"}' "$base/users/@me/items"
+# A dump that breaks off must leave the database as it was.
+head -c 4000 "$backup" > "$bundle_dir/broken.dump"
+if ./restore.sh --yes "$bundle_dir/broken.dump" >/dev/null 2>&1; then
+  fail "restore.sh took a dump that breaks off"
+fi
+curl -fsS -b "$jar" "$base/users/@me/items" | grep -q '"title":"after the backup"' \
+  || fail "a failed restore changed the database"
+echo "ok  a broken dump leaves the database as it was"
 ./restore.sh --yes "$backup" >/dev/null
 for _ in $(seq 1 60); do
   curl -fsS "${PLSREMIND_PUBLIC_URL}/readyz" >/dev/null 2>&1 && break
   sleep 1
 done
+curl -fsS "${PLSREMIND_PUBLIC_URL}/readyz" >/dev/null 2>&1 || fail "the hub was not ready a minute after the restore"
 titles="$(curl -fsS -b "$jar" "$base/users/@me/items" | grep -o '"title":"[^"]*"' | sort | tr '\n' ' ')"
 case "$titles" in *'"title":"after the backup"'*) fail "restore.sh kept what came after the backup";; esac
 case "$titles" in *'"title":"first item"'*) echo "ok  restore.sh brought the backup back";; *) fail "restore.sh lost the first item: $titles";; esac

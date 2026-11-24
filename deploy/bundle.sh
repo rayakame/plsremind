@@ -2,9 +2,11 @@
 # Packs what a server needs into plsremind-deploy-<version>.tar.gz and prints its path.
 set -euo pipefail
 
-cd "$(dirname "$0")"
 out="${1:?usage: ./bundle.sh <directory to write the bundle to>}"
 mkdir -p "$out"
+# Resolved before leaving the caller's directory, so that the printed path works where it was asked.
+out="$(cd "$out" && pwd)"
+cd "$(dirname "$0")"
 python3 - "$out" <<'PY'
 import gzip
 import io

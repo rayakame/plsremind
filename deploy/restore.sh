@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Replaces everything in the plsremind database with a dump from backup.sh.
+# Replaces the plsremind database with a dump from backup.sh; if the dump cannot be restored, nothing changes.
 set -euo pipefail
 
 cd "$(dirname "$0")"
@@ -10,7 +10,7 @@ if [ "${1:-}" = "--yes" ]; then
 fi
 file="${1:-}"
 if [ -z "$file" ] || [ ! -s "$file" ]; then
-  echo "usage: ./restore.sh [--yes] backups/plsremind-YYYYMMDD-HHMMSS.dump" >&2
+  echo "usage: ./restore.sh [--yes] backups/plsremind-<date>-<time>-<n>.dump" >&2
   exit 2
 fi
 if [ -z "$yes" ]; then
@@ -18,18 +18,44 @@ if [ -z "$yes" ]; then
   [ "$answer" = "yes" ] || exit 1
 fi
 
-# Whatever writes to the database stops first, every bot included; monitoring may go on.
+psql() {
+  docker compose exec -T -e PGOPTIONS="-c client_min_messages=warning" db \
+    psql --username plsremind --dbname postgres --quiet -v ON_ERROR_STOP=1 "$@"
+}
+
+# Restored next to the current database first, so that a dump that breaks off changes nothing.
+psql -c "DROP DATABASE IF EXISTS plsremind_restore" -c "CREATE DATABASE plsremind_restore OWNER plsremind"
+if ! docker compose exec -T db pg_restore --username plsremind --dbname plsremind_restore \
+  --no-owner --exit-on-error --single-transaction < "$file"; then
+  psql -c "DROP DATABASE IF EXISTS plsremind_restore"
+  echo "restore.sh: $file could not be restored; the database is as it was" >&2
+  exit 1
+fi
+
+if ! running="$(docker compose ps --services --status running)"; then
+  psql -c "DROP DATABASE IF EXISTS plsremind_restore"
+  echo "restore.sh: the running services could not be listed; the database is as it was" >&2
+  exit 1
+fi
 writers=()
 while IFS= read -r service; do
-  writers+=("$service")
-done < <(docker compose ps --services --status running | grep -v -x -e db -e victoriametrics -e vmalert -e grafana || true)
+  case "$service" in
+    "" | db | victoriametrics | vmalert | grafana) ;;
+    *) writers+=("$service") ;;
+  esac
+done <<< "$running"
 if [ "${#writers[@]}" -gt 0 ]; then
   docker compose stop "${writers[@]}"
 fi
-docker compose exec -T db dropdb --username plsremind --if-exists --force plsremind
-docker compose exec -T db createdb --username plsremind plsremind
-docker compose exec -T db pg_restore --username plsremind --dbname plsremind --no-owner < "$file"
+
+psql -c "DROP DATABASE IF EXISTS plsremind_replaced" \
+  -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = 'plsremind'" \
+  -c "ALTER DATABASE plsremind RENAME TO plsremind_replaced" \
+  -c "ALTER DATABASE plsremind_restore RENAME TO plsremind" \
+  -c "DROP DATABASE plsremind_replaced" >/dev/null
+
+# up rather than start: after unpacking an older bundle, start would bring back the newer containers.
 if [ "${#writers[@]}" -gt 0 ]; then
-  docker compose start "${writers[@]}"
+  docker compose up -d --no-deps "${writers[@]}"
 fi
 echo "restored $file"
