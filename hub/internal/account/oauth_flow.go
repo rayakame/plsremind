@@ -300,13 +300,23 @@ func oauthFinish(c fiber.Ctx, d *core.Deps, used sqlc.LoginProvider, stored sqlc
 // signUpLocale picks the language of an account made by signing in elsewhere. Bots cannot see a
 // browser, so the account takes the provider's language, or else the one the browser asked for.
 func signUpLocale(provider, acceptLanguage string) *string {
-	candidates := append([]string{strings.TrimSpace(provider)}, browserLanguages(acceptLanguage)...)
+	candidates := append([]string{provider}, browserLanguages(acceptLanguage)...)
 	for _, candidate := range candidates {
-		if len(candidate) <= maxLocaleLen && localePattern.MatchString(candidate) {
-			return &candidate
+		if tag, ok := namedLanguage(candidate); ok && len(tag) <= maxLocaleLen && localePattern.MatchString(tag) {
+			return &tag
 		}
 	}
 	return nil
+}
+
+// namedLanguage reads a language tag; "und" and "mul" name none. Raw, as Base would guess one.
+func namedLanguage(raw string) (string, bool) {
+	tag, err := language.Parse(strings.TrimSpace(raw))
+	if err != nil {
+		return "", false
+	}
+	base, _, _ := tag.Raw()
+	return tag.String(), base.String() != "und" && base.String() != "mul"
 }
 
 // browserLanguages reads the entries one by one, as the library drops the whole list over a
@@ -319,14 +329,9 @@ func browserLanguages(header string) []string {
 	var asked []weighted
 	for _, entry := range strings.Split(header, ",") {
 		tags, q, err := language.ParseAcceptLanguage(entry)
-		if err != nil || len(tags) == 0 {
-			continue
+		if err == nil && len(tags) > 0 {
+			asked = append(asked, weighted{tags[0].String(), q[0]})
 		}
-		// Raw, as Base would guess a language for "und".
-		if base, _, _ := tags[0].Raw(); base.String() == "und" || base.String() == "mul" {
-			continue
-		}
-		asked = append(asked, weighted{tags[0].String(), q[0]})
 	}
 	slices.SortStableFunc(asked, func(a, b weighted) int { return cmp.Compare(b.q, a.q) })
 	out := make([]string, 0, len(asked))
