@@ -226,9 +226,24 @@ fi
 curl -fsS -b "$jar" "$base/users/@me/items" | grep -q '"title":"after the backup"' \
   || fail "a failed restore changed the database"
 echo "ok  a broken dump leaves the database as it was"
-# Going back from an update whose hub keeps crashing: restore must replace that container as well.
+# Two restores at once would share their staging database.
+mkdir .restore.lock
+if ./restore.sh --yes "$backup" >/dev/null 2>&1; then
+  rmdir .restore.lock
+  fail "restore.sh ran while another restore held the lock"
+fi
+rmdir .restore.lock
+curl -fsS -b "$jar" "$base/users/@me/items" | grep -q '"title":"after the backup"' \
+  || fail "a restore that found the lock taken changed the database"
+echo "ok  one restore at a time"
+# Going back from an update whose hub keeps crashing: restore must replace that container as well,
+# and stop a service of the newer release that the older compose.yaml no longer knows.
 printf 'services:\n  hub:\n    environment:\n      PLSREMIND_SECRET_KEY: broken\n' > "$bundle_dir/crashing.yaml"
-COMPOSE_FILE="$COMPOSE_FILE:$bundle_dir/crashing.yaml" docker compose up -d --no-deps hub >/dev/null 2>&1
+printf 'services:\n  newer:\n    image: %s\n    entrypoint: [sleep, "3600"]\n    restart: unless-stopped\n' \
+  "$(docker compose config --images db)" > "$bundle_dir/newer.yaml"
+COMPOSE_FILE="$COMPOSE_FILE:$bundle_dir/crashing.yaml:$bundle_dir/newer.yaml" \
+  docker compose up -d --no-deps hub newer >/dev/null 2>&1
+newer="$(COMPOSE_FILE="$COMPOSE_FILE:$bundle_dir/newer.yaml" docker compose ps -q newer)"
 restarts=0
 for _ in $(seq 1 30); do
   restarts="$(docker inspect -f '{{.RestartCount}}' "$(docker compose ps -a -q hub)")"
@@ -245,6 +260,8 @@ curl -fsS "${PLSREMIND_PUBLIC_URL}/readyz" >/dev/null 2>&1 || fail "the hub was 
 titles="$(curl -fsS -b "$jar" "$base/users/@me/items" | grep -o '"title":"[^"]*"' | sort | tr '\n' ' ')"
 case "$titles" in *'"title":"after the backup"'*) fail "restore.sh kept what came after the backup";; esac
 case "$titles" in *'"title":"first item"'*) echo "ok  restore.sh brought the backup back past a crashing hub";; *) fail "restore.sh lost the first item: $titles";; esac
+expect "a service the older compose.yaml does not know is stopped" "$(docker inspect -f '{{.State.Running}}' "$newer")" false
+docker rm -f "$newer" >/dev/null
 rm -f "$backup"
 
 echo "smoke: all good"

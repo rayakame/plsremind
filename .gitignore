@@ -22,3 +22,4 @@ __pycache__/
 .ruff_cache/
 /deploy/backups/
 /deploy/monitoring/targets/smoke-extra.yml
+/deploy/.restore.lock/
