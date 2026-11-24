@@ -439,6 +439,9 @@ func TestASignUpSpeaksTheLanguageOfTheProviderOrTheBrowser(t *testing.T) {
 	fake.User = testkit.OAuthUser{ID: "2", Name: "Tom"}
 	require.Equal(t, `"fr-CH"`, localeOf(e.OAuthLogin(t, "discord", testkit.Header("Accept-Language", "fr-CH, fr;q=0.9, en;q=0.8"))))
 
+	fake.User = testkit.OAuthUser{ID: "4", Name: "Kai"}
+	require.Equal(t, `"fr"`, localeOf(e.OAuthLogin(t, "discord", testkit.Header("Accept-Language", "de;q=0, en-GB;q=0.5, fr"))), "the weights decide, and q=0 refuses")
+
 	fake.User = testkit.OAuthUser{ID: "3", Name: "Ann", Locale: "not a tag!"}
 	require.Equal(t, "null", localeOf(e.OAuthLogin(t, "discord", testkit.Header("Accept-Language", "*"))))
 }

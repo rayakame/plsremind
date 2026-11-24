@@ -3,6 +3,7 @@ package account
 import (
 	"crypto/subtle"
 	"errors"
+	"golang.org/x/text/language"
 	"log/slog"
 	"net/http"
 	"net/url"
@@ -297,9 +298,16 @@ func oauthFinish(c fiber.Ctx, d *core.Deps, used sqlc.LoginProvider, stored sqlc
 // signUpLocale picks the language of an account made by signing in elsewhere. Bots cannot see a
 // browser, so the account takes the provider's language, or else the one the browser asked for.
 func signUpLocale(provider, acceptLanguage string) *string {
-	asked, _, _ := strings.Cut(acceptLanguage, ",")
-	asked, _, _ = strings.Cut(asked, ";")
-	for _, candidate := range []string{strings.TrimSpace(provider), strings.TrimSpace(asked)} {
+	candidates := []string{strings.TrimSpace(provider)}
+	// Ordered by weight, without the ones weighted zero; "*" and unknown ones name no language.
+	if asked, _, err := language.ParseAcceptLanguage(acceptLanguage); err == nil {
+		for _, tag := range asked {
+			if base, _ := tag.Base(); base.String() != "und" && base.String() != "mul" {
+				candidates = append(candidates, tag.String())
+			}
+		}
+	}
+	for _, candidate := range candidates {
 		if len(candidate) <= maxLocaleLen && localePattern.MatchString(candidate) {
 			return &candidate
 		}
