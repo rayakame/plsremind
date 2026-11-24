@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import collections.abc
+import contextlib
 import logging
 import os
 import pathlib
@@ -363,6 +364,17 @@ async def test_readiness_follows_the_hub_connection_of_the_running_bot(
                 assert response.status == 503
         os.kill(os.getpid(), signal.SIGTERM)
         assert await asyncio.wait_for(serving, 5) == 0
+
+
+async def test_a_database_file_from_a_newer_release_ends_the_bot_with_a_reason(
+    running: tuple[Running, bot.Config], caplog: pytest.LogCaptureFixture
+) -> None:
+    parts, config = running
+    with contextlib.closing(sqlite3.connect(config.database)) as written:
+        written.execute("PRAGMA user_version = 9999")
+    assert await asyncio.wait_for(bot.main(config), 5) == 1
+    assert "newer release" in caplog.text
+    parts.discord_started.assert_not_awaited()
 
 
 async def test_a_metrics_address_that_is_taken_ends_the_bot_with_a_reason(
