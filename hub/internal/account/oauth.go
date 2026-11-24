@@ -75,7 +75,11 @@ func (s *OAuth) Build(ctx context.Context, row sqlc.LoginProvider) (Provider, er
 	case "github":
 		return newGitHub(s.d, row.ClientID, string(clientSecret)), nil
 	case "discord":
-		return newDiscord(s.d, row.ClientID, string(clientSecret)), nil
+		bot, err := isBotApplication(ctx, s.d.Q(), row.Key, row.ClientID)
+		if err != nil {
+			return nil, err
+		}
+		return newDiscord(s.d, row.ClientID, string(clientSecret), bot), nil
 	case "oidc":
 		provider, err := s.discover(row)
 		if err != nil {
@@ -97,6 +101,7 @@ func oauthEndpoints(d *core.Deps, key string, defaults core.OAuthEndpoints) core
 // revoke functions hold what differs between providers.
 type oauthClient struct {
 	cfg     oauth2.Config
+	params  []oauth2.AuthCodeOption
 	http    *http.Client
 	profile func(ctx context.Context, token *oauth2.Token) (OAuthProfile, error)
 	revoke  func(ctx context.Context, token string) error
@@ -109,7 +114,7 @@ func (c *oauthClient) config(redirect string) *oauth2.Config {
 }
 
 func (c *oauthClient) AuthURL(state, verifier, redirect string) string {
-	return c.config(redirect).AuthCodeURL(state, oauth2.S256ChallengeOption(verifier))
+	return c.config(redirect).AuthCodeURL(state, append([]oauth2.AuthCodeOption{oauth2.S256ChallengeOption(verifier)}, c.params...)...)
 }
 
 func (c *oauthClient) Exchange(ctx context.Context, code, verifier, redirect string) (OAuthProfile, error) {

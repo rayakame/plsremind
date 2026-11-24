@@ -7,6 +7,7 @@ import (
 	"golang.org/x/oauth2"
 
 	"github.com/rayakame/plsremind/hub/internal/core"
+	"github.com/rayakame/plsremind/hub/internal/store/sqlc"
 )
 
 var discordEndpoints = core.OAuthEndpoints{
@@ -17,16 +18,24 @@ var discordEndpoints = core.OAuthEndpoints{
 	AvatarBase: "https://cdn.discordapp.com",
 }
 
-func newDiscord(d *core.Deps, clientID, clientSecret string) Provider {
+func newDiscord(d *core.Deps, clientID, clientSecret string, bot bool) Provider {
 	ep := oauthEndpoints(d, "discord", discordEndpoints)
+	scopes := []string{"identify"}
+	var params []oauth2.AuthCodeOption
+	if bot {
+		// Discord keeps only the newest grant of an application, so asking for less would remove its bot from the user.
+		scopes = append(scopes, "applications.commands")
+		params = append(params, oauth2.SetAuthURLParam("integration_type", "1"))
+	}
 	return &oauthClient{
 		cfg: oauth2.Config{
 			ClientID:     clientID,
 			ClientSecret: clientSecret,
-			Scopes:       []string{"identify"},
+			Scopes:       scopes,
 			Endpoint:     oauth2.Endpoint{AuthURL: ep.AuthURL, TokenURL: ep.TokenURL, AuthStyle: oauth2.AuthStyleInParams},
 		},
-		http: d.HTTP,
+		params: params,
+		http:   d.HTTP,
 		profile: func(ctx context.Context, token *oauth2.Token) (OAuthProfile, error) {
 			var user struct {
 				ID         string `json:"id"`
@@ -50,4 +59,21 @@ func newDiscord(d *core.Deps, clientID, clientSecret string) Provider {
 		},
 		revoke: revokeForm(d.HTTP, ep.RevokeURL, clientID, clientSecret),
 	}
+}
+
+func isBotApplication(ctx context.Context, q *sqlc.Queries, provider, clientID string) (bool, error) {
+	apps, err := q.ListConnections(ctx)
+	if err != nil {
+		return false, err
+	}
+	for _, app := range apps {
+		if app.Provider != provider || app.InstallUrl == "" {
+			continue
+		}
+		link, err := url.Parse(app.InstallUrl)
+		if err == nil && link.Query().Get("client_id") == clientID {
+			return true, nil
+		}
+	}
+	return false, nil
 }

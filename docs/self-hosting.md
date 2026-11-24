@@ -128,7 +128,10 @@ through the API and the gateway only, and keeps a small SQLite file of its own.
    for both. Under Bot, create a token. The bot needs no privileged intents.
 2. **Let people link their Discord account.** Configure the login provider `discord` as
    described above with `"link_enabled": true`. The same Discord application can serve
-   for this: its client ID and secret are under OAuth2.
+   for this: its client ID and secret are under OAuth2. Discord keeps only the newest grant
+   a user gave an application, so when the bot's app has its Application ID (next step),
+   signing in and linking ask for the bot as well and add it to the user's account rather
+   than taking it out.
 3. **Add the bot as an app** in the dashboard under Settings, Administration, Apps, with
    its Application ID, or with the API, and keep the token it returns:
 
