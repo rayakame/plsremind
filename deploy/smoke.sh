@@ -204,7 +204,8 @@ for shipped in victoriametrics:/etc/plsremind/scrape.yml:monitoring/scrape.yml \
   { cat "$bundle_dir/original"; echo; } > "$file.new"
   mv "$file.new" "$file"
   want="$(cksum < "$file")"
-  got="$(docker compose cp "$service:$inside" - | tar -xO | cksum)"
+  # Read inside the container: docker cp would follow the mount to the path on the host.
+  got="$(docker compose exec -T "$service" cat "$inside" | cksum)"
   mv "$bundle_dir/original" "$file"
   replacing=""
   [ "$got" = "$want" ] || fail "$service still sees the $file it started with"
@@ -228,11 +229,13 @@ echo "ok  a broken dump leaves the database as it was"
 # Going back from an update whose hub keeps crashing: restore must replace that container as well.
 printf 'services:\n  hub:\n    environment:\n      PLSREMIND_SECRET_KEY: broken\n' > "$bundle_dir/crashing.yaml"
 COMPOSE_FILE="$COMPOSE_FILE:$bundle_dir/crashing.yaml" docker compose up -d --no-deps hub >/dev/null 2>&1
+restarts=0
 for _ in $(seq 1 30); do
-  [ "$(docker compose ps -a hub --format '{{.State}}')" = restarting ] && break
+  restarts="$(docker inspect -f '{{.RestartCount}}' "$(docker compose ps -a -q hub)")"
+  [ "$restarts" -ge 2 ] && break
   sleep 1
 done
-[ "$(docker compose ps -a hub --format '{{.State}}')" = restarting ] || fail "the broken hub did not keep restarting"
+[ "$restarts" -ge 2 ] || fail "the broken hub did not keep restarting"
 ./restore.sh --yes "$backup" >/dev/null
 for _ in $(seq 1 60); do
   curl -fsS "${PLSREMIND_PUBLIC_URL}/readyz" >/dev/null 2>&1 && break
