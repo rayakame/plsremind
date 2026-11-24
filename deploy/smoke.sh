@@ -205,6 +205,14 @@ fi
 curl -fsS -b "$jar" "$base/users/@me/items" | grep -q '"title":"after the backup"' \
   || fail "a failed restore changed the database"
 echo "ok  a broken dump leaves the database as it was"
+# Going back from an update whose hub keeps crashing: restore must replace that container as well.
+printf 'services:\n  hub:\n    environment:\n      PLSREMIND_SECRET_KEY: broken\n' > "$bundle_dir/crashing.yaml"
+COMPOSE_FILE="$COMPOSE_FILE:$bundle_dir/crashing.yaml" docker compose up -d --no-deps hub >/dev/null 2>&1
+for _ in $(seq 1 30); do
+  [ "$(docker compose ps -a hub --format '{{.State}}')" = restarting ] && break
+  sleep 1
+done
+[ "$(docker compose ps -a hub --format '{{.State}}')" = restarting ] || fail "the broken hub did not keep restarting"
 ./restore.sh --yes "$backup" >/dev/null
 for _ in $(seq 1 60); do
   curl -fsS "${PLSREMIND_PUBLIC_URL}/readyz" >/dev/null 2>&1 && break
@@ -213,7 +221,7 @@ done
 curl -fsS "${PLSREMIND_PUBLIC_URL}/readyz" >/dev/null 2>&1 || fail "the hub was not ready a minute after the restore"
 titles="$(curl -fsS -b "$jar" "$base/users/@me/items" | grep -o '"title":"[^"]*"' | sort | tr '\n' ' ')"
 case "$titles" in *'"title":"after the backup"'*) fail "restore.sh kept what came after the backup";; esac
-case "$titles" in *'"title":"first item"'*) echo "ok  restore.sh brought the backup back";; *) fail "restore.sh lost the first item: $titles";; esac
+case "$titles" in *'"title":"first item"'*) echo "ok  restore.sh brought the backup back past a crashing hub";; *) fail "restore.sh lost the first item: $titles";; esac
 rm -f "$backup"
 
 echo "smoke: all good"

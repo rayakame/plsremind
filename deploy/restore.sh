@@ -32,7 +32,8 @@ if ! docker compose exec -T db pg_restore --username plsremind --dbname plsremin
   exit 1
 fi
 
-if ! running="$(docker compose ps --services --status running)"; then
+# A hub that keeps crashing after an update is the usual reason to go back, so it counts too.
+if ! running="$(docker compose ps --services --status running --status restarting)"; then
   psql -c "DROP DATABASE IF EXISTS plsremind_restore"
   echo "restore.sh: the running services could not be listed; the database is as it was" >&2
   exit 1
