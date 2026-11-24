@@ -48,10 +48,10 @@ if [ "${#writers[@]}" -gt 0 ]; then
   docker compose stop "${writers[@]}"
 fi
 
+# One statement string is one transaction, so there is never a moment without a plsremind database.
 psql -c "DROP DATABASE IF EXISTS plsremind_replaced" \
   -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = 'plsremind'" \
-  -c "ALTER DATABASE plsremind RENAME TO plsremind_replaced" \
-  -c "ALTER DATABASE plsremind_restore RENAME TO plsremind" \
+  -c "ALTER DATABASE plsremind RENAME TO plsremind_replaced; ALTER DATABASE plsremind_restore RENAME TO plsremind;" \
   -c "DROP DATABASE plsremind_replaced" >/dev/null
 
 # up rather than start: after unpacking an older bundle, start would bring back the newer containers.

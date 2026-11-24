@@ -315,8 +315,9 @@ releases get fixes.
 ## Backups
 
 The hub's state lives in the PostgreSQL volume. `./backup.sh` writes a dump of it into
-`backups/` and prints the file's name; `./restore.sh <file>` stops whatever writes to the
-database, every bot included, replaces the database with the dump and starts them again.
+`backups/` and prints the file's name; `./restore.sh <file>` first restores the dump next to
+the database, then stops whatever writes to it, every bot included, swaps the restored copy in
+and starts them again. A dump that cannot be restored completely changes nothing.
 Keep `PLSREMIND_SECRET_KEY` with the backups. To back up every night, for example:
 
 ```sh
