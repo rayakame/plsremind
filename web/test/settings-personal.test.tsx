@@ -111,3 +111,15 @@ test("a key is changed by pressing the new one, refused when taken, and reset", 
   await waitFor(() => expect(sent(app)).toHaveLength(2));
   expect(sent(app)[1]).toEqual({ preferences: { keys: {} } });
 });
+
+test("following the browser says that apps cannot, and a chosen language does not", async () => {
+  await personal({ user: wireUser({ locale: null }) });
+  const language = screen.getByLabelText("Language");
+  expect(language.getAttribute("aria-describedby")).toBeTruthy();
+  expect(document.getElementById(language.getAttribute("aria-describedby")!)!.textContent).toBe(
+    "Apps such as the Discord bot cannot see the browser and write in English then.",
+  );
+  cleanup();
+  await personal({ user: wireUser({ locale: "en" }) });
+  expect(screen.queryByText(/cannot see the browser|sehen den Browser nicht/)).toBeNull();
+});

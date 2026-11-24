@@ -228,6 +228,8 @@ export const en = {
   "personal.timezoneError": "This is not a time zone.",
   "personal.language": "Language",
   "personal.languageBrowser": "As the browser",
+  "personal.languageBrowserHint":
+    "Apps such as the Discord bot cannot see the browser and write in English then.",
   "personal.theme": "Colour scheme",
   "personal.weekStart": "Week starts on",
   "personal.monday": "Monday",

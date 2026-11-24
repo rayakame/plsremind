@@ -43,9 +43,15 @@ export function Select({ className, ...rest }: SelectHTMLAttributes<HTMLSelectEl
 }
 
 /** A label above one control. The error, if any, is announced with the control. */
-export function Field(props: { label: string; error?: string | undefined; children: ReactNode }) {
+export function Field(props: {
+  label: string;
+  error?: string | undefined;
+  hint?: string | undefined;
+  children: ReactNode;
+}) {
   const id = useId();
   const control = Children.only(props.children);
+  const described = [props.hint && `${id}-hint`, props.error && `${id}-error`].filter(Boolean);
   return (
     <div className="field">
       <label className="label" htmlFor={id}>
@@ -55,9 +61,14 @@ export function Field(props: { label: string; error?: string | undefined; childr
         ? cloneElement(control, {
             id,
             "aria-invalid": props.error ? "true" : undefined,
-            "aria-describedby": props.error ? `${id}-error` : undefined,
+            "aria-describedby": described.length > 0 ? described.join(" ") : undefined,
           })
         : control}
+      {props.hint && (
+        <span className="dim small" id={`${id}-hint`}>
+          {props.hint}
+        </span>
+      )}
       {props.error && (
         <span className="error" id={`${id}-error`}>
           {props.error}

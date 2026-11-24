@@ -232,6 +232,8 @@ export const de: Texts = {
   "personal.timezoneError": "Das ist keine Zeitzone.",
   "personal.language": "Sprache",
   "personal.languageBrowser": "Wie der Browser",
+  "personal.languageBrowserHint":
+    "Apps wie der Discord-Bot sehen den Browser nicht und schreiben dann auf Englisch.",
   "personal.theme": "Farbschema",
   "personal.weekStart": "Woche beginnt am",
   "personal.monday": "Montag",
