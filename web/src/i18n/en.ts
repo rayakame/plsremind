@@ -432,6 +432,7 @@ export const en = {
   "aapp.kind": "Kind",
   "aapp.applicationId": "Application ID from the Discord Developer Portal",
   "aapp.idText": "The link users add the bot with is made from it.",
+  "aapp.idNeeded": "Enter the Application ID: users add the bot by it.",
   "aapp.idError": "An Application ID has 17 to 20 digits.",
   "aapp.link": "Where users set it up",
   "aapp.linkError": "Must be an https address.",

@@ -47,7 +47,8 @@ export function AppForm(props: {
     event.preventDefault();
     const found: Record<string, string> = {};
     const id = applicationId.trim();
-    if (byId && id !== "" && !isApplicationId(id)) found.applicationId = t("aapp.idError");
+    if (byId && id === "") found.applicationId = t("aapp.idNeeded");
+    else if (byId && !isApplicationId(id)) found.applicationId = t("aapp.idError");
     if (!byId && !isInstallUrl(link.trim())) found.link = t("aapp.linkError");
     setErrors(found);
     if (Object.keys(found).length > 0) return;
@@ -56,7 +57,7 @@ export function AppForm(props: {
       description: description.trim(),
       provider: props.kind === "discord" ? "discord" : provider.trim(),
       allowedIntents: allowed,
-      installUrl: byId ? (id === "" ? "" : discordInstallUrl(id)) : link.trim(),
+      installUrl: byId ? discordInstallUrl(id) : link.trim(),
     });
   };
 

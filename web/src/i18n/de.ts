@@ -446,6 +446,7 @@ export const de: Texts = {
   "aapp.kind": "Art",
   "aapp.applicationId": "Application ID aus dem Discord Developer Portal",
   "aapp.idText": "Daraus entsteht der Link, mit dem Nutzer den Bot in Discord hinzufügen.",
+  "aapp.idNeeded": "Gib die Application ID ein: Darüber fügen Nutzer den Bot hinzu.",
   "aapp.idError": "Eine Application ID hat 17 bis 20 Ziffern.",
   "aapp.link": "Wo Nutzer sie einrichten",
   "aapp.linkError": "Muss eine https-Adresse sein.",

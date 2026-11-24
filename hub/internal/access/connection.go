@@ -14,6 +14,7 @@ import (
 	"github.com/gofiber/fiber/v3"
 	"github.com/google/uuid"
 
+	"github.com/rayakame/plsremind/hub/internal/account"
 	"github.com/rayakame/plsremind/hub/internal/api"
 	"github.com/rayakame/plsremind/hub/internal/auth"
 	"github.com/rayakame/plsremind/hub/internal/core"
@@ -143,7 +144,7 @@ func userConnections(ctx context.Context, q *sqlc.Queries, userID uuid.UUID) ([]
 	for _, row := range rows {
 		view := viewUserConnection(row)
 		view.LastDelivery = byConnection[row.ID]
-		view.InstallsWithLink = installsWithLink(signIns[row.Provider], row.InstallUrl)
+		view.InstallsWithLink = signIns[row.Provider].LinkEnabled && account.InstallsWithLink(signIns[row.Provider], row.InstallUrl)
 		out = append(out, view)
 	}
 	return out, nil
@@ -532,12 +533,4 @@ func rotateToken(d *core.Deps) fiber.Handler {
 		out.Token = plain
 		return c.JSON(out)
 	}
-}
-
-func installsWithLink(signIn sqlc.LoginProvider, installURL string) bool {
-	if signIn.Type != "discord" || !signIn.LinkEnabled || signIn.ClientID == "" || installURL == "" {
-		return false
-	}
-	link, err := url.Parse(installURL)
-	return err == nil && link.Query().Get("client_id") == signIn.ClientID
 }

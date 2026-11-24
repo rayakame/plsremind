@@ -130,10 +130,11 @@ through the API and the gateway only, and keeps a small SQLite file of its own.
    token. The bot needs no privileged intents.
 2. **Let people link their Discord account** with the same application. Configure the
    login provider `discord` as described above with `"link_enabled": true`, with the client
-   ID and secret under OAuth2. Signing in and linking with Discord ask for the bot's scope as
-   well, so linking adds the bot to the user's account. It has to be the same application:
-   Discord keeps only the newest grant a user gave an application, and a sign-in through
-   another one would not add the bot.
+   ID and secret under OAuth2. Once the bot is an app with this Application ID (next step),
+   signing in and linking with Discord ask for the bot's scope as well, so linking adds the
+   bot to the user's account. It has to be the same application: Discord keeps only the
+   newest grant a user gave an application, and a sign-in through another one would not add
+   the bot. A Discord sign-in without a bot asks for `identify` alone.
 3. **Add the bot as an app** in the dashboard under Settings, Administration, Apps, with
    its Application ID, or with the API, and keep the token it returns:
 
@@ -145,8 +146,8 @@ through the API and the gateway only, and keeps a small SQLite file of its own.
    ```
 
    A bot that was added without its Application ID, for example before apps had an
-   install link, shows users no button: enter the ID once under Settings, Administration,
-   Apps.
+   install link, shows users no button, and linking does not add it: enter the ID once
+   under Settings, Administration, Apps.
 
 4. **Start the bot** next to the hub:
 

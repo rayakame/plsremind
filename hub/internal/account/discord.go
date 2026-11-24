@@ -7,6 +7,7 @@ import (
 	"golang.org/x/oauth2"
 
 	"github.com/rayakame/plsremind/hub/internal/core"
+	"github.com/rayakame/plsremind/hub/internal/store/sqlc"
 )
 
 var discordEndpoints = core.OAuthEndpoints{
@@ -17,18 +18,23 @@ var discordEndpoints = core.OAuthEndpoints{
 	AvatarBase: "https://cdn.discordapp.com",
 }
 
-func newDiscord(d *core.Deps, clientID, clientSecret string) Provider {
+func newDiscord(d *core.Deps, clientID, clientSecret string, bot bool) Provider {
 	ep := oauthEndpoints(d, "discord", discordEndpoints)
+	scopes := []string{"identify"}
+	var params []oauth2.AuthCodeOption
+	if bot {
+		// Discord keeps only the newest grant of an application: asking for less would take the bot out.
+		scopes = append(scopes, "applications.commands")
+		params = append(params, oauth2.SetAuthURLParam("integration_type", "1"))
+	}
 	return &oauthClient{
 		cfg: oauth2.Config{
 			ClientID:     clientID,
 			ClientSecret: clientSecret,
-			// The sign-in is the bot's own application, and Discord keeps only the newest grant of an
-			// application: asking for less would take the bot out of the user's account.
-			Scopes:   []string{"identify", "applications.commands"},
-			Endpoint: oauth2.Endpoint{AuthURL: ep.AuthURL, TokenURL: ep.TokenURL, AuthStyle: oauth2.AuthStyleInParams},
+			Scopes:       scopes,
+			Endpoint:     oauth2.Endpoint{AuthURL: ep.AuthURL, TokenURL: ep.TokenURL, AuthStyle: oauth2.AuthStyleInParams},
 		},
-		params: []oauth2.AuthCodeOption{oauth2.SetAuthURLParam("integration_type", "1")},
+		params: params,
 		http:   d.HTTP,
 		profile: func(ctx context.Context, token *oauth2.Token) (OAuthProfile, error) {
 			var user struct {
@@ -53,4 +59,27 @@ func newDiscord(d *core.Deps, clientID, clientSecret string) Provider {
 		},
 		revoke: revokeForm(d.HTTP, ep.RevokeURL, clientID, clientSecret),
 	}
+}
+
+// InstallsWithLink reports whether linking at a sign-in also adds an app of it: the Discord
+// sign-in does for a bot of its own application, which the app's install link names.
+func InstallsWithLink(signIn sqlc.LoginProvider, installURL string) bool {
+	if signIn.Type != "discord" || !ProviderConfigured(signIn) || installURL == "" {
+		return false
+	}
+	link, err := url.Parse(installURL)
+	return err == nil && link.Query().Get("client_id") == signIn.ClientID
+}
+
+func hasBot(ctx context.Context, q *sqlc.Queries, signIn sqlc.LoginProvider) (bool, error) {
+	apps, err := q.ListConnections(ctx)
+	if err != nil {
+		return false, err
+	}
+	for _, app := range apps {
+		if app.Provider == signIn.Key && InstallsWithLink(signIn, app.InstallUrl) {
+			return true, nil
+		}
+	}
+	return false, nil
 }
