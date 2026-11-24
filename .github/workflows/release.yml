@@ -1,0 +1,122 @@
+name: release
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release-please:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      server: ${{ steps.release.outputs.release_created }}
+      server-version: ${{ steps.release.outputs.version }}
+      server-tag: ${{ steps.release.outputs.tag_name }}
+      sdk-python: ${{ steps.release.outputs['sdk/python--release_created'] }}
+      sdk-ts: ${{ steps.release.outputs['sdk/ts--release_created'] }}
+    steps:
+      # Pull requests opened with GITHUB_TOKEN start no workflows, so release PRs would get no checks.
+      - id: app
+        uses: actions/create-github-app-token@f418cff399f7aef4c2f0ad47e25ca7a6abbdd6fc # v3.4.0
+        with:
+          client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_APP_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+          permission-issues: write
+      - id: release
+        uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
+        with:
+          token: ${{ steps.app.outputs.token }}
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+
+  images:
+    needs: release-please
+    if: needs.release-please.outputs.server == 'true'
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    uses: ./.github/workflows/images.yml
+    with:
+      version: ${{ needs.release-please.outputs.server-version }}
+
+  bundle:
+    needs: [release-please, images]
+    if: needs.release-please.outputs.server == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Attach the deploy bundle to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.release-please.outputs.server-tag }}
+        run: |
+          bundle="$(deploy/bundle.sh dist)"
+          gh release upload "$TAG" "$bundle" --clobber
+
+  sdk-python:
+    needs: release-please
+    if: needs.release-please.outputs.sdk-python == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    environment:
+      name: release
+      url: https://pypi.org/project/plsremind/
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
+      - run: uv build
+        working-directory: sdk/python
+      - uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086 # v1.14.3
+        with:
+          packages-dir: sdk/python/dist
+
+  sdk-ts:
+    needs: release-please
+    if: needs.release-please.outputs.sdk-ts == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    environment:
+      name: release
+      url: https://www.npmjs.com/package/plsremind
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # No registry-url: setup-node would set NODE_AUTH_TOKEN, which takes precedence over trusted publishing.
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+      - name: Trusted publishing needs npm 11.5.1 or newer
+        run: |
+          have="$(npm --version)"
+          [ "$(printf '11.5.1\n%s\n' "$have" | sort -V | head -n 1)" = 11.5.1 ] \
+            || { echo "npm $have is too old for trusted publishing" >&2; exit 1; }
+      - run: npm ci
+      - run: npm run check:pack
+        working-directory: sdk/ts
+      - run: npm publish
+        working-directory: sdk/ts
