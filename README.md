@@ -27,13 +27,10 @@ bot is next.
 
 ## Try it
 
-```sh
-cd deploy
-echo "PLSREMIND_SECRET_KEY=$(openssl rand -base64 32)" > .env
-docker compose up -d
-```
-
-Then open http://localhost:8080 and create the first account.
+Every release ships a bundle with a compose file and its images; nothing is built on your
+machine. [docs/self-hosting.md](docs/self-hosting.md#start) has the commands to fetch it and
+start; then open http://localhost:8080 and create the first account. To run a checkout
+instead, see [Building from source](docs/self-hosting.md#building-from-source).
 
 See [docs/self-hosting.md](docs/self-hosting.md) for setup and configuration,
 [docs/api/openapi.yaml](docs/api/openapi.yaml) for the REST API and

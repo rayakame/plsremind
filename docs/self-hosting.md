@@ -15,20 +15,30 @@ defaults to `http://localhost:8080`, and every example works with that address i
 
 ## Start
 
-```sh
-git clone https://github.com/rayakame/plsremind.git
-cd plsremind/deploy
+Every release comes with a small bundle that holds everything a server needs: the compose
+file naming that release's images, an example `.env`, the backup scripts, the monitoring
+configuration and the examples. Nothing is built on your server.
 
-# The hub encrypts provider secrets with this key. Keep it: without it the stored
-# secrets cannot be read again.
-echo "PLSREMIND_SECRET_KEY=$(openssl rand -base64 32)" > .env
-echo "PLSREMIND_PUBLIC_URL=https://todo.example.com" >> .env
-echo "PLSREMIND_PROXY_HEADER=X-Forwarded-For" >> .env
+```sh
+version=0.0.0 # x-release-please-version
+mkdir plsremind && cd plsremind
+curl -fsSL "https://github.com/rayakame/plsremind/releases/download/v${version}/plsremind-deploy-${version}.tar.gz" \
+  | tar -xz --strip-components=1
+
+cp .env.example .env
+# The hub encrypts provider secrets with this key. Keep it with your backups: without it
+# the stored secrets cannot be read again.
+sed -i.bak "s|^PLSREMIND_SECRET_KEY=.*|PLSREMIND_SECRET_KEY=$(openssl rand -base64 32)|" .env && rm .env.bak
+# Then set PLSREMIND_PUBLIC_URL and, behind a proxy, PLSREMIND_PROXY_HEADER in .env.
 
 docker compose up -d
 ```
 
 The hub now listens on port 8080 and applies its database migrations on every start.
+
+Change none of the files that came in the bundle: an update replaces them. Your settings
+go into `.env`, services of your own into `compose.override.yaml`, which Compose reads on
+its own, and scrape targets for further bots into `monitoring/targets/`.
 
 ## Settings
 
@@ -274,23 +284,60 @@ The REST API is described in [`docs/api/openapi.yaml`](api/openapi.yaml). Run `m
 
 ## Updating
 
-```sh
-git pull
-docker compose up -d --build
-```
-
-Name the profiles you use, or their services keep running their old images. With the
-Discord bot and the monitoring, for example:
+Read the release notes of every release between yours and the new one on the
+[releases page](https://github.com/rayakame/plsremind/releases). A release marked as
+breaking says what you have to do. Then, in your plsremind folder:
 
 ```sh
-docker compose --profile discord --profile monitoring up -d --build
+./backup.sh
+version=X.Y.Z    # the release you update to
+curl -fsSL "https://github.com/rayakame/plsremind/releases/download/v${version}/plsremind-deploy-${version}.tar.gz" \
+  | tar -xz --strip-components=1
+docker compose pull
+docker compose up -d
 ```
+
+Unpacking replaces the files that came with plsremind and keeps `.env`,
+`compose.override.yaml`, `backups/` and your files in `monitoring/targets/`. Name the
+profiles you use, or their services keep running their old images; with the Discord bot
+and the monitoring, for example, `docker compose --profile discord --profile monitoring up -d`.
+The hub updates its database when it starts. `UPDATING.md` in the folder says the same.
+
+Going back is restoring: unpack the bundle you had before, run
+`./restore.sh backups/<the file from before the update>` and `docker compose up -d`. An
+older hub refuses to start against a database that a newer one has updated, and says so;
+the Discord bot does the same with its own file. A bot that refuses can also start over
+from nothing: delete its volume, with the consequences described under Backups.
+
+[`docs/releases.md`](releases.md) explains what the version numbers mean and which
+releases get fixes.
 
 ## Backups
 
-The hub's state lives in the PostgreSQL volume. Back it up with `pg_dump`, and keep
-`PLSREMIND_SECRET_KEY` with the backup. The Discord bot keeps its SQLite file on a volume
+The hub's state lives in the PostgreSQL volume. `./backup.sh` writes a dump of it into
+`backups/` and prints the file's name; `./restore.sh <file>` stops whatever writes to the
+database, every bot included, replaces the database with the dump and starts them again.
+Keep `PLSREMIND_SECRET_KEY` with the backups. To back up every night, for example:
+
+```sh
+0 3 * * * cd /path/to/plsremind && ./backup.sh >/dev/null
+```
+
+Old dumps are not deleted; remove them yourself. The Discord bot keeps its SQLite file on a volume
 of its own, which this backup does not cover. Restored without it, the bot works on, as
 described in its section: it opens the DM channels again, a reminder still waiting for its
 confirmation may arrive a second time, and older messages catch up only when someone
 clicks them.
+
+## Building from source
+
+To run what is in a checkout of the repository instead of a release, for example while
+working on plsremind, build the images with the extra compose file:
+
+```sh
+git clone https://github.com/rayakame/plsremind.git
+cd plsremind/deploy
+echo "PLSREMIND_SECRET_KEY=$(openssl rand -base64 32)" > .env
+docker compose -f compose.yaml -f compose.build.yaml up -d --build
+```
+

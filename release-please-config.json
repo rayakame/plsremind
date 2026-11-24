@@ -27,6 +27,10 @@
         {
           "type": "generic",
           "path": "deploy/compose.yaml"
+        },
+        {
+          "type": "generic",
+          "path": "docs/self-hosting.md"
         }
       ]
     },
