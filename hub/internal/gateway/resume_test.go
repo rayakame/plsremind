@@ -254,6 +254,7 @@ func TestListenerOutageIsMadeUp(t *testing.T) {
 	e.KillListener(t)
 	testkit.DueSoon(t, e, mia)
 	ben.Do(t, "PUT", "/users/@me/connections/"+bot.ID, J{"enabled": false})
+	e.WaitListening(t)
 
 	got := map[string]testkit.Frame{}
 	for len(got) < 2 {

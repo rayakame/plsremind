@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/jackc/pgx/v5"
 	"net/http"
 	"strings"
 	"sync"
@@ -67,12 +68,31 @@ func (g *GatewayClient) PauseReading() {
 // restart of PostgreSQL would.
 func (e *Env) KillListener(t *testing.T) {
 	t.Helper()
-	var killed int
-	err := e.Pool.QueryRow(context.Background(),
-		`SELECT count(pg_terminate_backend(pid)) FROM pg_stat_activity
-		 WHERE datname = current_database() AND pid <> pg_backend_pid() AND query LIKE 'LISTEN %'`).Scan(&killed)
+	var pids []int32
+	rows, err := e.Pool.Query(context.Background(),
+		`SELECT pid FROM pg_stat_activity
+		 WHERE datname = current_database() AND pid <> pg_backend_pid() AND query LIKE 'LISTEN %'`)
 	require.NoError(t, err)
-	require.Equal(t, 1, killed, "expected exactly one listening connection")
+	pids, err = pgx.CollectRows(rows, pgx.RowTo[int32])
+	require.NoError(t, err)
+	require.Len(t, pids, 1, "expected exactly one listening connection")
+	_, err = e.Pool.Exec(context.Background(), `SELECT pg_terminate_backend($1)`, pids[0])
+	require.NoError(t, err)
+	e.cut = pids[0]
+}
+
+// WaitListening waits until the hub listens again after KillListener. The hub pauses before it
+// reconnects, so what it catches up on arrives only then, however quick the rest is.
+func (e *Env) WaitListening(t *testing.T) {
+	t.Helper()
+	require.Eventually(t, func() bool {
+		var listening int
+		err := e.Pool.QueryRow(context.Background(),
+			`SELECT count(*) FROM pg_stat_activity
+			 WHERE datname = current_database() AND pid <> pg_backend_pid() AND pid <> $1
+			   AND query LIKE 'LISTEN %' AND state = 'idle'`, e.cut).Scan(&listening)
+		return err == nil && listening == 1
+	}, 15*time.Second, 20*time.Millisecond, "the hub did not listen again")
 }
 
 // ExpectEnded requires the connection to end, however it ends.
