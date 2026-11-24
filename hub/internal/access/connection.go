@@ -14,6 +14,7 @@ import (
 	"github.com/gofiber/fiber/v3"
 	"github.com/google/uuid"
 
+	"github.com/rayakame/plsremind/hub/internal/account"
 	"github.com/rayakame/plsremind/hub/internal/api"
 	"github.com/rayakame/plsremind/hub/internal/auth"
 	"github.com/rayakame/plsremind/hub/internal/core"
@@ -73,6 +74,9 @@ type UserConnection struct {
 	// Intents is the data the connection may have, so users can see what they share.
 	Intents    []string `json:"intents"`
 	InstallURL string   `json:"install_url"`
+	// InstallsWithLink says that linking the account at the provider also adds the app, as the
+	// Discord sign-in does for the bot of its own application.
+	InstallsWithLink bool `json:"installs_with_link"`
 	// LastDelivery is the newest delivery through this connection to the user that says how it went.
 	LastDelivery *LastDelivery `json:"last_delivery"`
 }
@@ -115,6 +119,14 @@ func userConnections(ctx context.Context, q *sqlc.Queries, userID uuid.UUID) ([]
 	if err != nil {
 		return nil, err
 	}
+	providers, err := q.ListLoginProviders(ctx)
+	if err != nil {
+		return nil, err
+	}
+	signIns := make(map[string]sqlc.LoginProvider, len(providers))
+	for _, p := range providers {
+		signIns[p.Key] = p
+	}
 	byConnection := make(map[uuid.UUID]*LastDelivery, len(last))
 	for _, l := range last {
 		byConnection[l.ConnectionID] = &LastDelivery{Status: l.Status, Reason: l.Reason, At: l.At.UTC()}
@@ -132,6 +144,7 @@ func userConnections(ctx context.Context, q *sqlc.Queries, userID uuid.UUID) ([]
 	for _, row := range rows {
 		view := viewUserConnection(row)
 		view.LastDelivery = byConnection[row.ID]
+		view.InstallsWithLink = signIns[row.Provider].LinkEnabled && account.InstallsWithLink(signIns[row.Provider], row.InstallUrl)
 		out = append(out, view)
 	}
 	return out, nil

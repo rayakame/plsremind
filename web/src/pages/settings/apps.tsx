@@ -124,16 +124,26 @@ function AppCard(props: {
           <span className="strong">{app.name}</span>
           {app.description && <span className="dim">{app.description}</span>}
         </span>
-        {app.installUrl && (
+        {app.installsWithLink ? (
           <a
             className={failed ? "btn primary" : "btn ghost"}
-            href={app.installUrl}
-            target="_blank"
-            rel="noreferrer"
+            href={client.rest.oauthStartUrl(app.provider, { intent: "link" })}
+            onClick={() => rememberLinkOrigin(routes.settings("apps"))}
           >
             {t(discord ? "apps.addInDiscord" : "apps.setUp")}
-            <Icon name="open" />
           </a>
+        ) : (
+          app.installUrl && (
+            <a
+              className={failed ? "btn primary" : "btn ghost"}
+              href={app.installUrl}
+              target="_blank"
+              rel="noreferrer"
+            >
+              {t(discord ? "apps.addInDiscord" : "apps.setUp")}
+              <Icon name="open" />
+            </a>
+          )
         )}
       </div>
       <div className="between">

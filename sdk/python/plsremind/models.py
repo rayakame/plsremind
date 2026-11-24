@@ -253,6 +253,8 @@ class UserConnection(msgspec.Struct, frozen=True, kw_only=True, gc=False):
     intents: _Intents
     install_url: str = ""
     """Where the user adds the app on the provider's side; empty when there is no such place."""
+    installs_with_link: bool = False
+    """Whether linking the account at the provider also adds the app; then start the link instead."""
     last_delivery: LastDelivery | None = None
     """How the newest delivery through this connection to the user went, `None` before the first."""
 

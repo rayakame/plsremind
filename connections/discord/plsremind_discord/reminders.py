@@ -137,9 +137,12 @@ class Reminders:
         for account in accounts:
             try:
                 await self._post(account, rendered)
-            except hikari.ForbiddenError, hikari.NotFoundError:
+            except (hikari.ForbiddenError, hikari.NotFoundError) as closed:
+                # The user sees only that DMs are closed; Discord's own words help whoever runs the bot.
+                _LOGGER.info("Discord would not take a test: %s", closed)
                 continue
             except hikari.ClientHTTPResponseError:
+                _LOGGER.exception("Discord refused a test")
                 refused = True
                 continue
             except (hikari.HTTPError, aiohttp.ClientError, TimeoutError) as passing:

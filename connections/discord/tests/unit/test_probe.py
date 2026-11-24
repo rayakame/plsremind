@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import collections.abc
+import logging
 import pathlib
 import typing
 from unittest import mock
@@ -99,20 +100,23 @@ async def test_a_kept_dm_channel_is_used(made: Made) -> None:
     assert made.rest.create_message.await_args.args[0] == 4242
 
 
-async def test_closed_dms_fail_the_test_with_the_usual_reason(made: Made) -> None:
+async def test_closed_dms_fail_the_test_with_the_usual_reason(made: Made, caplog: pytest.LogCaptureFixture) -> None:
+    caplog.set_level(logging.INFO)
     made.rest.create_message.side_effect = forbidden()
     await made.reminders.probe(things.probe())
+    assert "Discord would not take a test" in caplog.text
     (call,) = made.hub.named("test_failed")
     assert str(call["reason"]).startswith("Discord hat die Direktnachricht nicht angenommen")
     assert made.hub.named("tested") == []
     assert discord.counted(made.metrics, TESTS, result="closed") == 1
 
 
-async def test_discord_refusing_fails_the_test(made: Made) -> None:
+async def test_discord_refusing_fails_the_test(made: Made, caplog: pytest.LogCaptureFixture) -> None:
     made.rest.create_message.side_effect = refused()
     await made.reminders.probe(things.probe())
     assert made.hub.named("test_failed")[0]["reason"] == "Discord hat die Erinnerung nicht angenommen."
     assert discord.counted(made.metrics, TESTS, result="refused") == 1
+    assert "Discord refused a test" in caplog.text
 
 
 async def test_passing_trouble_fails_the_test_without_trying_again(made: Made) -> None:

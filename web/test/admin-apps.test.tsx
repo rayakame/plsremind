@@ -91,6 +91,9 @@ test("a new Discord bot is made from its Application ID and shows its token once
   await userEvent.type(await screen.findByLabelText("Name"), "Team");
   await userEvent.type(screen.getByLabelText("What users see about it"), "The group's bot");
   const appId = screen.getByLabelText("Application ID from the Discord Developer Portal");
+  await userEvent.click(screen.getByRole("button", { name: "Add bot and show its token" }));
+  expect(screen.getByText("Enter the Application ID: users add the bot by it.")).toBeTruthy();
+  expect(made.sent("POST", "/admin/connections")).toEqual([]);
   await userEvent.type(appId, "1234");
   await userEvent.click(screen.getByRole("button", { name: "Add bot and show its token" }));
   expect(screen.getByText("An Application ID has 17 to 20 digits.")).toBeTruthy();

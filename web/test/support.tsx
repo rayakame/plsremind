@@ -197,6 +197,7 @@ export function wireApp(overrides: Record<string, unknown> = {}) {
     remind: true,
     intents: ["users", "lists", "items", "deliveries"],
     install_url: "",
+    installs_with_link: false,
     last_delivery: null,
     ...overrides,
   };

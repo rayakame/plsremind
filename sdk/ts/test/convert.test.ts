@@ -131,6 +131,7 @@ test("an app tells how its last delivery went, and a test carries its dates", ()
     remind: true,
     intents: ["deliveries"],
     install_url: "https://discord.com/oauth2/authorize?client_id=1",
+    installs_with_link: true,
     last_delivery: {
       status: "failed",
       reason: "DMs are closed",
@@ -139,6 +140,8 @@ test("an app tells how its last delivery went, and a test carries its dates", ()
     },
   });
   expect(app.installUrl).toBe("https://discord.com/oauth2/authorize?client_id=1");
+  const installs: boolean = app.installsWithLink;
+  expect(installs).toBe(true);
   expect(app.lastDelivery).toEqual({
     status: "failed",
     reason: "DMs are closed",

@@ -125,10 +125,16 @@ through the API and the gateway only, and keeps a small SQLite file of its own.
 1. **Create a Discord application** in the
    [Developer Portal](https://discord.com/developers/applications). Under Installation,
    allow both "User Install" and "Guild Install" and keep the scope `applications.commands`
-   for both. Under Bot, create a token. The bot needs no privileged intents.
-2. **Let people link their Discord account.** Configure the login provider `discord` as
-   described above with `"link_enabled": true`. The same Discord application can serve
-   for this: its client ID and secret are under OAuth2.
+   for both. Set the Install Link to "Custom URL" with `https://todo.example.com/link/discord`,
+   so that adding the app in Discord links the account in plsremind too. Under Bot, create a
+   token. The bot needs no privileged intents.
+2. **Let people link their Discord account** with the same application. Configure the
+   login provider `discord` as described above with `"link_enabled": true`, with the client
+   ID and secret under OAuth2. Once the bot is an app with this Application ID (next step),
+   signing in and linking with Discord ask for the bot's scope as well, so linking adds the
+   bot to the user's account. It has to be the same application: Discord keeps only the
+   newest grant a user gave an application, and a sign-in through another one would not add
+   the bot. A Discord sign-in without a bot asks for `identify` alone.
 3. **Add the bot as an app** in the dashboard under Settings, Administration, Apps, with
    its Application ID, or with the API, and keep the token it returns:
 
@@ -140,8 +146,8 @@ through the API and the gateway only, and keeps a small SQLite file of its own.
    ```
 
    A bot that was added without its Application ID, for example before apps had an
-   install link, shows users no button: enter the ID once under Settings, Administration,
-   Apps.
+   install link, shows users no button, and linking does not add it: enter the ID once
+   under Settings, Administration, Apps.
 
 4. **Start the bot** next to the hub:
 
@@ -151,8 +157,8 @@ through the API and the gateway only, and keeps a small SQLite file of its own.
    docker compose --profile discord up -d
    ```
 
-Users then link their Discord account in the dashboard under Settings, Apps, add the bot
-to their account with the button there, and get their reminders as direct messages.
+Users then link their Discord account in the dashboard under Settings, Apps, which adds the
+bot to their Discord account, and get their reminders as direct messages.
 
 | Variable | Required | Meaning |
 |---|---|---|
@@ -170,7 +176,9 @@ time, and older messages only catch up when someone clicks them. Nothing else de
 
 ### Another Discord bot
 
-A second bot is a second app with its own Discord application, token and SQLite file.
+A second bot is a second app with its own Discord application, token and SQLite file. The
+Discord sign-in stays with the first bot's application, so users add the second bot with its
+own button under Settings, Apps.
 [`deploy/examples/another-discord-bot.yaml`](../deploy/examples/another-discord-bot.yaml)
 adds one next to the first. Copy it to `compose.override.yaml`, which Compose reads on its
 own, so that the bot is also rebuilt when you update:

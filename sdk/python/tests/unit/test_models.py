@@ -158,10 +158,13 @@ def test_an_app_tells_how_its_last_delivery_went() -> None:
         {
             **fixtures.USER_CONNECTION,
             "install_url": "https://discord.com/oauth2/authorize?client_id=1",
+            "installs_with_link": True,
             "last_delivery": {"status": "failed", "reason": "closed", "at": "2026-11-12T18:00:00Z", "test": True},
         },
     )
     assert connection.install_url == "https://discord.com/oauth2/authorize?client_id=1"
+    assert connection.installs_with_link is True
+    assert decode(models.UserConnection, fixtures.USER_CONNECTION).installs_with_link is False
     assert connection.last_delivery is not None
     assert connection.last_delivery.status is DeliveryStatus.FAILED
     assert connection.last_delivery.test is True

@@ -288,6 +288,10 @@ export const en = {
   "linked.title": "{name} is linked",
   "linked.as": "You are now linked as {name}.",
   "linked.asHandle": "You are now linked as {name} (@{handle}).",
+  "link.leaving": "On to {name} to link your account.",
+  "link.continue": "Continue to {name}",
+  "linked.added": "Added with this link",
+  "linked.nextAdded": "The link also added these apps to your {name} account.",
   "linked.next": "What comes next",
   "linked.nextText":
     "For an app to write to you, add it to your {name} account. Already added? Then there is nothing to do.",
@@ -428,6 +432,7 @@ export const en = {
   "aapp.kind": "Kind",
   "aapp.applicationId": "Application ID from the Discord Developer Portal",
   "aapp.idText": "The link users add the bot with is made from it.",
+  "aapp.idNeeded": "Enter the Application ID: users add the bot by it.",
   "aapp.idError": "An Application ID has 17 to 20 digits.",
   "aapp.link": "Where users set it up",
   "aapp.linkError": "Must be an https address.",

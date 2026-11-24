@@ -126,3 +126,23 @@ func TestSwitchingRemindersOffAnswersWithoutWhatItCancelled(t *testing.T) {
 	require.Equal(t, 200, off.Status, string(off.Body))
 	require.Equal(t, "null", off.Get("last_delivery").Raw)
 }
+
+func TestLinkingAddsTheAppOfTheSignInApplication(t *testing.T) {
+	e := testkit.New(t)
+	testkit.EnableProvider(t, e, "discord")
+	mia := e.User(t, "mia")
+	admin := e.Admin(t)
+	install := func(id string) string {
+		return "https://discord.com/oauth2/authorize?client_id=" + id + "&integration_type=1&scope=applications.commands"
+	}
+	same := admin.Do(t, "POST", "/admin/connections", J{"name": "Bot", "provider": "discord", "install_url": install("cid")})
+	require.Equal(t, 201, same.Status, string(same.Body))
+	other := admin.Do(t, "POST", "/admin/connections", J{"name": "Team", "provider": "discord", "install_url": install("123456789012345678")})
+	require.Equal(t, 201, other.Status, string(other.Body))
+
+	require.Equal(t, "true", appOf(t, mia, same.Get("id").String()).Get("installs_with_link").Raw)
+	require.Equal(t, "false", appOf(t, mia, other.Get("id").String()).Get("installs_with_link").Raw)
+
+	require.Equal(t, 200, admin.Do(t, "PUT", "/admin/providers/discord", J{"link_enabled": false}).Status)
+	require.Equal(t, "false", appOf(t, mia, same.Get("id").String()).Get("installs_with_link").Raw, "without linking the app's own link adds it")
+}

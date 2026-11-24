@@ -297,6 +297,10 @@ export const de: Texts = {
   "linked.title": "{name} ist verknüpft",
   "linked.as": "Du bist jetzt als {name} verknüpft.",
   "linked.asHandle": "Du bist jetzt als {name} (@{handle}) verknüpft.",
+  "link.leaving": "Weiter zu {name}, um dein Konto zu verknüpfen.",
+  "link.continue": "Weiter zu {name}",
+  "linked.added": "Mit der Verknüpfung hinzugefügt",
+  "linked.nextAdded": "Die Verknüpfung hat diese Apps auch zu deinem {name}-Konto hinzugefügt.",
   "linked.next": "So geht es weiter",
   "linked.nextText":
     "Damit eine App dir schreiben kann, füg sie zu deinem {name}-Konto hinzu. Schon hinzugefügt? Dann musst du nichts tun.",
@@ -442,6 +446,7 @@ export const de: Texts = {
   "aapp.kind": "Art",
   "aapp.applicationId": "Application ID aus dem Discord Developer Portal",
   "aapp.idText": "Daraus entsteht der Link, mit dem Nutzer den Bot in Discord hinzufügen.",
+  "aapp.idNeeded": "Gib die Application ID ein: Darüber fügen Nutzer den Bot hinzu.",
   "aapp.idError": "Eine Application ID hat 17 bis 20 Ziffern.",
   "aapp.link": "Wo Nutzer sie einrichten",
   "aapp.linkError": "Muss eine https-Adresse sein.",
