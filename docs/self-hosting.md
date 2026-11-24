@@ -10,8 +10,9 @@ terminates HTTPS, for example Caddy, Traefik or nginx. Point the proxy at port 8
 use the address people will type into their browser as `PLSREMIND_PUBLIC_URL`. The
 examples below use `https://todo.example.com`.
 
-To try the hub on your own machine first, leave `PLSREMIND_PUBLIC_URL` out. It then
-defaults to `http://localhost:8080`, and every example works with that address instead.
+To try the hub on your own machine first, leave `PLSREMIND_PUBLIC_URL` empty. It then
+defaults to `http://localhost:8080`, with the port of `PLSREMIND_PORT`, and every example works
+with that address instead.
 
 ## Start
 
@@ -191,7 +192,7 @@ Discord sign-in stays with the first bot's application, so users add the second 
 own button under Settings, Apps.
 [`deploy/examples/another-discord-bot.yaml`](../deploy/examples/another-discord-bot.yaml)
 adds one next to the first. Copy it to `compose.override.yaml`, which Compose reads on its
-own, so that the bot is also rebuilt when you update:
+own; the bot then runs the same image as the first and follows it when you update:
 
 ```sh
 cp examples/another-discord-bot.yaml compose.override.yaml
