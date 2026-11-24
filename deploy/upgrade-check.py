@@ -77,8 +77,20 @@ def seed(hub: Hub) -> dict[str, object]:
     return {"token": token, "reads": {path: hub.call("GET", path) for path in READS}}
 
 
+# Values that use changes on its own: a token's last use, a delivery still on its way.
+VOLATILE = ("last_used_at",)
+VOLATILE_IN_DELIVERIES = ("status", "attempts", "reason", "closed_at")
+
+
+def volatile(where: str) -> bool:
+    key = where.rsplit(".", 1)[-1]
+    return key in VOLATILE or (".deliveries[" in where and key in VOLATILE_IN_DELIVERIES)
+
+
 def still_there(before: object, after: object, where: str) -> list[str]:
     # Fields an update adds are fine; what was there must still be there and the same.
+    if volatile(where):
+        return []
     if isinstance(before, dict):
         if not isinstance(after, dict):
             return [f"{where}: was an object"]
@@ -113,7 +125,7 @@ def verify(hub: Hub, state: dict[str, object]) -> list[str]:
         for problem in still_there(before, hub.call("GET", path), path)
     ]
     me = hub.call("GET", "/users/@me", token=state["token"])
-    if me.get("display_name") != "Ada":
+    if not isinstance(me, dict) or me.get("display_name") != "Ada":
         problems.append("the personal token no longer signs in")
     return problems
 
