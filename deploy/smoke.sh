@@ -12,6 +12,8 @@ export PLSREMIND_SECRET_KEY="$(openssl rand -base64 32)"
 export PLSREMIND_GRAFANA_PORT="${PLSREMIND_GRAFANA_PORT:-13000}"
 export PLSREMIND_GRAFANA_PASSWORD="$(openssl rand -hex 16)"
 export COMPOSE_PROFILES=monitoring
+# Built from this checkout; the released images do not exist yet for what is being tested.
+export COMPOSE_FILE=compose.yaml:compose.build.yaml
 base="${PLSREMIND_PUBLIC_URL}/api/v1"
 grafana="http://localhost:${PLSREMIND_GRAFANA_PORT}"
 jar="$(mktemp)"
@@ -63,6 +65,15 @@ echo "ok  the dashboard is what its generator writes"
 docker compose -f compose.yaml -f examples/another-discord-bot.yaml --profile discord config --quiet \
   || fail "the example for another Discord bot does not fit the compose file"
 echo "ok  the example for another Discord bot fits"
+released="$(python3 -c 'import json; print(json.load(open("../.release-please-manifest.json"))["."])')"
+images="$(COMPOSE_FILE= docker compose -f compose.yaml -f examples/another-discord-bot.yaml --profile discord config --format json \
+  | python3 -c '
+import json, sys
+services = json.load(sys.stdin)["services"]
+print(" ".join(name + "=" + str(services[name].get("image")) + ("+build" if "build" in services[name] else "") for name in ("hub", "discord", "discord-team")))
+')"
+expect "compose.yaml names the released images" "$images" \
+  "hub=ghcr.io/rayakame/plsremind:${released} discord=ghcr.io/rayakame/plsremind-discord:${released} discord-team=ghcr.io/rayakame/plsremind-discord:${released}"
 expect "vmalert runs" "$(docker inspect -f '{{.State.Status}}' "$(docker compose ps -q vmalert)")" running
 
 expect "fresh instance needs setup" \

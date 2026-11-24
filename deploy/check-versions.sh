@@ -18,11 +18,18 @@ def about(path: str) -> str:
     return found.group(1) if found else "missing"
 
 
+def image(name: str) -> str:
+    found = re.search(rf"image: ghcr\.io/rayakame/{name}:(\S+)", pathlib.Path("deploy/compose.yaml").read_text())
+    return found.group(1) if found else "missing"
+
+
 found = {
     ".": {
         "connections/discord/plsremind_discord/about.py": about("connections/discord/plsremind_discord/about.py"),
         "web/package.json": json.loads(pathlib.Path("web/package.json").read_text())["version"],
         "package-lock.json web": lock["packages"]["web"]["version"],
+        "deploy/compose.yaml hub image": image("plsremind"),
+        "deploy/compose.yaml bot image": image("plsremind-discord"),
     },
     "sdk/python": {
         "sdk/python/plsremind/internal/about.py": about("sdk/python/plsremind/internal/about.py"),

@@ -14,11 +14,19 @@
           "type": "generic",
           "path": "connections/discord/plsremind_discord/about.py"
         },
-        { "type": "json", "path": "web/package.json", "jsonpath": "$.version" },
+        {
+          "type": "json",
+          "path": "web/package.json",
+          "jsonpath": "$.version"
+        },
         {
           "type": "json",
           "path": "package-lock.json",
           "jsonpath": "$.packages.web.version"
+        },
+        {
+          "type": "generic",
+          "path": "deploy/compose.yaml"
         }
       ]
     },
@@ -27,7 +35,10 @@
       "component": "sdk-python",
       "release-as": "0.1.0",
       "extra-files": [
-        { "type": "generic", "path": "plsremind/internal/about.py" }
+        {
+          "type": "generic",
+          "path": "plsremind/internal/about.py"
+        }
       ]
     },
     "sdk/ts": {
