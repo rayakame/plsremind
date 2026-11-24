@@ -322,7 +322,8 @@ func browserLanguages(header string) []string {
 		if err != nil || len(tags) == 0 {
 			continue
 		}
-		if base, _ := tags[0].Base(); base.String() == "und" || base.String() == "mul" {
+		// Raw, as Base would guess a language for "und".
+		if base, _, _ := tags[0].Raw(); base.String() == "und" || base.String() == "mul" {
 			continue
 		}
 		asked = append(asked, weighted{tags[0].String(), q[0]})
