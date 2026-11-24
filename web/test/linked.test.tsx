@@ -182,3 +182,29 @@ test("a garbled address still shows the page", async () => {
   await linked("/linked/%E0%A4%A?error=provider_error");
   expect(screen.getByRole("heading", { level: 1, name: "That did not work" })).toBeTruthy();
 });
+
+test("an app that came with the link is shown as added, the others keep their button", async () => {
+  await linked("/linked/discord?identity=i2", [
+    wireApp({ id: "a", name: "plsremind", install_url: install, installs_with_link: true }),
+    wireApp({ id: "b", name: "Team", install_url: install }),
+  ]);
+  const next = within(screen.getByRole("region", { name: "What comes next" }));
+  const own = within(next.getByRole("listitem", { name: "plsremind" }));
+  expect(own.getByText("Added with this link")).toBeTruthy();
+  expect(own.queryByRole("link")).toBeNull();
+  expect(
+    within(next.getByRole("listitem", { name: "Team" })).getByRole("link", {
+      name: /Add in Discord/,
+    }),
+  ).toBeTruthy();
+  expect(next.getByText(/For an app to write to you/)).toBeTruthy();
+});
+
+test("when the link added every app there is nothing left to do", async () => {
+  await linked("/linked/discord?identity=i2", [
+    wireApp({ id: "a", name: "plsremind", install_url: install, installs_with_link: true }),
+  ]);
+  const next = within(screen.getByRole("region", { name: "What comes next" }));
+  expect(next.getByText("The link also added these apps to your Discord account.")).toBeTruthy();
+  expect(next.queryByText(/For an app to write to you/)).toBeNull();
+});

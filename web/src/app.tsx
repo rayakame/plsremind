@@ -26,6 +26,9 @@ const CalendarPage = lazy(() => import("./pages/calendar.js"));
 
 const SettingsPage = lazy(() => import("./pages/settings/index.js"));
 const LinkedPage = lazy(() => import("./pages/linked.js"));
+const LinkStart = lazy(() =>
+  import("./pages/link-start.js").then((m) => ({ default: m.LinkStart })),
+);
 
 const themeKey = "plsremind.theme";
 
@@ -112,7 +115,13 @@ function SignedIn() {
   return (
     <NoticesProvider>
       <Preferences />
-      {path.startsWith("/linked/") ? (
+      {path.startsWith("/link/") ? (
+        <Suspense fallback={null}>
+          <Boundary>
+            <LinkStart provider={decoded(path.slice("/link/".length))} />
+          </Boundary>
+        </Suspense>
+      ) : path.startsWith("/linked/") ? (
         <Suspense fallback={null}>
           <Boundary>
             <LinkedPage provider={decoded(path.slice("/linked/".length))} />

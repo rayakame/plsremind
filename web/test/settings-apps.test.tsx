@@ -320,3 +320,18 @@ test("an app whose kind cannot be linked says why it cannot be chosen", async ()
   const hint = document.getElementById(group.getAttribute("aria-describedby")!)!;
   expect(hint.textContent).toBe("You can choose once an admin turns on linking for example.");
 });
+
+test("an app that comes with the link is added by linking, in the same tab", async () => {
+  await apps([
+    wireApp({
+      id: "a",
+      install_url: "https://discord.com/oauth2/authorize?client_id=1",
+      installs_with_link: true,
+    }),
+  ]);
+  const add = card("plsremind").getByRole("link", { name: "Add in Discord" });
+  expect(add.getAttribute("href")).toBe(
+    "http://hub.test/api/v1/auth/oauth/discord/start?intent=link",
+  );
+  expect(add.getAttribute("target")).toBeNull();
+});

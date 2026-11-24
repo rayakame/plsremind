@@ -238,6 +238,11 @@ export interface UserConnection {
   readonly intents: readonly Intent[];
   /** Where the user adds the app on the provider's side; empty when there is no such place. */
   readonly installUrl: string;
+  /**
+   * Whether linking the account at the provider also adds the app, as the Discord sign-in does
+   * for the bot of its own application. Start the link then rather than opening `installUrl`.
+   */
+  readonly installsWithLink: boolean;
   /** How the newest delivery through this connection to the user went, null before the first. */
   readonly lastDelivery: LastDelivery | null;
 }

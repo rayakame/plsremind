@@ -102,7 +102,11 @@ export default function LinkedPage({ provider }: { provider: string }) {
       {own.length > 0 && (
         <section className="card" aria-label={t("linked.next")}>
           <h2 className="label">{t("linked.next")}</h2>
-          <p className="text">{t("linked.nextText", { name })}</p>
+          <p className="text">
+            {t(own.every((app) => app.installsWithLink) ? "linked.nextAdded" : "linked.nextText", {
+              name,
+            })}
+          </p>
           <div role="list" className="rows">
             {own.map((app) => {
               const test = tests.state(app.id);
@@ -116,11 +120,18 @@ export default function LinkedPage({ provider }: { provider: string }) {
                     )}
                     <span role="status">{test && <TestLine state={test} />}</span>
                   </span>
-                  {app.installUrl && (
-                    <a className="btn" href={app.installUrl} target="_blank" rel="noreferrer">
-                      {t(provider === "discord" ? "apps.addInDiscord" : "apps.setUp")}
-                      <Icon name="open" />
-                    </a>
+                  {app.installsWithLink ? (
+                    <span className="ok">
+                      <Icon name="check" />
+                      {t("linked.added")}
+                    </span>
+                  ) : (
+                    app.installUrl && (
+                      <a className="btn" href={app.installUrl} target="_blank" rel="noreferrer">
+                        {t(provider === "discord" ? "apps.addInDiscord" : "apps.setUp")}
+                        <Icon name="open" />
+                      </a>
+                    )
                   )}
                 </div>
               );

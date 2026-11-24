@@ -395,32 +395,14 @@ func TestIdentitiesNeverOutliveTheirProvider(t *testing.T) {
 	}
 }
 
-func TestDiscordSignInKeepsTheBotOfTheSameApplication(t *testing.T) {
+func TestDiscordSignInAddsTheBot(t *testing.T) {
 	e := testkit.New(t)
 	testkit.EnableProvider(t, e, "discord")
-	asked := func() url.Values {
-		t.Helper()
-		start := e.OAuthStart(t, "discord", "intent=login")
-		location, err := url.Parse(start.Header.Get("Location"))
-		require.NoError(t, err)
-		return location.Query()
-	}
-	install := func(id string) string {
-		return "https://discord.com/oauth2/authorize?client_id=" + id + "&integration_type=1&scope=applications.commands"
-	}
-	admin := e.Admin(t)
-	require.Equal(t, "identify", asked().Get("scope"))
-
-	other := admin.Do(t, "POST", "/admin/connections", J{"name": "Other bot", "provider": "discord", "install_url": install("123456789012345678")})
-	require.Equal(t, 201, other.Status, string(other.Body))
-	require.Equal(t, "identify", asked().Get("scope"))
-	require.Empty(t, asked().Get("integration_type"))
-
-	// Discord replaces a user's grant for an application with the newest one, so asking for
-	// less than the bot holds would take the bot out of the user's account.
-	same := admin.Do(t, "POST", "/admin/connections", J{"name": "Bot", "provider": "discord", "install_url": install("cid")})
-	require.Equal(t, 201, same.Status, string(same.Body))
-	query := asked()
-	require.Equal(t, "identify applications.commands", query.Get("scope"))
-	require.Equal(t, "1", query.Get("integration_type"))
+	start := e.OAuthStart(t, "discord", "intent=login")
+	location, err := url.Parse(start.Header.Get("Location"))
+	require.NoError(t, err)
+	// The sign-in is the bot's own application, and Discord keeps only the newest grant of an
+	// application: asking for less would take the bot out of the user's account.
+	require.Equal(t, "identify applications.commands", location.Query().Get("scope"))
+	require.Equal(t, "1", location.Query().Get("integration_type"))
 }

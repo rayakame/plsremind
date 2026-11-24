@@ -297,6 +297,10 @@ export const de: Texts = {
   "linked.title": "{name} ist verknüpft",
   "linked.as": "Du bist jetzt als {name} verknüpft.",
   "linked.asHandle": "Du bist jetzt als {name} (@{handle}) verknüpft.",
+  "link.leaving": "Weiter zu {name}, um dein Konto zu verknüpfen.",
+  "link.continue": "Weiter zu {name}",
+  "linked.added": "Mit der Verknüpfung hinzugefügt",
+  "linked.nextAdded": "Die Verknüpfung hat diese Apps auch zu deinem {name}-Konto hinzugefügt.",
   "linked.next": "So geht es weiter",
   "linked.nextText":
     "Damit eine App dir schreiben kann, füg sie zu deinem {name}-Konto hinzu. Schon hinzugefügt? Dann musst du nichts tun.",

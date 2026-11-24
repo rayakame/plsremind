@@ -75,11 +75,7 @@ func (s *OAuth) Build(ctx context.Context, row sqlc.LoginProvider) (Provider, er
 	case "github":
 		return newGitHub(s.d, row.ClientID, string(clientSecret)), nil
 	case "discord":
-		bot, err := isBotApplication(ctx, s.d.Q(), row.Key, row.ClientID)
-		if err != nil {
-			return nil, err
-		}
-		return newDiscord(s.d, row.ClientID, string(clientSecret), bot), nil
+		return newDiscord(s.d, row.ClientID, string(clientSecret)), nil
 	case "oidc":
 		provider, err := s.discover(row)
 		if err != nil {

@@ -20,6 +20,7 @@ function app(overrides: Partial<UserConnection> = {}): UserConnection {
     remind: true,
     intents: ["deliveries"],
     installUrl: "",
+    installsWithLink: false,
     lastDelivery: null,
     ...overrides,
   };

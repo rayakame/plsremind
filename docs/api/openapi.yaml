@@ -2347,7 +2347,7 @@ components:
           format: date-time
     UserConnection:
       type: object
-      required: [id, name, description, provider, linked, enabled, remind, intents, install_url, last_delivery]
+      required: [id, name, description, provider, linked, enabled, remind, intents, install_url, installs_with_link, last_delivery]
       properties:
         id:
           type: string
@@ -2372,6 +2372,12 @@ components:
         install_url:
           type: string
           description: Where the user adds the app on the provider's side; empty when there is no such place.
+        installs_with_link:
+          type: boolean
+          description: |
+            True when linking the account at the provider also adds the app, as the Discord
+            sign-in does for the bot of its own Discord application. Start the link then rather
+            than sending the user to `install_url`.
         last_delivery:
           description: How the newest delivery through this connection to the user went, null before the first.
           oneOf:
