@@ -23,6 +23,8 @@ jobs:
           enable-cache: true
           python-version: "3.12"
       - run: uv run --group nox nox -s format-check ruff pyright
+      - run: uv build && uvx twine check --strict dist/*
+      - run: cmp ../../LICENSE LICENSE
 
   test:
     runs-on: ubuntu-latest

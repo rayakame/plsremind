@@ -23,6 +23,13 @@ dependencies = [
     "tzdata>=2025.2",
 ]
 
+[project.urls]
+Homepage = "https://github.com/rayakame/plsremind"
+Documentation = "https://github.com/rayakame/plsremind/tree/main/sdk/python#readme"
+Repository = "https://github.com/rayakame/plsremind"
+Issues = "https://github.com/rayakame/plsremind/issues"
+Changelog = "https://github.com/rayakame/plsremind/blob/main/sdk/python/CHANGELOG.md"
+
 [build-system]
 requires = ["hatchling>=1.27"]
 build-backend = "hatchling.build"
@@ -31,7 +38,7 @@ build-backend = "hatchling.build"
 packages = ["plsremind"]
 
 [tool.hatch.build.targets.sdist]
-only-include = ["plsremind"]
+only-include = ["plsremind", "README.md", "LICENSE"]
 
 [dependency-groups]
 nox = [
