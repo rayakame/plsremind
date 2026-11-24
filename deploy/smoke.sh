@@ -23,10 +23,13 @@ jar="$(mktemp)"
 adapter_pid=""
 adapter_log="$(mktemp)"
 
+bundle_dir="$(mktemp -d)"
+
 cleanup() {
   [ -n "$adapter_pid" ] && kill "$adapter_pid" >/dev/null 2>&1 || true
   docker compose down -v --remove-orphans >/dev/null 2>&1 || true
   rm -f "$jar" "$adapter_log" monitoring/targets/smoke-extra.yml
+  rm -rf "$bundle_dir"
 }
 trap cleanup EXIT
 
@@ -41,6 +44,25 @@ expect() {
   [ "$got" = "$want" ] || fail "$what: expected $want, got $got"
   echo "ok  $what"
 }
+
+# The deploy bundle holds what a server needs, and a new one unpacks over an old one without
+# touching what belongs to the self-hoster.
+bundle="$(./bundle.sh "$bundle_dir")"
+mkdir -p "$bundle_dir/server/backups" "$bundle_dir/server/monitoring/targets"
+printf 'MINE=1\n' > "$bundle_dir/server/.env"
+printf 'services: {}\n' > "$bundle_dir/server/compose.override.yaml"
+printf 'dump\n' > "$bundle_dir/server/backups/old.dump"
+printf -- '- targets: ["mine:9091"]\n' > "$bundle_dir/server/monitoring/targets/mine.yml"
+printf 'changed\n' > "$bundle_dir/server/compose.yaml"
+tar -xzf "$bundle" -C "$bundle_dir/server" --strip-components=1
+for kept in .env compose.override.yaml backups/old.dump monitoring/targets/mine.yml; do
+  [ -s "$bundle_dir/server/$kept" ] || fail "unpacking the bundle lost $kept"
+done
+cmp -s compose.yaml "$bundle_dir/server/compose.yaml" || fail "unpacking the bundle did not bring its compose.yaml back"
+[ ! -e "$bundle_dir/server/compose.build.yaml" ] || fail "the bundle ships compose.build.yaml"
+(cd "$bundle_dir/server" && env -u COMPOSE_FILE docker compose --profile discord --profile monitoring config --quiet) \
+  || fail "the unpacked bundle is no valid compose project"
+echo "ok  the bundle unpacks over an installation and keeps its own files"
 
 docker compose up -d --build --wait
 
