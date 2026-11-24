@@ -8,7 +8,6 @@
       "release-type": "simple",
       "component": "plsremind",
       "include-component-in-tag": false,
-      "release-as": "0.1.0",
       "extra-files": [
         {
           "type": "generic",
@@ -32,30 +31,31 @@
           "type": "generic",
           "path": "docs/self-hosting.md"
         }
-      ]
+      ],
+      "initial-version": "0.1.0"
     },
     "sdk/python": {
       "release-type": "simple",
       "component": "sdk-python",
-      "release-as": "0.1.0",
       "extra-files": [
         {
           "type": "generic",
           "path": "plsremind/internal/about.py"
         }
-      ]
+      ],
+      "initial-version": "0.1.0"
     },
     "sdk/ts": {
       "release-type": "node",
       "component": "sdk-ts",
-      "release-as": "0.1.0",
       "extra-files": [
         {
           "type": "json",
           "path": "/package-lock.json",
           "jsonpath": "$.packages['sdk/ts'].version"
         }
-      ]
+      ],
+      "initial-version": "0.1.0"
     }
   }
 }
