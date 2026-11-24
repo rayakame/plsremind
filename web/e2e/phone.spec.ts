@@ -1,4 +1,5 @@
-import { expect, openNav, test } from "./helpers.js";
+import { address, expect, hubUrl, openNav, signIn, test } from "./helpers.js";
+import { proxyHeader } from "../../sdk/ts/test/hub/launch.js";
 
 test("at phone width everything is reachable by touch and nothing scrolls sideways @core", async ({
   page,
@@ -66,4 +67,24 @@ test("at phone width everything is reachable by touch and nothing scrolls sidewa
 
   await page.goto("/settings/admin");
   await expect(page.getByRole("heading", { name: "Not found" })).toBeVisible();
+});
+
+test("a line with buttons keeps its sentence readable at phone width @core", async ({
+  browser,
+  account,
+}) => {
+  const context = await browser.newContext({
+    baseURL: hubUrl,
+    timezoneId: "America/New_York",
+    viewport: { width: 360, height: 740 },
+  });
+  await context.setExtraHTTPHeaders({ [proxyHeader]: address() });
+  await signIn(context, account);
+  const page = await context.newPage();
+  await page.goto("/");
+  const sentence = page.getByText(/Your profile uses the time zone/);
+  await expect(sentence).toBeVisible();
+  expect((await sentence.boundingBox())!.width).toBeGreaterThan(200);
+  await expect(page.getByRole("button", { name: "Use America/New_York" })).toBeVisible();
+  await context.close();
 });

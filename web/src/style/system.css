@@ -26,6 +26,10 @@
   --side: 232px;
   --panel: 360px;
   --narrow: 400px;
+  --roomy: 480px;
+  /* The narrowest a name or a sentence beside buttons gets before the buttons move below it. */
+  --text-min: 120px;
+  --sentence-min: 240px;
   --wide: 720px;
   --cell: 104px;
   --snav: 220px;
@@ -326,6 +330,10 @@ textarea {
   min-width: 0;
 }
 
+.center.roomy {
+  max-width: var(--roomy);
+}
+
 .scroll {
   flex: 1;
   min-height: 0;
@@ -556,6 +564,10 @@ fieldset.card {
 .row.tall {
   padding-top: var(--s2);
   padding-bottom: var(--s2);
+}
+
+.row.wrap {
+  flex-wrap: wrap;
 }
 
 .row.sel {
@@ -874,6 +886,7 @@ fieldset.card {
 
 .notice {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--s3);
   min-height: var(--h);
@@ -895,8 +908,12 @@ fieldset.card {
 }
 
 .notice .t {
-  flex: 1;
+  flex: 1 1 var(--sentence-min);
   min-width: 0;
+}
+
+.notice .t + * {
+  margin-left: auto;
 }
 
 .settings {
@@ -971,6 +988,16 @@ fieldset.card {
   flex-wrap: wrap;
   align-items: center;
   gap: var(--s3);
+}
+
+.who > .fill,
+.row.wrap > .fill {
+  flex-basis: var(--text-min);
+}
+
+.who > .btn:last-child,
+.row.wrap > .btn:last-child {
+  margin-left: auto;
 }
 
 .stack0 {

@@ -1,5 +1,14 @@
 import { RestClient } from "plsremind";
-import { expect, hubUrl, openNav, test } from "./helpers.js";
+import {
+  admin,
+  expect,
+  hubUrl,
+  openNav,
+  restSession,
+  seedIdentity,
+  test,
+  unique,
+} from "./helpers.js";
 
 test("language and theme are chosen, apply at once and survive a reload @core", async ({
   page,
@@ -92,11 +101,50 @@ test("every settings page is reached through the side list", async ({ page, acco
   }
 });
 
-test("a failed link explains itself @core", async ({ page, account }) => {
+test("a failed link explains itself and leads back to where it began @core", async ({
+  page,
+  account,
+}) => {
   expect(account.user.id).toBeTruthy();
+  // The dashboard remembers this when a link starts from the sign-in page.
+  await page.addInitScript(() => {
+    sessionStorage.setItem("plsremind.linkFrom", `${Date.now()} /settings/security`);
+  });
   await page.goto("/linked/discord?error=identity_taken");
   await expect(page.getByRole("heading", { level: 1, name: "That did not work" })).toBeVisible();
   await expect(page.getByText("Nothing was changed.")).toBeVisible();
   await page.getByRole("link", { name: "Back to the settings" }).click();
   await expect(page.getByRole("heading", { level: 1, name: "Sign-in and security" })).toBeVisible();
+});
+
+test("a confirmed link gives each app room for its name and description @core", async ({
+  page,
+  account,
+}) => {
+  const session = restSession();
+  await session.rest.login(admin);
+  const name = unique("Bot");
+  await session.rest.createConnection({
+    name,
+    description: "Reminders as direct messages, and the commands for them",
+    provider: "discord",
+    installUrl:
+      "https://discord.com/oauth2/authorize?client_id=123456789012345678&integration_type=1&scope=applications.commands",
+  });
+  const identity = await seedIdentity(account.user.id, "discord", unique("ext"));
+  await page.goto(`/linked/discord?identity=${identity}`);
+
+  const row = page.getByRole("listitem", { name });
+  const title = row.getByText(name, { exact: true });
+  const add = row.getByRole("link", { name: /Add in Discord/ });
+  await expect(title).toBeVisible();
+  const titleBox = (await title.boundingBox())!;
+  const addBox = (await add.boundingBox())!;
+  const rowBox = (await row.boundingBox())!;
+  // One line of text, and the button stays inside the row whether it sits beside or below.
+  expect(titleBox.height).toBeLessThan(30);
+  expect(titleBox.width).toBeGreaterThan(60);
+  expect(addBox.x + addBox.width).toBeLessThanOrEqual(rowBox.x + rowBox.width + 1);
+  const description = row.getByText("Reminders as direct messages", { exact: false });
+  expect((await description.boundingBox())!.width).toBeGreaterThan(90);
 });
