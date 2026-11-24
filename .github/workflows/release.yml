@@ -19,8 +19,11 @@ jobs:
       server: ${{ steps.release.outputs.release_created }}
       server-version: ${{ steps.release.outputs.version }}
       server-tag: ${{ steps.release.outputs.tag_name }}
+      server-sha: ${{ steps.release.outputs.sha }}
       sdk-python: ${{ steps.release.outputs['sdk/python--release_created'] }}
+      sdk-python-sha: ${{ steps.release.outputs['sdk/python--sha'] }}
       sdk-ts: ${{ steps.release.outputs['sdk/ts--release_created'] }}
+      sdk-ts-sha: ${{ steps.release.outputs['sdk/ts--sha'] }}
     steps:
       # Pull requests opened with GITHUB_TOKEN start no workflows, so release PRs would get no checks.
       - id: app
@@ -49,6 +52,7 @@ jobs:
     uses: ./.github/workflows/images.yml
     with:
       version: ${{ needs.release-please.outputs.server-version }}
+      ref: ${{ needs.release-please.outputs.server-sha }}
 
   bundle:
     needs: [release-please, images]
@@ -58,15 +62,17 @@ jobs:
     permissions:
       contents: write
     steps:
+      # Each part is built from the commit of its own release, which may not be the one that ran this.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ needs.release-please.outputs.server-sha }}
           persist-credentials: false
       - name: Attach the deploy bundle to the release
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ needs.release-please.outputs.server-tag }}
         run: |
-          bundle="$(deploy/bundle.sh dist)"
+          bundle="$(deploy/bundle.sh "$RUNNER_TEMP/bundle")"
           gh release upload "$TAG" "$bundle" --clobber
 
   sdk-python:
@@ -83,6 +89,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ needs.release-please.outputs.sdk-python-sha }}
           persist-credentials: false
       - uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
       - run: uv build
@@ -105,6 +112,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ needs.release-please.outputs.sdk-ts-sha }}
           persist-credentials: false
       # No registry-url: setup-node would set NODE_AUTH_TOKEN, which takes precedence over trusted publishing.
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0

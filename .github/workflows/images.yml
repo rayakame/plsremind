@@ -17,12 +17,11 @@ on:
         description: The release to build; its tags are pushed.
         type: string
         required: true
-  workflow_dispatch:
-    inputs:
-      version:
-        description: A version to build and tag, or empty for edge.
+      ref:
+        description: The commit the release was tagged at.
         type: string
-        required: false
+        required: true
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -32,8 +31,45 @@ concurrency:
   cancel-in-progress: ${{ !inputs.version }}
 
 jobs:
+  guard:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - name: Edge only comes from main
+        if: ${{ !inputs.version }}
+        run: |
+          [ "$GITHUB_REF" = refs/heads/main ] || { echo "edge is built from main only" >&2; exit 1; }
+      - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        if: ${{ inputs.version }}
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: A released version is never built again from another commit
+        if: ${{ inputs.version }}
+        env:
+          OWNER: ${{ github.repository_owner }}
+          VERSION: ${{ inputs.version }}
+          REF: ${{ inputs.ref }}
+        run: |
+          for image in plsremind plsremind-discord; do
+            ref="ghcr.io/$OWNER/$image:$VERSION"
+            if ! labels="$(docker buildx imagetools inspect "$ref" --format '{{ json (index .Image "linux/amd64").Config.Labels }}' 2> inspect.err)"; then
+              # GHCR denies what does not exist yet; whoever may not read it may not push it either.
+              grep -qiE 'not found|manifest unknown|name unknown|denied|403' inspect.err && continue
+              cat inspect.err >&2
+              exit 1
+            fi
+            revision="$(jq -r '."org.opencontainers.image.revision" // ""' <<< "$labels")"
+            [ "$revision" = "$REF" ] || { echo "$ref already exists from $revision" >&2; exit 1; }
+          done
+
   build:
     name: build ${{ matrix.image }} ${{ matrix.platform }}
+    needs: guard
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 40
     permissions:
@@ -58,6 +94,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ inputs.ref || github.sha }}
           persist-credentials: false
       - id: meta
         uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
@@ -65,6 +102,7 @@ jobs:
           images: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}
           labels: |
             org.opencontainers.image.version=${{ inputs.version || 'edge' }}
+            org.opencontainers.image.revision=${{ inputs.ref || github.sha }}
             org.opencontainers.image.licenses=MIT
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
