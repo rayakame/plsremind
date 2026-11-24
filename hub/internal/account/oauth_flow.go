@@ -1,12 +1,14 @@
 package account
 
 import (
+	"cmp"
 	"crypto/subtle"
 	"errors"
 	"golang.org/x/text/language"
 	"log/slog"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 	"time"
 
@@ -298,19 +300,37 @@ func oauthFinish(c fiber.Ctx, d *core.Deps, used sqlc.LoginProvider, stored sqlc
 // signUpLocale picks the language of an account made by signing in elsewhere. Bots cannot see a
 // browser, so the account takes the provider's language, or else the one the browser asked for.
 func signUpLocale(provider, acceptLanguage string) *string {
-	candidates := []string{strings.TrimSpace(provider)}
-	// Ordered by weight, without the ones weighted zero; "*" and unknown ones name no language.
-	if asked, _, err := language.ParseAcceptLanguage(acceptLanguage); err == nil {
-		for _, tag := range asked {
-			if base, _ := tag.Base(); base.String() != "und" && base.String() != "mul" {
-				candidates = append(candidates, tag.String())
-			}
-		}
-	}
+	candidates := append([]string{strings.TrimSpace(provider)}, browserLanguages(acceptLanguage)...)
 	for _, candidate := range candidates {
 		if len(candidate) <= maxLocaleLen && localePattern.MatchString(candidate) {
 			return &candidate
 		}
 	}
 	return nil
+}
+
+// browserLanguages reads the entries one by one, as the library drops the whole list over a
+// single unknown language.
+func browserLanguages(header string) []string {
+	type weighted struct {
+		tag string
+		q   float32
+	}
+	var asked []weighted
+	for _, entry := range strings.Split(header, ",") {
+		tags, q, err := language.ParseAcceptLanguage(entry)
+		if err != nil || len(tags) == 0 {
+			continue
+		}
+		if base, _ := tags[0].Base(); base.String() == "und" || base.String() == "mul" {
+			continue
+		}
+		asked = append(asked, weighted{tags[0].String(), q[0]})
+	}
+	slices.SortStableFunc(asked, func(a, b weighted) int { return cmp.Compare(b.q, a.q) })
+	out := make([]string, 0, len(asked))
+	for _, one := range asked {
+		out = append(out, one.tag)
+	}
+	return out
 }
