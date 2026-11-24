@@ -8,9 +8,11 @@ cd "$(dirname "$0")"
 export COMPOSE_PROJECT_NAME=plsremind-smoke
 export PLSREMIND_PORT="${PLSREMIND_PORT:-18080}"
 export PLSREMIND_PUBLIC_URL="http://localhost:${PLSREMIND_PORT}"
-export PLSREMIND_SECRET_KEY="$(openssl rand -base64 32)"
+PLSREMIND_SECRET_KEY="$(openssl rand -base64 32)"
+export PLSREMIND_SECRET_KEY
 export PLSREMIND_GRAFANA_PORT="${PLSREMIND_GRAFANA_PORT:-13000}"
-export PLSREMIND_GRAFANA_PASSWORD="$(openssl rand -hex 16)"
+PLSREMIND_GRAFANA_PASSWORD="$(openssl rand -hex 16)"
+export PLSREMIND_GRAFANA_PASSWORD
 export COMPOSE_PROFILES=monitoring
 # Built from this checkout; the released images do not exist yet for what is being tested.
 export COMPOSE_FILE=compose.yaml:compose.build.yaml
@@ -66,7 +68,7 @@ docker compose -f compose.yaml -f examples/another-discord-bot.yaml --profile di
   || fail "the example for another Discord bot does not fit the compose file"
 echo "ok  the example for another Discord bot fits"
 released="$(python3 -c 'import json; print(json.load(open("../.release-please-manifest.json"))["."])')"
-images="$(COMPOSE_FILE= docker compose -f compose.yaml -f examples/another-discord-bot.yaml --profile discord config --format json \
+images="$(COMPOSE_FILE='' docker compose -f compose.yaml -f examples/another-discord-bot.yaml --profile discord config --format json \
   | python3 -c '
 import json, sys
 services = json.load(sys.stdin)["services"]
@@ -162,5 +164,21 @@ done
 expect "an extra target file is scraped" "$extra" '"instance":"smoke-extra:9091"'
 expect "the dashboard is there" \
   "$(curl -fsS -u "admin:${PLSREMIND_GRAFANA_PASSWORD}" "${grafana}/api/search?query=plsremind" | grep -o '"uid":"plsremind"')" '"uid":"plsremind"'
+
+# A backup taken now and restored later brings back exactly what was there.
+backup="$(./backup.sh)"
+[ -s "$backup" ] || fail "backup.sh wrote no dump"
+echo "ok  backup.sh wrote $backup"
+curl -fsS -o /dev/null -b "$jar" -H 'Content-Type: application/json' -H "Origin: ${PLSREMIND_PUBLIC_URL}" \
+  -d '{"title":"after the backup"}' "$base/users/@me/items"
+./restore.sh --yes "$backup" >/dev/null
+for _ in $(seq 1 60); do
+  curl -fsS "${PLSREMIND_PUBLIC_URL}/readyz" >/dev/null 2>&1 && break
+  sleep 1
+done
+titles="$(curl -fsS -b "$jar" "$base/users/@me/items" | grep -o '"title":"[^"]*"' | sort | tr '\n' ' ')"
+case "$titles" in *'"title":"after the backup"'*) fail "restore.sh kept what came after the backup";; esac
+case "$titles" in *'"title":"first item"'*) echo "ok  restore.sh brought the backup back";; *) fail "restore.sh lost the first item: $titles";; esac
+rm -f "$backup"
 
 echo "smoke: all good"
