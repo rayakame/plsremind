@@ -22,6 +22,10 @@ on:
       - "package*.json"
       - ".dockerignore"
       - ".github/workflows/hub.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   test:
@@ -51,3 +55,22 @@ jobs:
         with:
           go-version-file: hub/go.mod
       - run: deploy/smoke.sh
+
+  upgrade:
+    # Only before a server release, or by hand: it takes several minutes.
+    if: github.event_name == 'workflow_dispatch' || endsWith(github.head_ref, '--components--plsremind')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: docker build -f hub/Dockerfile -t plsremind:candidate .
+      - name: Update the last release, full of data, to this hub
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          previous="$(gh release list --repo "$GITHUB_REPOSITORY" --exclude-drafts --exclude-pre-releases --limit 50 \
+            --json tagName --jq '[.[] | select(.tagName | test("^v[0-9]"))][0].tagName // "none"')"
+          deploy/upgrade-test.sh "${previous#v}" plsremind:candidate
+
