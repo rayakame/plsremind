@@ -25,7 +25,7 @@ services:
       start_period: 5m
 
   db:
-    image: postgres:18
+    image: postgres:18@sha256:c699303802144847d238196173655dbbecf7a96aeca1565f2b02eb671a1f0b6b
     restart: unless-stopped
     environment:
       POSTGRES_USER: plsremind
@@ -62,7 +62,7 @@ services:
   # Metrics, alerts and a dashboard. They only start with "docker compose --profile monitoring up".
   victoriametrics:
     profiles: ["monitoring"]
-    image: victoriametrics/victoria-metrics:v1.156.0
+    image: victoriametrics/victoria-metrics:v1.156.0@sha256:da8a90ac0912f16589be2b96a6441a2fca4bca415c83783d972d92e3b5b66970
     restart: unless-stopped
     command:
       - -promscrape.config=/etc/plsremind/scrape.yml
@@ -83,7 +83,7 @@ services:
 
   vmalert:
     profiles: ["monitoring"]
-    image: victoriametrics/vmalert:v1.156.0
+    image: victoriametrics/vmalert:v1.156.0@sha256:4fea7d1a888d4db4ff18804434ef0f3ca8eb6482e289c50d32001c2db218287c
     restart: unless-stopped
     depends_on:
       - victoriametrics
@@ -99,7 +99,7 @@ services:
 
   grafana:
     profiles: ["monitoring"]
-    image: grafana/grafana:13.2.4
+    image: grafana/grafana:13.2.4@sha256:dbbc38ea21103cefb50396340cd88afec779c7e070b0a7bf5a75b4ce46651d3f
     restart: unless-stopped
     depends_on:
       - victoriametrics

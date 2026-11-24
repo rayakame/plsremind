@@ -1,0 +1,51 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended",
+    "docker:pinDigests",
+    "helpers:pinGitHubActionDigests",
+    ":semanticCommits"
+  ],
+  "timezone": "Europe/Berlin",
+  "schedule": ["before 6am on monday"],
+  "ignoreDeps": [
+    "ghcr.io/rayakame/plsremind",
+    "ghcr.io/rayakame/plsremind-discord"
+  ],
+  "lockFileMaintenance": {
+    "enabled": true,
+    "schedule": ["before 6am on monday"],
+    "semanticCommitType": "build",
+    "semanticCommitScope": "deps"
+  },
+  "vulnerabilityAlerts": {
+    "semanticCommitType": "fix",
+    "semanticCommitScope": "deps"
+  },
+  "packageRules": [
+    {
+      "description": "Anything else defaults to build(deps), which makes no release.",
+      "matchPackageNames": ["*"],
+      "semanticCommitType": "build",
+      "semanticCommitScope": "deps"
+    },
+    {
+      "description": "What ships in the images or the SDK packages makes a patch release.",
+      "matchDepTypes": ["dependencies", "require", "project.dependencies"],
+      "semanticCommitType": "fix",
+      "semanticCommitScope": "deps"
+    },
+    {
+      "description": "Base images and the images compose.yaml runs reach every self-hoster.",
+      "matchDatasources": ["docker"],
+      "groupName": "images",
+      "semanticCommitType": "fix",
+      "semanticCommitScope": "deps"
+    },
+    {
+      "matchManagers": ["github-actions"],
+      "groupName": "actions",
+      "semanticCommitType": "ci"
+    }
+  ]
+}
