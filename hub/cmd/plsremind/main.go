@@ -37,7 +37,6 @@ func main() {
 	}
 }
 
-// command runs a one-off command such as "health" and reports whether there was one.
 func command(args []string, out io.Writer) (code int, handled bool) {
 	if len(args) < 2 {
 		return 0, false
