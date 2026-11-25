@@ -6,6 +6,7 @@ scrape_configs:
   - job_name: plsremind-hub
     static_configs:
       - targets: ["hub:9090"]
+  # Every Discord bot is a file in targets/; add one there for each further bot.
   - job_name: plsremind-discord
-    static_configs:
-      - targets: ["discord:9091"]
+    file_sd_configs:
+      - files: ["/etc/plsremind/targets/*.yml"]

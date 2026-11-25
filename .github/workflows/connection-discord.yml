@@ -17,6 +17,9 @@ on:
       - "docs/**"
       - ".github/workflows/connection-discord.yml"
 
+permissions:
+  contents: read
+
 defaults:
   run:
     working-directory: connections/discord
@@ -26,7 +29,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
       # setup-uv publishes no floating major tag, so it is pinned to a release.
       - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
@@ -38,12 +43,14 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
       - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
           enable-cache: true
           python-version: "3.15"
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
           go-version-file: hub/go.mod
           cache-dependency-path: hub/go.sum
@@ -56,7 +63,9 @@ jobs:
       run:
         working-directory: .
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
       - run: docker build -f connections/discord/Dockerfile -t plsremind-discord .
       # Without its settings the bot has to say what is missing and stop.
       - run: |

@@ -1,6 +1,6 @@
 [project]
 name = "plsremind"
-version = "0.1.0"
+dynamic = ["version"]
 description = "The Python SDK for plsremind: gateway client, cache and REST."
 readme = "README.md"
 authors = [{ name = "rayakame" }]
@@ -23,15 +23,26 @@ dependencies = [
     "tzdata>=2025.2",
 ]
 
+[project.urls]
+Homepage = "https://github.com/rayakame/plsremind"
+Documentation = "https://github.com/rayakame/plsremind/tree/main/sdk/python#readme"
+Repository = "https://github.com/rayakame/plsremind"
+Issues = "https://github.com/rayakame/plsremind/issues"
+Changelog = "https://github.com/rayakame/plsremind/blob/main/sdk/python/CHANGELOG.md"
+
 [build-system]
 requires = ["hatchling>=1.27"]
 build-backend = "hatchling.build"
+
+[tool.hatch.version]
+path = "plsremind/internal/about.py"
+pattern = '__version__: typing.Final\[str\] = "(?P<version>[^"]+)"'
 
 [tool.hatch.build.targets.wheel]
 packages = ["plsremind"]
 
 [tool.hatch.build.targets.sdist]
-only-include = ["plsremind"]
+only-include = ["plsremind", "README.md", "LICENSE"]
 
 [dependency-groups]
 nox = [
@@ -71,3 +82,8 @@ asyncio_default_fixture_loop_scope = "function"
 xfail_strict = true
 markers = ["hub: needs a real hub, built from this repository, and Docker"]
 filterwarnings = ["error"]
+
+[tool.uv]
+# The version is read from plsremind/internal/about.py when the package is built.
+cache-keys = [{ file = "pyproject.toml" }, { file = "plsremind/internal/about.py" }]
+

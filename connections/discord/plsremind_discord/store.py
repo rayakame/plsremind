@@ -155,6 +155,18 @@ def _utc(moment: datetime.datetime | None) -> datetime.datetime | None:
     return None if moment is None else moment.astimezone(datetime.UTC)
 
 
+class SchemaTooNewError(Exception):
+    """A newer release of the bot wrote the database file."""
+
+    def __init__(self, database: int, known: int) -> None:
+        super().__init__(
+            f"the database file is at schema version {database}, but this bot only knows up to {known}: "
+            "it was written by a newer release. Run that release again, or delete the file to start over"
+        )
+        self.database = database
+        self.known = known
+
+
 def _migrations() -> list[tuple[int, str]]:
     folder = importlib.resources.files("plsremind_discord") / "sql" / "migrations"
     files = sorted((entry for entry in folder.iterdir() if entry.name.endswith(".sql")), key=lambda entry: entry.name)
@@ -165,7 +177,11 @@ async def _migrate(connection: aiosqlite.Connection) -> None:
     async with connection.execute("PRAGMA user_version") as cursor:
         row = await cursor.fetchone()
     current = int(row[0]) if row is not None else 0
-    for version, script in await asyncio.to_thread(_migrations):
+    migrations = await asyncio.to_thread(_migrations)
+    known = migrations[-1][0] if migrations else 0
+    if current > known:
+        raise SchemaTooNewError(current, known)
+    for version, script in migrations:
         if version <= current:
             continue
         try:

@@ -1,0 +1,253 @@
+name: images
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "hub/**"
+      - "web/**"
+      - "sdk/**"
+      - "connections/discord/**"
+      - "package*.json"
+      - ".dockerignore"
+      - ".github/workflows/images.yml"
+  workflow_call:
+    inputs:
+      version:
+        description: The release to build; its tags are pushed.
+        type: string
+        required: true
+      ref:
+        description: The commit the release was tagged at.
+        type: string
+        required: true
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: images-${{ inputs.version || 'edge' }}
+  cancel-in-progress: ${{ !inputs.version }}
+
+jobs:
+  guard:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      packages: read
+    outputs:
+      todo: ${{ steps.todo.outputs.todo }}
+    steps:
+      - name: Edge only comes from main
+        if: ${{ !inputs.version }}
+        run: |
+          [ "$GITHUB_REF" = refs/heads/main ] || { echo "edge is built from main only" >&2; exit 1; }
+      - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        if: ${{ inputs.version }}
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: todo
+        name: A released version is built once, from its own commit
+        env:
+          OWNER: ${{ github.repository_owner }}
+          VERSION: ${{ inputs.version }}
+          REF: ${{ inputs.ref }}
+        run: |
+          todo=()
+          for image in plsremind plsremind-discord; do
+            if [ -z "$VERSION" ]; then
+              todo+=("$image")
+              continue
+            fi
+            ref="ghcr.io/$OWNER/$image:$VERSION"
+            if ! labels="$(docker buildx imagetools inspect "$ref" --format '{{ json (index .Image "linux/amd64").Config.Labels }}' 2> inspect.err)"; then
+              # GHCR denies what does not exist yet; whoever may not read it may not push it either.
+              if grep -qiE 'not found|manifest unknown|name unknown|denied|403' inspect.err; then
+                todo+=("$image")
+                continue
+              fi
+              cat inspect.err >&2
+              exit 1
+            fi
+            revision="$(jq -r '."org.opencontainers.image.revision" // ""' <<< "$labels")"
+            [ "$revision" = "$REF" ] || { echo "$ref already exists from $revision" >&2; exit 1; }
+            echo "$ref already exists from this commit and stays as it is"
+          done
+          echo "todo=$(jq -cn '$ARGS.positional' --args "${todo[@]}")" >> "$GITHUB_OUTPUT"
+
+  build:
+    name: build ${{ matrix.image }} ${{ matrix.platform }}
+    needs: guard
+    if: needs.guard.outputs.todo != '[]'
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 40
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        image: ${{ fromJSON(needs.guard.outputs.todo) }}
+        platform: [linux/amd64, linux/arm64]
+        include:
+          - platform: linux/amd64
+            runner: ubuntu-24.04
+            arch: amd64
+          - platform: linux/arm64
+            runner: ubuntu-24.04-arm
+            arch: arm64
+    env:
+      VERSION: ${{ inputs.version || format('edge-{0}', github.sha) }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+          persist-credentials: false
+      - id: meta
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}
+          labels: |
+            org.opencontainers.image.version=${{ inputs.version || 'edge' }}
+            org.opencontainers.image.revision=${{ inputs.ref || github.sha }}
+            org.opencontainers.image.licenses=MIT
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: build
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: ${{ matrix.image == 'plsremind' && 'hub/Dockerfile' || 'connections/discord/Dockerfile' }}
+          platforms: ${{ matrix.platform }}
+          build-args: VERSION=${{ env.VERSION }}
+          labels: ${{ steps.meta.outputs.labels }}
+          outputs: type=image,name=ghcr.io/${{ github.repository_owner }}/${{ matrix.image }},push-by-digest=true,name-canonical=true,push=true
+          provenance: mode=max
+          sbom: true
+          cache-from: type=gha,scope=${{ matrix.image }}-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.image }}-${{ matrix.arch }}
+      # Checked by digest on its own architecture, before any tag points at it.
+      - name: The hub runs and knows its version
+        if: matrix.image == 'plsremind'
+        env:
+          IMAGE: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}@${{ steps.build.outputs.digest }}
+        run: |
+          got="$(docker run --rm "$IMAGE" version)"
+          [ "$got" = "$VERSION" ] || { echo "the hub says $got" >&2; exit 1; }
+      - name: The bot runs and knows its version
+        if: matrix.image == 'plsremind-discord'
+        env:
+          IMAGE: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}@${{ steps.build.outputs.digest }}
+        run: |
+          docker run --rm "$IMAGE" 2> out.txt && exit 1
+          grep -q DISCORD_TOKEN out.txt
+          got="$(docker run --rm --entrypoint /app/connections/discord/.venv/bin/python "$IMAGE" -c 'from plsremind_discord.about import __version__; print(__version__)')"
+          case "$VERSION" in
+            edge-*) ;;
+            *) [ "$got" = "$VERSION" ] || { echo "the bot says $got" >&2; exit 1; } ;;
+          esac
+      - name: Keep the digest for the manifest
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          mkdir -p digests
+          touch "digests/${DIGEST#sha256:}"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: digests-${{ matrix.arch }}-${{ matrix.image }}
+          path: digests/*
+          if-no-files-found: error
+          retention-days: 7
+
+  merge:
+    name: publish ${{ matrix.image }}
+    needs: [guard, build]
+    # Also when nothing was built: an image from an earlier attempt may still lack tags or its attestation.
+    if: ${{ !cancelled() && needs.guard.result == 'success' && (needs.build.result == 'success' || needs.build.result == 'skipped') }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    strategy:
+      fail-fast: false
+      matrix:
+        image: [plsremind, plsremind-discord]
+    env:
+      IMAGE: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}
+      VERSION: ${{ inputs.version }}
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        if: contains(fromJSON(needs.guard.outputs.todo), matrix.image)
+        with:
+          # The image last, since digests-plsremind-* would also take plsremind-discord's.
+          pattern: digests-*-${{ matrix.image }}
+          path: digests
+          merge-multiple: true
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: meta
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}
+          flavor: latest=false
+          tags: |
+            type=raw,value=edge,enable=${{ !inputs.version }}
+            type=semver,pattern={{version}},value=${{ inputs.version }},enable=${{ inputs.version != '' }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ inputs.version }},enable=${{ inputs.version != '' }}
+            type=semver,pattern={{major}},value=${{ inputs.version }},enable=${{ inputs.version != '' && !startsWith(inputs.version, '0.') && !contains(inputs.version, '-') }}
+            type=raw,value=latest,enable=${{ inputs.version != '' && !contains(inputs.version, '-') }}
+      - id: manifest
+        name: Join the architectures into one image, or finish one joined before
+        env:
+          TAGS: ${{ steps.meta.outputs.tags }}
+        run: |
+          args=()
+          while IFS= read -r tag; do
+            [ -n "$tag" ] || continue
+            case "$tag" in
+              *:edge | *:"$VERSION") ;;
+              *)
+                # A minor or latest tag that already points at a newer release stays there.
+                if current="$(docker buildx imagetools inspect "$tag" --format '{{ index (index .Image "linux/amd64").Config.Labels "org.opencontainers.image.version" }}' 2> inspect.err)"; then
+                  if [ "$current" != "$VERSION" ] \
+                    && [ "$(printf '%s\n%s\n' "$current" "$VERSION" | sort -V | tail -n 1)" = "$current" ]; then
+                    echo "$tag stays at $current"
+                    continue
+                  fi
+                elif ! grep -qiE 'not found|manifest unknown|name unknown' inspect.err; then
+                  cat inspect.err >&2
+                  exit 1
+                fi
+                ;;
+            esac
+            args+=(--tag "$tag")
+          done <<< "$TAGS"
+          if [ -d digests ]; then
+            for digest in digests/*; do
+              args+=("$IMAGE@sha256:${digest#digests/}")
+            done
+          else
+            args+=("$IMAGE:$VERSION")
+          fi
+          docker buildx imagetools create "${args[@]}"
+          echo "digest=$(docker buildx imagetools inspect "$IMAGE:${VERSION:-edge}" --format '{{json .Manifest}}' | jq -r .digest)" >> "$GITHUB_OUTPUT"
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-name: ${{ env.IMAGE }}
+          subject-digest: ${{ steps.manifest.outputs.digest }}
+          push-to-registry: true

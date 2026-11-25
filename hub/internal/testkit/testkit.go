@@ -352,3 +352,8 @@ func checkContract(t *testing.T, req *http.Request, resp *Resp) {
 	}
 	require.Emptyf(t, problems, "%s %s -> %d does not match openapi.yaml\nbody: %s", req.Method, req.URL.Path, resp.Status, resp.Body)
 }
+
+// DatabaseURL is the address of the environment's own database.
+func (e *Env) DatabaseURL() string {
+	return e.dbURL
+}

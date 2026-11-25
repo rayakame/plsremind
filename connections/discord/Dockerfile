@@ -1,6 +1,6 @@
 # Build from the root of the repository: the bot depends on the SDK next to it.
-FROM python:3.15-slim AS build
-COPY --from=ghcr.io/astral-sh/uv:0.13.7 /uv /bin/uv
+FROM python:3.15-slim@sha256:63bb298d2b7b88f176f51b5189f54ce6535c997682ea70885d2132f5d473a8a5 AS build
+COPY --from=ghcr.io/astral-sh/uv:0.13.7@sha256:96f40d3904aad8d0bd010539001d36c8e2188b981e1334471a90c4a1d93bb490 /uv /bin/uv
 ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy UV_PYTHON_DOWNLOADS=never
 WORKDIR /app/connections/discord
 COPY sdk/python /app/sdk/python
@@ -9,7 +9,7 @@ RUN uv sync --locked --no-dev --no-editable --no-install-project
 COPY connections/discord/plsremind_discord plsremind_discord
 RUN uv sync --locked --no-dev --no-editable
 
-FROM python:3.15-slim
+FROM python:3.15-slim@sha256:63bb298d2b7b88f176f51b5189f54ce6535c997682ea70885d2132f5d473a8a5
 RUN useradd --system --uid 10001 --create-home --home-dir /data plsremind
 COPY --from=build /app/connections/discord/.venv /app/connections/discord/.venv
 ENV PLSREMIND_DISCORD_DB=/data/discord.db PYTHONUNBUFFERED=1

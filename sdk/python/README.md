@@ -1,17 +1,17 @@
 # plsremind for Python
 
-A client for the [plsremind](../../README.md) hub. It connects to the gateway, keeps the
+A client for the [plsremind](https://github.com/rayakame/plsremind) hub. It connects to the gateway, keeps the
 state it is sent in memory, hands every change to listeners as a typed event and offers
 each call of the REST API as a method.
 
 If you have used [hikari](https://github.com/hikari-py/hikari), most of it will feel
 familiar: event classes, `@client.listen()`, `client.rest` and `client.cache`.
 
-It needs Python 3.12 or newer and depends on `msgspec`, `aiohttp` and `tzdata`. The package
-is not on PyPI yet; install it from a checkout of this repository:
+It needs Python 3.12 or newer and depends on `msgspec`, `aiohttp` and `tzdata`. It works
+with plsremind 0.1 or newer.
 
 ```sh
-uv add ./sdk/python        # or: pip install ./sdk/python
+uv add plsremind        # or: pip install plsremind
 ```
 
 ```python
@@ -53,7 +53,7 @@ attempt fails, or the hub refuses the token or the intents, `start()` raises a
   `client.rest.acknowledge_delivery`. Until then the hub sends it again after every
   reconnect, with a growing `attempt`, and the SDK hands you every one of them. If you
   must not remind twice, remember the `id` yourself, as the
-  [example adapter](examples/remind.py) does.
+  [example adapter](https://github.com/rayakame/plsremind/blob/main/sdk/python/examples/remind.py) does.
 - **Objects are frozen data.** What you receive is a `msgspec.Struct` without methods that
   cannot be changed. To change something, call `client.rest`. The cache replaces objects
   instead of editing them, so `before is after` tells you whether something changed.
@@ -66,7 +66,7 @@ attempt fails, or the hub refuses the token or the intents, `start()` raises a
 
 ## Names and types
 
-The [gateway](../../docs/gateway.md) and the [API reference](../../docs/api/openapi.yaml)
+The [gateway](https://github.com/rayakame/plsremind/blob/main/docs/gateway.md) and the [API reference](https://github.com/rayakame/plsremind/blob/main/docs/api/openapi.yaml)
 describe what travels over the wire. Fields keep their names, and values arrive as the
 types Python has for them:
 
