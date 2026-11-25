@@ -74,12 +74,14 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          # Assigned on their own, so that a failed lookup fails the job instead of meaning "no release".
+          tags="$(gh release list --repo "$GITHUB_REPOSITORY" --exclude-drafts --exclude-pre-releases --limit 50 \
+            --json tagName --jq '.[] | select(.tagName | test("^v[0-9]")) | .tagName')"
           previous=none
-          for tag in $(gh release list --repo "$GITHUB_REPOSITORY" --exclude-drafts --exclude-pre-releases --limit 50 \
-            --json tagName --jq '.[] | select(.tagName | test("^v[0-9]")) | .tagName'); do
+          for tag in $tags; do
             # The bundle is attached after the images are out; a release still publishing has neither.
-            if gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' \
-              | grep -q '^plsremind-deploy-.*\.tar\.gz$'; then
+            assets="$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name')"
+            if grep -q '^plsremind-deploy-.*\.tar\.gz$' <<< "$assets"; then
               previous="$tag"
               break
             fi
