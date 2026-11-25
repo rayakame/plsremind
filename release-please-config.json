@@ -4,6 +4,8 @@
   "bump-minor-pre-major": true,
   "pull-request-title-pattern": "chore: release${component} ${version}",
   "always-update": true,
+  "pull-request-header": "Merging this pull request releases the version below.",
+  "pull-request-footer": "Written from the commit titles since the last release.",
   "packages": {
     ".": {
       "release-type": "simple",

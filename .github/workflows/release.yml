@@ -3,6 +3,12 @@ name: release
 on:
   push:
     branches: [main]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: A release whose publishing failed, such as v0.1.0, sdk-python-v0.1.0 or sdk-ts-v0.1.0.
+        type: string
+        required: true
 
 permissions:
   contents: read
@@ -18,17 +24,18 @@ jobs:
     # The app key lives in this environment, which only main may use.
     environment: release
     outputs:
-      server: ${{ steps.release.outputs.release_created }}
-      server-version: ${{ steps.release.outputs.version }}
-      server-tag: ${{ steps.release.outputs.tag_name }}
-      server-sha: ${{ steps.release.outputs.sha }}
-      sdk-python: ${{ steps.release.outputs['sdk/python--release_created'] }}
-      sdk-python-sha: ${{ steps.release.outputs['sdk/python--sha'] }}
-      sdk-ts: ${{ steps.release.outputs['sdk/ts--release_created'] }}
-      sdk-ts-sha: ${{ steps.release.outputs['sdk/ts--sha'] }}
+      server: ${{ steps.release.outputs.release_created || steps.again.outputs.server }}
+      server-version: ${{ steps.release.outputs.version || steps.again.outputs.version }}
+      server-tag: ${{ steps.release.outputs.tag_name || steps.again.outputs.tag }}
+      server-sha: ${{ steps.release.outputs.sha || steps.again.outputs.sha }}
+      sdk-python: ${{ steps.release.outputs['sdk/python--release_created'] || steps.again.outputs.sdk-python }}
+      sdk-python-sha: ${{ steps.release.outputs['sdk/python--sha'] || steps.again.outputs.sha }}
+      sdk-ts: ${{ steps.release.outputs['sdk/ts--release_created'] || steps.again.outputs.sdk-ts }}
+      sdk-ts-sha: ${{ steps.release.outputs['sdk/ts--sha'] || steps.again.outputs.sha }}
     steps:
       # Pull requests opened with GITHUB_TOKEN start no workflows, so release PRs would get no checks.
       - id: app
+        if: github.event_name == 'push'
         uses: actions/create-github-app-token@f418cff399f7aef4c2f0ad47e25ca7a6abbdd6fc # v3.4.0
         with:
           client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
@@ -38,15 +45,39 @@ jobs:
           permission-issues: write
       # Releases first, on their own: if the pull requests fail afterwards, a rerun still publishes.
       - id: release
+        if: github.event_name == 'push'
         uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
         with:
           token: ${{ steps.app.outputs.token }}
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
           skip-github-pull-request: true
+      # release-please reports a release only once, so a release whose publishing failed is named by hand.
+      - id: again
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          case "$TAG" in
+            v[0-9]*) part=server ;;
+            sdk-python-v[0-9]*) part=sdk-python ;;
+            sdk-ts-v[0-9]*) part=sdk-ts ;;
+            *) echo "$TAG is not a release tag of plsremind" >&2; exit 1 ;;
+          esac
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null
+          {
+            echo "$part=true"
+            version="${TAG#sdk-python-}"
+            version="${version#sdk-ts-}"
+            echo "version=${version#v}"
+            echo "tag=$TAG"
+            echo "sha=$(gh api "repos/$GITHUB_REPOSITORY/commits/$TAG" --jq .sha)"
+          } >> "$GITHUB_OUTPUT"
 
   release-pull-requests:
     needs: release-please
+    if: github.event_name == 'push'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     environment: release
@@ -100,8 +131,35 @@ jobs:
           bundle="$(deploy/bundle.sh "$RUNNER_TEMP/bundle")"
           gh release upload "$TAG" "$bundle" --clobber
 
-  sdk-python:
+  # Built apart from the publishing job, so that nothing the build runs can reach the token PyPI accepts.
+  sdk-python-build:
     needs: release-please
+    if: needs.release-please.outputs.sdk-python == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.release-please.outputs.sdk-python-sha }}
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
+        with:
+          # renovate: uv
+          version: "0.13.10"
+          enable-cache: false
+      - run: uv build
+        working-directory: sdk/python
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: sdk-python-dist
+          path: sdk/python/dist/
+          if-no-files-found: error
+          retention-days: 7
+
+  sdk-python:
+    needs: [release-please, sdk-python-build]
     if: needs.release-please.outputs.sdk-python == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
@@ -109,19 +167,17 @@ jobs:
       name: release
       url: https://pypi.org/project/plsremind/
     permissions:
-      contents: read
       id-token: write
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          ref: ${{ needs.release-please.outputs.sdk-python-sha }}
-          persist-credentials: false
-      - uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
-      - run: uv build
-        working-directory: sdk/python
+          name: sdk-python-dist
+          path: dist
       - uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086 # v1.14.3
         with:
-          packages-dir: sdk/python/dist
+          packages-dir: dist
+          # A release published again after a failure may already have files on PyPI.
+          skip-existing: true
 
   sdk-ts:
     needs: release-please
@@ -148,11 +204,24 @@ jobs:
           have="$(npm --version)"
           [ "$(printf '11.5.1\n%s\n' "$have" | sort -V | head -n 1)" = 11.5.1 ] \
             || { echo "npm $have is too old for trusted publishing" >&2; exit 1; }
+      - id: published
+        name: A release published again after a failure may already be on npm
+        working-directory: sdk/ts
+        run: |
+          version="$(node -p 'require("./package.json").version')"
+          if [ "$(npm view "plsremind@$version" version 2>/dev/null)" = "$version" ]; then
+            echo "plsremind $version is already on npm"
+            echo "done=true" >> "$GITHUB_OUTPUT"
+          fi
       # No install scripts in a job that can mint a publishing token.
-      - run: npm ci --ignore-scripts --workspace sdk/ts
-      - run: npm run build
+      - if: steps.published.outputs.done != 'true'
+        run: npm ci --ignore-scripts --workspace sdk/ts
+      - if: steps.published.outputs.done != 'true'
+        run: npm run build
         working-directory: sdk/ts
-      - run: npm run check:pack
+      - if: steps.published.outputs.done != 'true'
+        run: npm run check:pack
         working-directory: sdk/ts
-      - run: npm publish
+      - if: steps.published.outputs.done != 'true'
+        run: npm publish
         working-directory: sdk/ts

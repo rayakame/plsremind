@@ -54,5 +54,17 @@
       "matchUpdateTypes": ["major"],
       "enabled": false
     }
+  ],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "The uv that builds the Python SDK for a release.",
+      "managerFilePatterns": ["/^\\.github/workflows/release\\.yml$/"],
+      "matchStrings": [
+        "# renovate: uv\\s+version: \"(?<currentValue>[^\"]+)\""
+      ],
+      "datasourceTemplate": "pypi",
+      "depNameTemplate": "uv"
+    }
   ]
 }
