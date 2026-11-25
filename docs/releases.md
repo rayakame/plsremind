@@ -41,9 +41,10 @@ it tags the release, and the release workflow publishes it: images for both arch
 provenance, the bundle, or the SDK package. Before a server release, a test updates the previous
 release, full of data, to the new one.
 
-When publishing fails, rerun only the failed jobs of that run. If that is no longer possible,
-run the release workflow by hand on `main` with the release's tag (`v0.2.1`, `sdk-python-v0.3.0`
-...): it publishes from the tagged commit and skips what is already out.
+When publishing fails, rerun only the failed jobs of that run, within a week: after that, what
+the run built has expired and the rerun fails too. Otherwise, or when a rerun fails, run the
+release workflow by hand on `main` with the release's tag (`v0.2.1`, `sdk-python-v0.3.0` ...):
+it publishes from the tagged commit, finishes what is half out and skips what is already out.
 
 Rules for pull requests:
 

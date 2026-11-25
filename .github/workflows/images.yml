@@ -170,7 +170,8 @@ jobs:
   merge:
     name: publish ${{ matrix.image }}
     needs: [guard, build]
-    if: needs.guard.outputs.todo != '[]'
+    # Also when nothing was built: an image from an earlier attempt may still lack tags or its attestation.
+    if: ${{ !cancelled() && needs.guard.result == 'success' && (needs.build.result == 'success' || needs.build.result == 'skipped') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
@@ -181,9 +182,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        image: ${{ fromJSON(needs.guard.outputs.todo) }}
+        image: [plsremind, plsremind-discord]
+    env:
+      IMAGE: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}
+      VERSION: ${{ inputs.version }}
     steps:
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        if: contains(fromJSON(needs.guard.outputs.todo), matrix.image)
         with:
           # The image last, since digests-plsremind-* would also take plsremind-discord's.
           pattern: digests-*-${{ matrix.image }}
@@ -206,24 +211,38 @@ jobs:
             type=semver,pattern={{major}}.{{minor}},value=${{ inputs.version }},enable=${{ inputs.version != '' }}
             type=raw,value=latest,enable=${{ inputs.version != '' && !contains(inputs.version, '-') }}
       - id: manifest
-        name: Join the architectures into one image
-        working-directory: digests
+        name: Join the architectures into one image, or finish one joined before
         env:
-          IMAGE: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}
           TAGS: ${{ steps.meta.outputs.tags }}
         run: |
           args=()
           while IFS= read -r tag; do
-            [ -n "$tag" ] && args+=(--tag "$tag")
+            [ -n "$tag" ] || continue
+            case "$tag" in
+              *:edge | *:"$VERSION") ;;
+              *)
+                # A minor or latest tag that already points at a newer release stays there.
+                current="$(docker buildx imagetools inspect "$tag" --format '{{ index (index .Image "linux/amd64").Config.Labels "org.opencontainers.image.version" }}' 2>/dev/null || true)"
+                if [ -n "$current" ] && [ "$current" != "$VERSION" ] \
+                  && [ "$(printf '%s\n%s\n' "$current" "$VERSION" | sort -V | tail -n 1)" = "$current" ]; then
+                  echo "$tag stays at $current"
+                  continue
+                fi
+                ;;
+            esac
+            args+=(--tag "$tag")
           done <<< "$TAGS"
-          for digest in *; do
-            args+=("$IMAGE@sha256:$digest")
-          done
+          if [ -d digests ]; then
+            for digest in digests/*; do
+              args+=("$IMAGE@sha256:${digest#digests/}")
+            done
+          else
+            args+=("$IMAGE:$VERSION")
+          fi
           docker buildx imagetools create "${args[@]}"
-          first="$(head -n 1 <<< "$TAGS")"
-          echo "digest=$(docker buildx imagetools inspect "$first" --format '{{json .Manifest}}' | jq -r .digest)" >> "$GITHUB_OUTPUT"
+          echo "digest=$(docker buildx imagetools inspect "$IMAGE:${VERSION:-edge}" --format '{{json .Manifest}}' | jq -r .digest)" >> "$GITHUB_OUTPUT"
       - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
-          subject-name: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}
+          subject-name: ${{ env.IMAGE }}
           subject-digest: ${{ steps.manifest.outputs.digest }}
           push-to-registry: true
