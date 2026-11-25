@@ -155,6 +155,8 @@ guide() {
 }
 guide swarm-backup >/dev/null
 [ -s "$work/guide/plsremind.dump" ] || fail "the guide's backup wrote no dump"
+expect "the guide's dump is readable by its owner alone" \
+  "$(python3 -c 'import os, sys; print(oct(os.stat(sys.argv[1]).st_mode & 0o777))' "$work/guide/plsremind.dump")" 0o600
 echo "ok  the guide's backup wrote a dump"
 add_item "after the backup"
 guide swarm-restore >/dev/null 2>&1 || fail "the guide's restore failed"
@@ -162,6 +164,9 @@ wait_ready 120 || fail "the hub was not ready two minutes after the restore"
 titles="$(curl -fsS -b "$jar" "$base/users/@me/items" | grep -o '"title":"[^"]*"' | sort | tr '\n' ' ')"
 case "$titles" in *'"title":"after the backup"'*) fail "the restore kept what came after the backup";; esac
 case "$titles" in *'"title":"before the backup"'*) ;; *) fail "the restore lost the item from before the backup: $titles";; esac
+expect "the database the restore replaced is kept until it is dropped by hand" \
+  "$(docker exec "$(docker ps -q --filter "label=com.docker.swarm.service.name=${stack}_db")" psql --username plsremind \
+    --dbname postgres -tA -c "SELECT count(*) FROM pg_database WHERE datname = 'plsremind_replaced'")" 1
 expect "the restore scaled the bot back" \
   "$(docker service inspect "${stack}_discord" --format '{{.Spec.Mode.Replicated.Replicas}}')" 1
 echo "ok  the guide's restore brought the backup back"

@@ -45,7 +45,7 @@ comes with a new series, and its release notes name it.
 
 | Tag | Points at |
 |---|---|
-| `0.2` | the newest release of the series 0.2; this is what the deploy files name |
+| `0.2` | the newest release of the series 0.2, for example; a series tag is what the deploy files name |
 | `0.2.3` | that one release, for good |
 | `latest` | the newest release, also of a newer series |
 | `1` | from 1.0 on, the newest release of 1.x |

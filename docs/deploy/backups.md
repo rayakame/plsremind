@@ -20,17 +20,18 @@ Run these in the folder that holds `compose.yaml`.
 
 <!-- snippet: compose-backup -->
 ```sh
-docker compose exec -T db pg_dump --username plsremind --dbname plsremind --format custom > plsremind.dump.partial &&
+rm -f plsremind.dump.partial &&
+  (umask 077 && docker compose exec -T db pg_dump --username plsremind --dbname plsremind --format custom > plsremind.dump.partial) &&
   mv plsremind.dump.partial plsremind.dump
 ```
 
-The dump is written under a temporary name first, so that a dump that breaks off never takes
-the place of a good one. For a backup every night, with the date in the file's name, create a
-`backups` folder next to `compose.yaml` and add a cron entry like this (cron needs the `%`
-escaped):
+The dump holds everything in the database, so only its owner may read it. It is written under
+a temporary name first, so that a dump that breaks off never takes the place of a good one.
+For a backup every night, with the date in the file's name, create a `backups` folder next to
+`compose.yaml` and add a cron entry like this (cron needs the `%` escaped):
 
 ```sh
-0 3 * * * cd /path/to/plsremind && docker compose exec -T db pg_dump --username plsremind --dbname plsremind --format custom > backups/partial && mv backups/partial "backups/plsremind-$(date +\%Y\%m\%d).dump"
+0 3 * * * cd /path/to/plsremind && rm -f backups/partial && (umask 077 && docker compose exec -T db pg_dump --username plsremind --dbname plsremind --format custom > backups/partial) && mv backups/partial "backups/plsremind-$(date +\%Y\%m\%d).dump"
 ```
 
 Old dumps are not deleted; remove them yourself.
@@ -48,10 +49,10 @@ psql -c 'DROP DATABASE IF EXISTS plsremind_restore' -c 'CREATE DATABASE plsremin
     --no-owner --exit-on-error --single-transaction < plsremind.dump &&
   docker compose stop &&
   docker compose up -d --wait db &&
-  psql -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = 'plsremind'" \
+  psql -c 'DROP DATABASE IF EXISTS plsremind_replaced' \
+    -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = 'plsremind'" \
     -c 'ALTER DATABASE plsremind RENAME TO plsremind_replaced; ALTER DATABASE plsremind_restore RENAME TO plsremind;' &&
-  docker compose up -d &&
-  psql -c 'DROP DATABASE plsremind_replaced'
+  docker compose up -d
 ```
 
 What it does, step by step:
@@ -62,11 +63,16 @@ What it does, step by step:
 2. It stops everything that writes to the database (the hub and every bot), starts the
    database alone again, and swaps the two databases in one statement, so that there is never
    a moment without a `plsremind` database.
-3. It starts everything again and drops the database it replaced.
+3. It starts everything again. The database it replaced stays as `plsremind_replaced`, so that
+   you can go back to it if the restored one turns out wrong.
 
-If it stops after step 2 has begun, start everything again with `docker compose up -d`. If the
-last line fails, the old database is still there as `plsremind_replaced`; drop it once you no
-longer need it.
+If it stops after step 2 has begun, start everything again with `docker compose up -d`. Once the
+hub runs as it should on the restored database, drop the old one (the next restore drops it
+too):
+
+```sh
+docker compose exec -T db psql --username plsremind --dbname postgres -c 'DROP DATABASE plsremind_replaced'
+```
 
 ## Docker Swarm
 
@@ -80,7 +86,8 @@ which only a manager can do; the stack keeps the database on one (see
 <!-- snippet: swarm-backup -->
 ```sh
 db="$(docker ps -q --filter label=com.docker.swarm.service.name=plsremind_db)" &&
-  docker exec "$db" pg_dump --username plsremind --dbname plsremind --format custom > plsremind.dump.partial &&
+  rm -f plsremind.dump.partial &&
+  (umask 077 && docker exec "$db" pg_dump --username plsremind --dbname plsremind --format custom > plsremind.dump.partial) &&
   mv plsremind.dump.partial plsremind.dump
 ```
 
@@ -97,18 +104,24 @@ psql -c 'DROP DATABASE IF EXISTS plsremind_restore' -c 'CREATE DATABASE plsremin
   docker exec -i "$db" pg_restore --username plsremind --dbname plsremind_restore \
     --no-owner --exit-on-error --single-transaction < plsremind.dump &&
   echo "$counts" | sed 's/=.*/=0/' | xargs docker service scale &&
-  psql -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = 'plsremind'" \
+  psql -c 'DROP DATABASE IF EXISTS plsremind_replaced' \
+    -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = 'plsremind'" \
     -c 'ALTER DATABASE plsremind RENAME TO plsremind_replaced; ALTER DATABASE plsremind_restore RENAME TO plsremind;' &&
-  echo "$counts" | xargs docker service scale --detach &&
-  psql -c 'DROP DATABASE plsremind_replaced'
+  echo "$counts" | xargs docker service scale --detach
 ```
 
 It works like the one for Compose: it restores next to the database in use and stops there if
 that fails; then it scales the stack's other services (the hub and every bot) to 0, swaps the
-databases, and scales them back to what they were. Services of your own that run in global
-mode, a tunnel for instance, keep running; they do not write to the database. If it stops after
-the scaling has begun, scale them back yourself with `docker service scale plsremind_hub=1` and
-the same for each bot.
+databases, and scales them back to what they were, keeping the replaced database as
+`plsremind_replaced`. Services of your own that run in global mode, a tunnel for instance, keep
+running; they do not write to the database. If it stops after the scaling has begun, scale them
+back yourself with `docker service scale plsremind_hub=1` and the same for each bot. Once the
+hub runs as it should, drop the old database:
+
+```sh
+docker exec "$(docker ps -q --filter label=com.docker.swarm.service.name=plsremind_db)" \
+  psql --username plsremind --dbname postgres -c 'DROP DATABASE plsremind_replaced'
+```
 
 ## Going back after an update
 

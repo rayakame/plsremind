@@ -216,6 +216,8 @@ guide() {
 }
 guide compose-backup >/dev/null
 [ -s "$work/guide/plsremind.dump" ] || fail "the guide's backup wrote no dump"
+expect "the guide's dump is readable by its owner alone" \
+  "$(python3 -c 'import os, sys; print(oct(os.stat(sys.argv[1]).st_mode & 0o777))' "$work/guide/plsremind.dump")" 0o600
 cp "$work/guide/plsremind.dump" "$work/backup.dump"
 echo "ok  the guide's backup wrote a dump"
 curl -fsS -o /dev/null -b "$jar" -H 'Content-Type: application/json' -H "Origin: ${PLSREMIND_PUBLIC_URL}" \
@@ -248,5 +250,14 @@ curl -fsS "${PLSREMIND_PUBLIC_URL}/readyz" >/dev/null 2>&1 || fail "the hub was 
 titles="$(curl -fsS -b "$jar" "$base/users/@me/items" | grep -o '"title":"[^"]*"' | sort | tr '\n' ' ')"
 case "$titles" in *'"title":"after the backup"'*) fail "the restore kept what came after the backup";; esac
 case "$titles" in *'"title":"first item"'*) echo "ok  the guide's restore brought the backup back past a crashing hub";; *) fail "the restore lost the first item: $titles";; esac
+expect "the database the restore replaced is kept until it is dropped by hand" \
+  "$(docker compose exec -T db psql --username plsremind --dbname postgres -tA -c "SELECT count(*) FROM pg_database WHERE datname = 'plsremind_replaced'")" 1
+guide compose-restore >/dev/null 2>&1 || fail "a second restore failed on the database the first one kept"
+for _ in $(seq 1 60); do
+  curl -fsS "${PLSREMIND_PUBLIC_URL}/readyz" >/dev/null 2>&1 && break
+  sleep 1
+done
+curl -fsS -b "$jar" "$base/users/@me/items" | grep -q '"title":"first item"' || fail "the second restore lost the first item"
+echo "ok  a second restore takes the place of what the first one kept"
 
 echo "smoke: all good"
