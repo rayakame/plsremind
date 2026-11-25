@@ -102,8 +102,13 @@ jobs:
         env:
           GH_TOKEN: ${{ steps.app.outputs.token }}
         run: |
-          head="$(gh pr list --repo "$GITHUB_REPOSITORY" --state open \
-            --head release-please--branches--main--components--plsremind --json headRefOid --jq '.[0].headRefOid // ""')"
+          branch=release-please--branches--main--components--plsremind
+          open="$(gh pr list --repo "$GITHUB_REPOSITORY" --state open --head "$branch" --json number --jq length)"
+          head=""
+          # The branch itself, since a pull request's head can lag a push that just happened.
+          if [ "$open" != 0 ]; then
+            head="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/$branch" --jq .object.sha)"
+          fi
           echo "head=$head" >> "$GITHUB_OUTPUT"
       - if: steps.server-pr.outputs.head != ''
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -181,6 +186,23 @@ jobs:
           cp deploy/.env.example "$files/env.example"
           deploy/pack-monitoring.sh "$files" >/dev/null
           gh release upload "$TAG" "$files"/* --clobber
+          deploy/mark-latest.sh
+
+  latest:
+    needs: release-please
+    if: needs.release-please.outputs.server == 'true' || needs.release-please.outputs.sdk-python == 'true' || needs.release-please.outputs.sdk-ts == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Keep the latest release a server release with its deploy files
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: deploy/mark-latest.sh
 
   # Built apart from the publishing job, so that nothing the build runs can reach the token PyPI accepts.
   sdk-python-build:

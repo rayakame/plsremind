@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+# Marks the newest server release that has its deploy files as the latest; the guides download from it.
+set -euo pipefail
+
+# GitHub makes every new release the latest, an SDK's too, and a server release before its files are attached.
+# Assigned on its own, so that a failed lookup fails instead of meaning "no release".
+finished="$(gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100" --jq '.[]
+  | select((.draft or .prerelease) | not) | select(.tag_name | test("^v[0-9]"))
+  | select(any(.assets[]; .name == "compose.yaml")) | .tag_name')"
+newest="$(head -n 1 <<< "$finished")"
+if [ -z "$newest" ]; then
+  echo "no server release has its deploy files yet"
+  exit 0
+fi
+gh release edit "$newest" --repo "$GITHUB_REPOSITORY" --latest >/dev/null
+echo "$newest is the latest release"
