@@ -162,8 +162,9 @@ jobs:
       ref: ${{ needs.release-please.outputs.server-sha }}
 
   deploy-files:
-    needs: [release-please, images]
-    if: needs.release-please.outputs.server == 'true'
+    # After latest, so that its marking of the previous release can never land after this one's.
+    needs: [release-please, images, latest]
+    if: ${{ !cancelled() && needs.release-please.outputs.server == 'true' && needs.images.result == 'success' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
