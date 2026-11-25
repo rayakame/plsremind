@@ -66,9 +66,47 @@ If it stops after step 2 has begun, start everything again with `docker compose 
 last line fails, the old database is still there as `plsremind_replaced`; drop it once you no
 longer need it.
 
-### Going back after an update
+## Docker Swarm
+
+Run these on the node that runs the database, for a stack deployed as `plsremind`. They find the
+database's container there by its service, `plsremind_db`.
+
+### Backing up
+
+<!-- snippet: swarm-backup -->
+```sh
+db="$(docker ps -q --filter label=com.docker.swarm.service.name=plsremind_db)" &&
+  docker exec "$db" pg_dump --username plsremind --dbname plsremind --format custom > plsremind.dump.partial &&
+  mv plsremind.dump.partial plsremind.dump
+```
+
+### Restoring
+
+<!-- snippet: swarm-restore -->
+```sh
+db="$(docker ps -q --filter label=com.docker.swarm.service.name=plsremind_db)"
+psql() { docker exec -i "$db" psql --username plsremind --dbname postgres --quiet -v ON_ERROR_STOP=1 "$@"; }
+writers="$(docker stack services plsremind --format '{{.Name}}' | grep -vx plsremind_db)"
+counts="$(for service in $writers; do echo "$service=$(docker service inspect --format '{{.Spec.Mode.Replicated.Replicas}}' "$service")"; done)"
+psql -c 'DROP DATABASE IF EXISTS plsremind_restore' -c 'CREATE DATABASE plsremind_restore OWNER plsremind' &&
+  docker exec -i "$db" pg_restore --username plsremind --dbname plsremind_restore \
+    --no-owner --exit-on-error --single-transaction < plsremind.dump &&
+  docker service scale $(for service in $writers; do echo "$service=0"; done) &&
+  psql -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = 'plsremind'" \
+    -c 'ALTER DATABASE plsremind RENAME TO plsremind_replaced; ALTER DATABASE plsremind_restore RENAME TO plsremind;' &&
+  docker service scale --detach $counts &&
+  psql -c 'DROP DATABASE plsremind_replaced'
+```
+
+It works like the one for Compose: it restores next to the database in use and stops there if
+that fails; then it scales every other service of the stack (the hub and every bot) to 0,
+swaps the databases, and scales them back to what they were. If it stops after the scaling
+has begun, scale them back yourself with `docker service scale plsremind_hub=1` and the same
+for each bot.
+
+## Going back after an update
 
 The hub updates its database when it starts, and an older hub refuses to start against a
 database a newer one has updated. Going back is therefore a restore: set the image tags in
-`compose.yaml` back to the series you had, then restore the dump you made before the update,
-as above. The restore starts the older hub against the older database.
+your deploy file back to the series you had and deploy it, then restore the dump you made
+before the update, as above. The restore starts the older hub against the older database.

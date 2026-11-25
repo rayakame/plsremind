@@ -7,6 +7,7 @@ on:
       - "hub/**"
       - "docs/api/**"
       - "deploy/**"
+      - "docs/deploy/**"
       - "web/**"
       - "sdk/ts/**"
       - "package*.json"
@@ -17,6 +18,7 @@ on:
       - "hub/**"
       - "docs/api/**"
       - "deploy/**"
+      - "docs/deploy/**"
       - "web/**"
       - "sdk/ts/**"
       - "package*.json"
@@ -59,6 +61,17 @@ jobs:
         with:
           go-version-file: hub/go.mod
       - run: deploy/smoke.sh
+
+  swarm:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: docker build -f hub/Dockerfile -t plsremind:candidate .
+      - run: docker build -f connections/discord/Dockerfile -t plsremind-discord:candidate .
+      - run: deploy/swarm-test.sh plsremind:candidate plsremind-discord:candidate
 
   upgrade:
     # Only before a server release, or by hand: it takes several minutes.

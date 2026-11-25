@@ -1,0 +1,93 @@
+# plsremind as a Docker Swarm stack: docker stack deploy -c stack.yaml plsremind
+# Swarm has no start order; the hub and the bot end while what they need is not there yet, and are started again.
+services:
+  hub:
+    image: ghcr.io/rayakame/plsremind:0.0
+    environment:
+      # The password travels separately so that it may contain any character.
+      PLSREMIND_DATABASE_URL: postgres://plsremind@db:5432/plsremind?sslmode=disable
+      PGPASSWORD: ${POSTGRES_PASSWORD:-plsremind}
+      PLSREMIND_PUBLIC_URL: ${PLSREMIND_PUBLIC_URL:-http://localhost:8080}
+      PLSREMIND_SECRET_KEY: ${PLSREMIND_SECRET_KEY:?set PLSREMIND_SECRET_KEY, see docs/deploy/settings.md}
+      PLSREMIND_PROXY_HEADER: ${PLSREMIND_PROXY_HEADER:-}
+      # Reachable inside this network only; the port is not published.
+      PLSREMIND_METRICS_ADDR: ":9090"
+    # Behind a tunnel or a proxy on the plsremind network, delete this.
+    ports:
+      # Host mode, so that the hub sees the client's address and not one of Swarm's.
+      - target: 8080
+        published: 8080
+        protocol: tcp
+        mode: host
+    healthcheck:
+      test: ["CMD", "/plsremind", "health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      # Migrations run before the hub listens; a long one must not count as a failure.
+      start_period: 5m
+    deploy:
+      replicas: 1
+      update_config:
+        # Two hubs must never migrate the database at the same time.
+        order: stop-first
+      restart_policy:
+        condition: any
+        delay: 5s
+
+  db:
+    image: postgres:18
+    environment:
+      POSTGRES_USER: plsremind
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-plsremind}
+      POSTGRES_DB: plsremind
+    volumes:
+      - db:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U plsremind -d plsremind"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    deploy:
+      placement:
+        # Its volume stays on the node it was made on; on several nodes, pin it to a labelled one.
+        constraints: ["node.role == manager"]
+      restart_policy:
+        condition: any
+        delay: 5s
+
+  # The Discord bot. Without one, delete this service.
+  discord:
+    image: ghcr.io/rayakame/plsremind-discord:0.0
+    # A message on its way to Discord gets up to ten seconds to be sent and recorded.
+    stop_grace_period: 20s
+    environment:
+      DISCORD_TOKEN: ${DISCORD_TOKEN:-}
+      PLSREMIND_TOKEN: ${PLSREMIND_DISCORD_TOKEN:-}
+      # Inside the stack's network the bot reaches the hub directly, not through the public address.
+      PLSREMIND_URL: http://hub:8080
+      PLSREMIND_PUBLIC_URL: ${PLSREMIND_PUBLIC_URL:-http://localhost:8080}
+      PLSREMIND_DISCORD_METRICS_ADDR: "0.0.0.0:9091"
+    volumes:
+      - discord:/data
+    deploy:
+      # One bot keeps one SQLite file; a second copy would send every reminder twice.
+      replicas: 1
+      placement:
+        constraints: ["node.role == manager"]
+      update_config:
+        order: stop-first
+      restart_policy:
+        condition: any
+        delay: 5s
+
+networks:
+  default:
+    # A fixed name, so that a tunnel, a proxy or the monitoring add-on can join it.
+    name: plsremind
+    driver: overlay
+    attachable: true
+
+volumes:
+  db:
+  discord:
