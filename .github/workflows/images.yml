@@ -215,7 +215,20 @@ jobs:
         name: Join the architectures into one image, or finish one joined before
         env:
           TAGS: ${{ steps.meta.outputs.tags }}
+          REF: ${{ inputs.ref }}
         run: |
+          # A run started later, by hand, may have published this version since the guard looked.
+          if [ -d digests ] && [ -n "$VERSION" ]; then
+            if labels="$(docker buildx imagetools inspect "$IMAGE:$VERSION" --format '{{ json (index .Image "linux/amd64").Config.Labels }}' 2> inspect.err)"; then
+              revision="$(jq -r '."org.opencontainers.image.revision" // ""' <<< "$labels")"
+              [ "$revision" = "$REF" ] || { echo "$IMAGE:$VERSION already exists from $revision" >&2; exit 1; }
+              echo "$IMAGE:$VERSION is out already and stays as it is; the other tags follow it"
+              rm -r digests
+            elif ! grep -qiE 'not found|manifest unknown|name unknown' inspect.err; then
+              cat inspect.err >&2
+              exit 1
+            fi
+          fi
           args=()
           while IFS= read -r tag; do
             [ -n "$tag" ] || continue
