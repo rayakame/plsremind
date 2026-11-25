@@ -156,7 +156,7 @@ jobs:
       version: ${{ needs.release-please.outputs.server-version }}
       ref: ${{ needs.release-please.outputs.server-sha }}
 
-  bundle:
+  deploy-files:
     needs: [release-please, images]
     if: needs.release-please.outputs.server == 'true'
     runs-on: ubuntu-24.04
@@ -169,13 +169,18 @@ jobs:
         with:
           ref: ${{ needs.release-please.outputs.server-sha }}
           persist-credentials: false
-      - name: Attach the deploy bundle to the release
+      - name: Attach the deploy files to the release
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ needs.release-please.outputs.server-tag }}
         run: |
-          bundle="$(deploy/bundle.sh "$RUNNER_TEMP/bundle")"
-          gh release upload "$TAG" "$bundle" --clobber
+          python3 deploy/series.py --check
+          files="$RUNNER_TEMP/deploy-files"
+          mkdir -p "$files"
+          cp deploy/compose.yaml deploy/stack.yaml "$files/"
+          cp deploy/.env.example "$files/env.example"
+          deploy/pack-monitoring.sh "$files" >/dev/null
+          gh release upload "$TAG" "$files"/* --clobber
 
   # Built apart from the publishing job, so that nothing the build runs can reach the token PyPI accepts.
   sdk-python-build:

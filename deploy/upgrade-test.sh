@@ -1,14 +1,17 @@
 #!/usr/bin/env bash
 # Updates the previous release, full of data, to a candidate hub image and checks that it all survived.
-# PREVIOUS_BUNDLE and PREVIOUS_HUB_IMAGE stand in for a published release, to try this before one exists.
+# PREVIOUS_COMPOSE and PREVIOUS_HUB_IMAGE stand in for a published release, to try this before one exists.
 set -euo pipefail
 
+if [ -n "${PREVIOUS_COMPOSE:-}" ]; then
+  PREVIOUS_COMPOSE="$(cd "$(dirname "$PREVIOUS_COMPOSE")" && pwd)/$(basename "$PREVIOUS_COMPOSE")"
+fi
 cd "$(dirname "$0")"
 previous="${1:?usage: ./upgrade-test.sh <previous version|none> <candidate hub image>}"
 candidate="${2:?usage: ./upgrade-test.sh <previous version|none> <candidate hub image>}"
 work="$(mktemp -d)"
 server="$work/server"
-port="${PLSREMIND_PORT:-18090}"
+port=18090
 base="http://localhost:${port}"
 export COMPOSE_PROJECT_NAME=plsremind-upgrade
 unset COMPOSE_FILE COMPOSE_PROFILES
@@ -48,8 +51,19 @@ count_rows() {
     ORDER BY 1" > "$1"
 }
 
+# Its own port and network, and the hub pinned to an exact image rather than to the series.
 use_hub() {
-  printf 'services:\n  hub:\n    image: %s\n    pull_policy: %s\n' "$1" "$2" > "$server/compose.override.yaml"
+  cat > "$server/compose.override.yaml" <<YAML
+services:
+  hub:
+    image: $1
+    pull_policy: $2
+    ports: !override
+      - "${port}:8080"
+networks:
+  default:
+    name: plsremind-upgrade
+YAML
 }
 
 start() {
@@ -59,19 +73,19 @@ start() {
 mkdir -p "$server"
 {
   echo "PLSREMIND_SECRET_KEY=$(openssl rand -base64 32)"
-  echo "PLSREMIND_PORT=${port}"
   echo "PLSREMIND_PUBLIC_URL=${base}"
 } > "$server/.env"
 
 if [ "$previous" != "none" ]; then
-  bundle="${PREVIOUS_BUNDLE:-}"
-  if [ -z "$bundle" ]; then
-    gh release download "v${previous}" --pattern 'plsremind-deploy-*.tar.gz' --dir "$work"
-    bundle="$(ls "$work"/plsremind-deploy-*.tar.gz)"
+  if [ -n "${PREVIOUS_COMPOSE:-}" ]; then
+    cp "$PREVIOUS_COMPOSE" "$server/compose.yaml"
+  else
+    gh release download "v${previous}" --pattern compose.yaml --dir "$server"
   fi
-  tar -xzf "$bundle" -C "$server" --strip-components=1
   if [ -n "${PREVIOUS_HUB_IMAGE:-}" ]; then
     use_hub "$PREVIOUS_HUB_IMAGE" never
+  else
+    use_hub "ghcr.io/rayakame/plsremind:${previous}" missing
   fi
   start
   seed
@@ -79,7 +93,7 @@ if [ "$previous" != "none" ]; then
   echo "ok  seeded release ${previous}"
 fi
 
-tar -xzf "$(./bundle.sh "$work")" -C "$server" --strip-components=1
+cp compose.yaml "$server/compose.yaml"
 use_hub "$candidate" never
 start
 if [ "$previous" = "none" ]; then

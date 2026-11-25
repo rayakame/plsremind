@@ -209,6 +209,7 @@ jobs:
             type=raw,value=edge,enable=${{ !inputs.version }}
             type=semver,pattern={{version}},value=${{ inputs.version }},enable=${{ inputs.version != '' }}
             type=semver,pattern={{major}}.{{minor}},value=${{ inputs.version }},enable=${{ inputs.version != '' }}
+            type=semver,pattern={{major}},value=${{ inputs.version }},enable=${{ inputs.version != '' && !startsWith(inputs.version, '0.') && !contains(inputs.version, '-') }}
             type=raw,value=latest,enable=${{ inputs.version != '' && !contains(inputs.version, '-') }}
       - id: manifest
         name: Join the architectures into one image, or finish one joined before
