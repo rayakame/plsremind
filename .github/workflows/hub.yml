@@ -74,17 +74,12 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          # Assigned on their own, so that a failed lookup fails the job instead of meaning "no release".
-          tags="$(gh release list --repo "$GITHUB_REPOSITORY" --exclude-drafts --exclude-pre-releases --limit 50 \
-            --json tagName --jq '.[] | select(.tagName | test("^v[0-9]")) | .tagName')"
-          previous=none
-          for tag in $tags; do
-            # The bundle is attached after the images are out; a release still publishing has neither.
-            assets="$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name')"
-            if grep -q '^plsremind-deploy-.*\.tar\.gz$' <<< "$assets"; then
-              previous="$tag"
-              break
-            fi
-          done
+          # The bundle is attached after the images are out, so a release still publishing is passed over.
+          # Assigned on its own, so that a failed lookup fails the job instead of meaning "no release".
+          finished="$(gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100" --jq '.[]
+            | select((.draft or .prerelease) | not) | select(.tag_name | test("^v[0-9]"))
+            | select(any(.assets[]; .name | test("^plsremind-deploy-.*[.]tar[.]gz$"))) | .tag_name')"
+          previous="$(head -n 1 <<< "$finished")"
+          previous="${previous:-none}"
           deploy/upgrade-test.sh "${previous#v}" plsremind:candidate
 
