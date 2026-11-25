@@ -37,6 +37,8 @@ jobs:
     permissions:
       contents: read
       packages: read
+    outputs:
+      todo: ${{ steps.todo.outputs.todo }}
     steps:
       - name: Edge only comes from main
         if: ${{ !inputs.version }}
@@ -48,28 +50,39 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: A released version is never built again from another commit
-        if: ${{ inputs.version }}
+      - id: todo
+        name: A released version is built once, from its own commit
         env:
           OWNER: ${{ github.repository_owner }}
           VERSION: ${{ inputs.version }}
           REF: ${{ inputs.ref }}
         run: |
+          todo=()
           for image in plsremind plsremind-discord; do
+            if [ -z "$VERSION" ]; then
+              todo+=("$image")
+              continue
+            fi
             ref="ghcr.io/$OWNER/$image:$VERSION"
             if ! labels="$(docker buildx imagetools inspect "$ref" --format '{{ json (index .Image "linux/amd64").Config.Labels }}' 2> inspect.err)"; then
               # GHCR denies what does not exist yet; whoever may not read it may not push it either.
-              grep -qiE 'not found|manifest unknown|name unknown|denied|403' inspect.err && continue
+              if grep -qiE 'not found|manifest unknown|name unknown|denied|403' inspect.err; then
+                todo+=("$image")
+                continue
+              fi
               cat inspect.err >&2
               exit 1
             fi
             revision="$(jq -r '."org.opencontainers.image.revision" // ""' <<< "$labels")"
             [ "$revision" = "$REF" ] || { echo "$ref already exists from $revision" >&2; exit 1; }
+            echo "$ref already exists from this commit and stays as it is"
           done
+          echo "todo=$(jq -cn '$ARGS.positional' --args "${todo[@]}")" >> "$GITHUB_OUTPUT"
 
   build:
     name: build ${{ matrix.image }} ${{ matrix.platform }}
     needs: guard
+    if: needs.guard.outputs.todo != '[]'
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 40
     permissions:
@@ -78,19 +91,17 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        image: [plsremind, plsremind-discord]
+        image: ${{ fromJSON(needs.guard.outputs.todo) }}
         platform: [linux/amd64, linux/arm64]
         include:
-          - image: plsremind
-            dockerfile: hub/Dockerfile
-          - image: plsremind-discord
-            dockerfile: connections/discord/Dockerfile
           - platform: linux/amd64
             runner: ubuntu-24.04
             arch: amd64
           - platform: linux/arm64
             runner: ubuntu-24.04-arm
             arch: arm64
+    env:
+      VERSION: ${{ inputs.version || format('edge-{0}', github.sha) }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -114,15 +125,35 @@ jobs:
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
-          file: ${{ matrix.dockerfile }}
+          file: ${{ matrix.image == 'plsremind' && 'hub/Dockerfile' || 'connections/discord/Dockerfile' }}
           platforms: ${{ matrix.platform }}
-          build-args: VERSION=${{ inputs.version || format('edge-{0}', github.sha) }}
+          build-args: VERSION=${{ env.VERSION }}
           labels: ${{ steps.meta.outputs.labels }}
           outputs: type=image,name=ghcr.io/${{ github.repository_owner }}/${{ matrix.image }},push-by-digest=true,name-canonical=true,push=true
           provenance: mode=max
           sbom: true
           cache-from: type=gha,scope=${{ matrix.image }}-${{ matrix.arch }}
           cache-to: type=gha,mode=max,scope=${{ matrix.image }}-${{ matrix.arch }}
+      # Checked by digest on its own architecture, before any tag points at it.
+      - name: The hub runs and knows its version
+        if: matrix.image == 'plsremind'
+        env:
+          IMAGE: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}@${{ steps.build.outputs.digest }}
+        run: |
+          got="$(docker run --rm "$IMAGE" version)"
+          [ "$got" = "$VERSION" ] || { echo "the hub says $got" >&2; exit 1; }
+      - name: The bot runs and knows its version
+        if: matrix.image == 'plsremind-discord'
+        env:
+          IMAGE: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}@${{ steps.build.outputs.digest }}
+        run: |
+          docker run --rm "$IMAGE" 2> out.txt && exit 1
+          grep -q DISCORD_TOKEN out.txt
+          got="$(docker run --rm --entrypoint /app/connections/discord/.venv/bin/python "$IMAGE" -c 'from plsremind_discord.about import __version__; print(__version__)')"
+          case "$VERSION" in
+            edge-*) ;;
+            *) [ "$got" = "$VERSION" ] || { echo "the bot says $got" >&2; exit 1; } ;;
+          esac
       - name: Keep the digest for the manifest
         env:
           DIGEST: ${{ steps.build.outputs.digest }}
@@ -134,11 +165,12 @@ jobs:
           name: digests-${{ matrix.arch }}-${{ matrix.image }}
           path: digests/*
           if-no-files-found: error
-          retention-days: 1
+          retention-days: 7
 
   merge:
     name: publish ${{ matrix.image }}
-    needs: build
+    needs: [guard, build]
+    if: needs.guard.outputs.todo != '[]'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
@@ -149,7 +181,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        image: [plsremind, plsremind-discord]
+        image: ${{ fromJSON(needs.guard.outputs.todo) }}
     steps:
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
@@ -195,44 +227,3 @@ jobs:
           subject-name: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}
           subject-digest: ${{ steps.manifest.outputs.digest }}
           push-to-registry: true
-
-  check:
-    name: check on ${{ matrix.arch }}
-    needs: merge
-    runs-on: ${{ matrix.runner }}
-    timeout-minutes: 10
-    permissions:
-      contents: read
-      packages: read
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - runner: ubuntu-24.04
-            arch: amd64
-          - runner: ubuntu-24.04-arm
-            arch: arm64
-    env:
-      TAG: ${{ inputs.version || 'edge' }}
-      OWNER: ${{ github.repository_owner }}
-    steps:
-      # A first push creates private packages, which only a signed-in pull can read.
-      - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-      - name: The hub runs and knows its version
-        run: |
-          got="$(docker run --rm "ghcr.io/$OWNER/plsremind:$TAG" version)"
-          case "$TAG" in
-            edge) [ "$got" = "edge-$GITHUB_SHA" ] ;;
-            *) [ "$got" = "$TAG" ] ;;
-          esac || { echo "the hub says $got" >&2; exit 1; }
-      - name: The bot runs and knows its version
-        run: |
-          image="ghcr.io/$OWNER/plsremind-discord:$TAG"
-          docker run --rm "$image" 2> out.txt && exit 1
-          grep -q DISCORD_TOKEN out.txt
-          got="$(docker run --rm --entrypoint /app/connections/discord/.venv/bin/python "$image" -c 'from plsremind_discord.about import __version__; print(__version__)')"
-          [ "$TAG" = edge ] || [ "$got" = "$TAG" ] || { echo "the bot says $got" >&2; exit 1; }
