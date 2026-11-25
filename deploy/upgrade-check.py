@@ -26,6 +26,10 @@ READS = [
 ]
 
 
+class NotThere(Exception):
+    pass
+
+
 class Hub:
     def __init__(self, base: str, cookies: http.cookiejar.CookieJar) -> None:
         self.base = base.rstrip("/")
@@ -43,10 +47,13 @@ class Hub:
             with self.opener.open(request, timeout=30) as answer:
                 raw = answer.read()
         except urllib.error.HTTPError as error:
+            if error.code == 404 and method == "GET":
+                raise NotThere(path) from None
             raise SystemExit(f"{method} {path}: {error.code} {error.read().decode(errors='replace')}") from None
         return json.loads(raw) if raw else None
 
 
+# In CI this runs against the previous release, so it may only use what that release already has.
 def seed(hub: Hub) -> dict[str, object]:
     hub.call("POST", "/setup", {"username": "admin", "password": PASSWORD})
     hub.call("PATCH", "/admin/settings", {"name": "Upgrade test"})
@@ -89,8 +96,12 @@ def seed(hub: Hub) -> dict[str, object]:
 def snapshot(hub: Hub, state: dict[str, object]) -> None:
     # Needs the Discord identity upgrade-test.sh writes, since only a linked account can be tested.
     test = hub.call("POST", f"/users/@me/connections/{state['app']}/tests")
-    reads = [*READS, f"/users/@me/connections/{state['app']}/tests/{test['id']}"]
-    state["reads"] = {path: hub.call("GET", path) for path in reads}
+    state["reads"] = {}
+    for path in [*READS, f"/users/@me/connections/{state['app']}/tests/{test['id']}"]:
+        try:
+            state["reads"][path] = hub.call("GET", path)
+        except NotThere:
+            print(f"skipped {path}: this release does not have it yet")
 
 
 # Values that change through use alone: a token's last use, a delivery or a test still on its way.
