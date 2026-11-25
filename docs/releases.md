@@ -4,12 +4,14 @@ plsremind is released in three parts, each with its own version and changelog:
 
 | Part | What it holds | Tag | Where it goes |
 |---|---|---|---|
-| The server | the hub with the dashboard, the Discord bot, the deploy bundle | `v0.3.1` | images on GHCR, the bundle on the GitHub release |
+| The server | the hub with the dashboard, the Discord bot, the deploy files | `v0.3.1` | images on GHCR, the deploy files on the GitHub release |
 | The Python SDK | `sdk/python` | `sdk-python-v0.2.0` | PyPI, as `plsremind` |
 | The TypeScript SDK | `sdk/ts` | `sdk-ts-v0.2.0` | npm, as `plsremind` |
 
 A self-hoster only needs the server's version. The hub and the bot of one release belong
-together and always carry the same number.
+together and always carry the same number. Their images are tagged with the exact version, the
+series the deploy files name, and `latest`; [docs/deploy](deploy/README.md#image-tags) lists
+the tags.
 
 ## What the numbers mean
 
@@ -30,7 +32,7 @@ one: released images and packages are never rebuilt. Updates of the base images 
 runs inside them come the same way, as patch releases.
 
 Going back to an older release is not supported. Back up before you update; going back means
-restoring that backup (see [self-hosting](self-hosting.md#updating)).
+restoring that backup (see [updating](deploy/updating.md)).
 
 ## How a release is made
 
@@ -38,7 +40,7 @@ Changes land on `main` through squash-merged pull requests whose titles are conv
 commits (`feat:`, `fix(hub):`, `docs:` ...); those titles become the changelog. release-please
 keeps one release pull request per part open, with the changelog and the next version. Merging
 it tags the release, and the release workflow publishes it: images for both architectures with
-provenance, the bundle, or the SDK package. Before a server release, a test updates the previous
+provenance and the deploy files, or the SDK package. Before a server release, a test updates the previous
 release, full of data, to the new one.
 
 When publishing fails, rerun only the failed jobs of that run, within a week: after that, what

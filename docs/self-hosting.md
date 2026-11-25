@@ -1,64 +1,11 @@
 # Self-hosting plsremind
 
-The hub is a single program that needs a PostgreSQL database. The quickest way to run
-both is Docker Compose.
-
-## Before you start
-
-The hub speaks plain HTTP on port 8080 and expects a reverse proxy in front of it that
-terminates HTTPS, for example Caddy, Traefik or nginx. Point the proxy at port 8080 and
-use the address people will type into their browser as `PLSREMIND_PUBLIC_URL`. The
-examples below use `https://todo.example.com`.
-
-To try the hub on your own machine first, leave `PLSREMIND_PUBLIC_URL` empty. It then
-defaults to `http://localhost:8080`, with the port of `PLSREMIND_PORT`, and every example works
-with that address instead.
-
-## Start
-
-Every release comes with a small bundle that holds everything a server needs: the compose
-file naming that release's images, an example `.env`, the backup scripts, the monitoring
-configuration and the examples. Nothing is built on your server.
-
-```sh
-version=0.0.0 # x-release-please-version
-mkdir plsremind && cd plsremind
-curl -fsSL "https://github.com/rayakame/plsremind/releases/download/v${version}/plsremind-deploy-${version}.tar.gz" \
-  | tar -xz --strip-components=1
-
-cp .env.example .env
-# The hub encrypts provider secrets with this key. Keep it with your backups: without it
-# the stored secrets cannot be read again.
-sed -i.bak "s|^PLSREMIND_SECRET_KEY=.*|PLSREMIND_SECRET_KEY=$(openssl rand -base64 32)|" .env && rm .env.bak
-# Then set PLSREMIND_PUBLIC_URL and, behind a proxy, PLSREMIND_PROXY_HEADER in .env.
-
-docker compose up -d
-```
-
-The hub now listens on port 8080 and applies its database migrations on every start.
-
-Change none of the files that came in the bundle: an update replaces them. Your settings
-go into `.env`, services of your own into `compose.override.yaml`, which Compose reads on
-its own, and scrape targets for further bots into `monitoring/targets/`.
-
-## Settings
-
-| Variable | Required | Meaning |
-|---|---|---|
-| `PLSREMIND_DATABASE_URL` | yes | PostgreSQL connection string. Set by the compose file. |
-| `PLSREMIND_PUBLIC_URL` | yes | The address users reach the hub at, without a trailing slash. Login redirects and the browser security check depend on it being exact. |
-| `PLSREMIND_SECRET_KEY` | yes | 32 random bytes, base64 encoded. |
-| `PLSREMIND_LISTEN_ADDR` | no | Defaults to `:8080`. |
-| `PLSREMIND_METRICS_ADDR` | no | Where the hub serves `/metrics`, for example `:9090`. Off when empty. Compose sets it inside its network only. See [Monitoring](#monitoring). |
-| `PLSREMIND_PROXY_HEADER` | behind a proxy | Set to `X-Forwarded-For` whenever the hub runs behind a reverse proxy. Without it every visitor appears to come from the proxy and they all share one rate limit, so logging in fails for everyone once a few people try at the same time. The header is only trusted from loopback and private addresses. |
-
-Compose also reads `POSTGRES_PASSWORD` and `PLSREMIND_PORT` from `.env`, and the variables
-of the monitoring profile listed under [Monitoring](#monitoring). Set
-`POSTGRES_PASSWORD` before the first start: the database keeps the password it was
-created with.
-
-Everything else is configured by an admin in the dashboard under Settings, Administration,
-or through the API, and stored in the database.
+The hub is a single program that needs a PostgreSQL database; the Discord bot is a second,
+optional one. How to run them, with Docker Compose, Docker Swarm and Portainer, Kubernetes or
+plain `docker run`, is in [docs/deploy](deploy/README.md), together with the settings, updating,
+backups, monitoring and reverse proxies. This page covers what comes once the hub runs: the
+first account, login providers, apps and the Discord bot. The examples use
+`https://todo.example.com` as the hub's address.
 
 ## First steps
 
@@ -160,27 +107,16 @@ through the API and the gateway only, and keeps a small SQLite file of its own.
    install link, shows users no button, and linking does not add it: enter the ID once
    under Settings, Administration, Apps.
 
-4. **Start the bot** next to the hub. In `.env`, fill in `DISCORD_TOKEN` and
-   `PLSREMIND_DISCORD_TOKEN` (the `plsr_con_...` token) and add `discord` to
-   `COMPOSE_PROFILES`, then:
-
-   ```sh
-   docker compose up -d
-   ```
+4. **Start the bot** next to the hub, with `DISCORD_TOKEN` and `PLSREMIND_DISCORD_TOKEN` (the
+   `plsr_con_...` token): with Compose, add `discord` to `COMPOSE_PROFILES`
+   ([Compose](deploy/compose.md#the-discord-bot)); in Swarm it is part of `stack.yaml`
+   ([Swarm](deploy/swarm.md)). Its variables are listed under
+   [settings](deploy/settings.md#the-discord-bot).
 
 Users then link their Discord account in the dashboard under Settings, Apps, which adds the
 bot to their Discord account, and get their reminders as direct messages.
 
-| Variable | Required | Meaning |
-|---|---|---|
-| `DISCORD_TOKEN` | yes | The bot token of the Discord application. |
-| `PLSREMIND_TOKEN` | yes | The token of the connection. Compose reads it from `PLSREMIND_DISCORD_TOKEN`. |
-| `PLSREMIND_URL` | yes | Where the bot reaches the hub. Compose sets it to `http://hub:8080`. |
-| `PLSREMIND_PUBLIC_URL` | yes | The address of the dashboard, for the links in the bot's messages. |
-| `PLSREMIND_DISCORD_DB` | no | Where the bot keeps its SQLite file. In the image it is `/data/discord.db`, on a volume. |
-| `PLSREMIND_DISCORD_METRICS_ADDR` | no | `host:port` for the bot's `/metrics`, `/healthz` and `/readyz`, for example `0.0.0.0:9091`. Off when empty. Compose sets it inside its network only. |
-
-The file holds which reminders went out, which message shows which item and the DM
+The bot's SQLite file holds which reminders went out, which message shows which item and the DM
 channels of the accounts reminded in the last 30 days. If it is lost, the DM channels are
 opened again, a reminder that was still waiting for its confirmation may arrive a second
 time, and older messages only catch up when someone clicks them. Nothing else depends on it.
@@ -189,91 +125,12 @@ time, and older messages only catch up when someone clicks them. Nothing else de
 
 A second bot is a second app with its own Discord application, token and SQLite file. The
 Discord sign-in stays with the first bot's application, so users add the second bot with its
-own button under Settings, Apps.
-[`deploy/examples/another-discord-bot.yaml`](../deploy/examples/another-discord-bot.yaml)
-adds one next to the first. Copy it to `compose.override.yaml`, which Compose reads on its
-own; the bot then runs the same image as the first and follows it when you update:
-
-```sh
-cp examples/another-discord-bot.yaml compose.override.yaml
-echo "DISCORD_TEAM_TOKEN=..." >> .env
-echo "PLSREMIND_DISCORD_TEAM_TOKEN=plsr_con_..." >> .env
-docker compose up -d
-```
-
-For the monitoring, give it a file of its own next to
-[`deploy/monitoring/targets/discord.yml`](../deploy/monitoring/targets/discord.yml):
-
-```sh
-echo '- targets: ["discord-team:9091"]' > monitoring/targets/discord-team.yml
-```
-
-VictoriaMetrics picks it up within 30 seconds. Every further bot works the same way with its
-own service name, variables, volume and target file.
-
-## Monitoring
-
-Metrics, alerts and a dashboard come as an add-on that runs next to the deployment; see
-[docs/deploy/monitoring.md](deploy/monitoring.md). [`docs/metrics.md`](metrics.md) lists every
-metric.
-
-## Behind a reverse proxy
-
-The gateway is a WebSocket at `/api/v1/gateway`. The proxy has to pass the upgrade
-through and must not cut idle connections after less than a minute; clients send a
-heartbeat every 45 seconds. Caddy does both on its own. For nginx, set
-`proxy_http_version 1.1`, forward the `Upgrade` and `Connection` headers and raise
-`proxy_read_timeout` to at least 75 seconds.
+own button under Settings, Apps. Running it next to the first is described for
+[Compose](deploy/compose.md#another-discord-bot) and for
+[Swarm](deploy/swarm.md#another-discord-bot).
 
 ## API documentation
 
 The REST API is described in [`docs/api/openapi.yaml`](api/openapi.yaml). Run `make docs` in
 `hub/` to render it to `docs/api/index.html`. The gateway is described in
 [`docs/gateway.md`](gateway.md).
-
-## Updating
-
-Read the release notes of every release between yours and the new one on the
-[releases page](https://github.com/rayakame/plsremind/releases). A release marked as
-breaking says what you have to do. Then, in your plsremind folder:
-
-```sh
-./backup.sh
-version=X.Y.Z    # the release you update to
-curl -fsSL "https://github.com/rayakame/plsremind/releases/download/v${version}/plsremind-deploy-${version}.tar.gz" \
-  | tar -xz --strip-components=1
-docker compose pull
-docker compose up -d
-```
-
-Unpacking replaces the files that came with plsremind and keeps `.env`,
-`compose.override.yaml`, `backups/` and your files in `monitoring/targets/`. `pull` and
-`up -d` cover the parts listed in `COMPOSE_PROFILES`; a part started with `--profile` on the
-command line instead needs that flag here as well, or it keeps running its old image.
-The hub updates its database when it starts. `UPDATING.md` in the folder says the same.
-
-Going back is restoring: unpack the bundle you had before, run
-`./restore.sh backups/<the file from before the update>` and `docker compose up -d`. An
-older hub refuses to start against a database that a newer one has updated, and says so;
-the Discord bot does the same with its own file. A bot that refuses can also start over
-from nothing: delete its volume, with the consequences described under Backups.
-
-[`docs/releases.md`](releases.md) explains what the version numbers mean and which
-releases get fixes.
-
-## Backups
-
-How to back up the database and restore it is in [docs/deploy/backups.md](deploy/backups.md).
-
-## Building from source
-
-To run what is in a checkout of the repository instead of a release, for example while
-working on plsremind, build the images with the extra compose file:
-
-```sh
-git clone https://github.com/rayakame/plsremind.git
-cd plsremind/deploy
-echo "PLSREMIND_SECRET_KEY=$(openssl rand -base64 32)" > .env
-docker compose -f compose.yaml -f compose.build.yaml up -d --build
-```
-

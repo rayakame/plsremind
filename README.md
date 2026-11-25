@@ -27,10 +27,11 @@ bot is next.
 
 ## Try it
 
-Every release ships a bundle with a compose file and its images; nothing is built on your
-machine. [docs/self-hosting.md](docs/self-hosting.md#start) has the commands to fetch it and
-start; then open http://localhost:8080 and create the first account. To run a checkout
-instead, see [Building from source](docs/self-hosting.md#building-from-source).
+Every release ships its images and deploy files for Docker Compose and Docker Swarm; nothing
+is built on your machine. [docs/deploy/compose.md](docs/deploy/compose.md#start) has the
+commands to start; then open http://localhost:8080 and create the first account. Other ways,
+Portainer and Kubernetes among them, are in [docs/deploy](docs/deploy/README.md). To run a
+checkout instead, see [Building from source](docs/deploy/compose.md#building-from-source).
 
 See [docs/self-hosting.md](docs/self-hosting.md) for setup and configuration,
 [docs/api/openapi.yaml](docs/api/openapi.yaml) for the REST API and
