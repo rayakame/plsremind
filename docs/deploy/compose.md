@@ -91,3 +91,14 @@ cd plsremind/deploy
 echo "PLSREMIND_SECRET_KEY=$(openssl rand -base64 32)" > .env
 docker compose -f compose.yaml -f compose.build.yaml up -d --build
 ```
+
+An instance from the release files on the same machine holds port 8080. Stop it first, or give
+this hub another port with a third file, `dev-port.yaml`:
+
+```yaml
+services:
+  hub:
+    ports: !override ["8081:8080"]
+```
+
+Add `PLSREMIND_PUBLIC_URL=http://localhost:8081` to `.env` and `-f dev-port.yaml` to the command.

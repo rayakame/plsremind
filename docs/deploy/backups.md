@@ -137,6 +137,13 @@ before the update:
   start against the newer database.
 - **Swarm:** set the image tags in `stack.yaml` back, deploy it, then run the restore. The older
   hub keeps restarting until the restore has swapped the databases.
+- **docker run:** run the restore as [docker run](docker-run.md#backups) describes, but at the
+  end, in place of `docker start hub`, remove the container and run it again with the older
+  tag; the same for the bot. `docker start` would start the newer image, which updates the
+  restored database once more.
+- **Kubernetes:** while the Deployments are scaled to 0 for the restore, set their images back,
+  `kubectl set image deployment/hub hub=ghcr.io/rayakame/plsremind:<series>` and the same for
+  `deployment/discord`, then run the restore and scale them back to 1.
 
 The bot may refuse its own file the same way; deleting its volume lets it start over, with
 the consequences described at the top.

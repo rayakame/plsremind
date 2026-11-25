@@ -28,8 +28,10 @@ set -a; . ./.env; set +a
 docker stack deploy -c stack.yaml plsremind
 ```
 
-Sourcing the file runs it as shell, so put any value with a `$`, a space or a quote in single
-quotes (Compose reads such values the same way). `COMPOSE_PROFILES` in that file means nothing
+Sourcing the file runs it as shell, so put any value with a `$`, a space or a double quote in
+single quotes (Compose reads such values the same way). A value with a single quote in it cannot
+be written so that both read it alike; choose passwords without one, `openssl rand -hex 24`
+makes such a password. `COMPOSE_PROFILES` in that file means nothing
 to Swarm; the bot runs when `stack.yaml` has it. [Settings](settings.md#the-deploy-files) lists
 the variables. The files of one particular release are at
 `https://github.com/rayakame/plsremind/releases/download/v0.2.3/stack.yaml` and so on.
@@ -109,5 +111,7 @@ service of its own to your copy of `stack.yaml`, next to `discord`:
 ```
 
 and `discord-team:` under `volumes`, and set `DISCORD_TEAM_TOKEN` and
-`PLSREMIND_DISCORD_TEAM_TOKEN` where the other variables are. With the
+`PLSREMIND_DISCORD_TEAM_TOKEN` where the other variables are. With several managers, pin it to
+the labelled node like `discord` (see [several nodes](#adapting-stackyaml)), or a restart may
+bring it up elsewhere with an empty volume. With the
 [monitoring add-on](monitoring.md#further-bots), give it a target file.
