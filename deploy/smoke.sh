@@ -204,38 +204,32 @@ done
 expect "an extra target file is scraped" "$extra" '"instance":"smoke-extra:9091"'
 expect "the dashboard is there" \
   "$(curl -fsS -u "admin:${PLSREMIND_GRAFANA_PASSWORD}" "${grafana}/api/search?query=plsremind" | grep -o '"uid":"plsremind"')" '"uid":"plsremind"'
-# A backup taken now and restored later brings back exactly what was there.
-backup="$(./backup.sh)"
-[ -s "$backup" ] || fail "backup.sh wrote no dump"
-echo "ok  backup.sh wrote $backup"
+# The backup and restore of docs/deploy/backups.md, run as the guide has them, in a folder of their own.
+export COMPOSE_FILE="$PWD/compose.yaml:$PWD/compose.build.yaml:$work/smoke.yaml"
+mkdir "$work/guide"
+guide() {
+  local commands
+  commands="$(python3 snippet.py ../docs/deploy/backups.md "$1")" || fail "docs/deploy/backups.md has no snippet $1"
+  (cd "$work/guide" && bash -euo pipefail -c "$commands")
+}
+guide compose-backup >/dev/null
+[ -s "$work/guide/plsremind.dump" ] || fail "the guide's backup wrote no dump"
+cp "$work/guide/plsremind.dump" "$work/backup.dump"
+echo "ok  the guide's backup wrote a dump"
 curl -fsS -o /dev/null -b "$jar" -H 'Content-Type: application/json' -H "Origin: ${PLSREMIND_PUBLIC_URL}" \
   -d '{"title":"after the backup"}' "$base/users/@me/items"
-# A dump that breaks off must leave the database as it was.
-head -c 4000 "$backup" > "$work/broken.dump"
-if ./restore.sh --yes "$work/broken.dump" >/dev/null 2>&1; then
-  fail "restore.sh took a dump that breaks off"
+# A dump that breaks off must leave the database, and the hub serving it, as they were.
+head -c 4000 "$work/backup.dump" > "$work/guide/plsremind.dump"
+if guide compose-restore >/dev/null 2>&1; then
+  fail "the guide's restore took a dump that breaks off"
 fi
 curl -fsS -b "$jar" "$base/users/@me/items" | grep -q '"title":"after the backup"' \
   || fail "a failed restore changed the database"
-echo "ok  a broken dump leaves the database as it was"
-# Two restores at once would share their staging database.
-mkdir .restore.lock
-if ./restore.sh --yes "$backup" >/dev/null 2>&1; then
-  rmdir .restore.lock
-  fail "restore.sh ran while another restore held the lock"
-fi
-rmdir .restore.lock
-curl -fsS -b "$jar" "$base/users/@me/items" | grep -q '"title":"after the backup"' \
-  || fail "a restore that found the lock taken changed the database"
-echo "ok  one restore at a time"
-# Going back from an update whose hub keeps crashing: restore must replace that container as well,
-# and stop a service of the newer release that the older compose.yaml no longer knows.
+expect "a broken dump leaves the database and the hub as they were" "$(curl -fsS "${PLSREMIND_PUBLIC_URL}/readyz")" ok
+# Going back from an update whose hub keeps crashing: the restore must replace that container as well.
+cp "$work/backup.dump" "$work/guide/plsremind.dump"
 printf 'services:\n  hub:\n    environment:\n      PLSREMIND_SECRET_KEY: broken\n' > "$work/crashing.yaml"
-printf 'services:\n  newer:\n    image: %s\n    entrypoint: [sleep, "3600"]\n    restart: unless-stopped\n' \
-  "$(docker compose config --images db)" > "$work/newer.yaml"
-COMPOSE_FILE="$COMPOSE_FILE:$work/crashing.yaml:$work/newer.yaml" \
-  docker compose up -d --no-deps hub newer >/dev/null 2>&1
-newer="$(COMPOSE_FILE="$COMPOSE_FILE:$work/newer.yaml" docker compose ps -q newer)"
+COMPOSE_FILE="$COMPOSE_FILE:$work/crashing.yaml" docker compose up -d --no-deps hub >/dev/null 2>&1
 restarts=0
 for _ in $(seq 1 30); do
   restarts="$(docker inspect -f '{{.RestartCount}}' "$(docker compose ps -a -q hub)")"
@@ -243,17 +237,14 @@ for _ in $(seq 1 30); do
   sleep 1
 done
 [ "$restarts" -ge 2 ] || fail "the broken hub did not keep restarting"
-./restore.sh --yes "$backup" >/dev/null
+guide compose-restore >/dev/null 2>&1 || fail "the guide's restore failed"
 for _ in $(seq 1 60); do
   curl -fsS "${PLSREMIND_PUBLIC_URL}/readyz" >/dev/null 2>&1 && break
   sleep 1
 done
 curl -fsS "${PLSREMIND_PUBLIC_URL}/readyz" >/dev/null 2>&1 || fail "the hub was not ready a minute after the restore"
 titles="$(curl -fsS -b "$jar" "$base/users/@me/items" | grep -o '"title":"[^"]*"' | sort | tr '\n' ' ')"
-case "$titles" in *'"title":"after the backup"'*) fail "restore.sh kept what came after the backup";; esac
-case "$titles" in *'"title":"first item"'*) echo "ok  restore.sh brought the backup back past a crashing hub";; *) fail "restore.sh lost the first item: $titles";; esac
-expect "a service the older compose.yaml does not know is stopped" "$(docker inspect -f '{{.State.Running}}' "$newer")" false
-docker rm -f "$newer" >/dev/null
-rm -f "$backup"
+case "$titles" in *'"title":"after the backup"'*) fail "the restore kept what came after the backup";; esac
+case "$titles" in *'"title":"first item"'*) echo "ok  the guide's restore brought the backup back past a crashing hub";; *) fail "the restore lost the first item: $titles";; esac
 
 echo "smoke: all good"

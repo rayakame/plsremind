@@ -263,21 +263,7 @@ releases get fixes.
 
 ## Backups
 
-The hub's state lives in the PostgreSQL volume. `./backup.sh` writes a dump of it into
-`backups/` and prints the file's name; `./restore.sh <file>` first restores the dump next to
-the database, then stops whatever writes to it, every bot included, swaps the restored copy in
-and starts them again. A dump that cannot be restored completely changes nothing.
-Keep `PLSREMIND_SECRET_KEY` with the backups. To back up every night, for example:
-
-```sh
-0 3 * * * cd /path/to/plsremind && ./backup.sh >/dev/null
-```
-
-Old dumps are not deleted; remove them yourself. The Discord bot keeps its SQLite file on a volume
-of its own, which this backup does not cover. Restored without it, the bot works on, as
-described in its section: it opens the DM channels again, a reminder still waiting for its
-confirmation may arrive a second time, and older messages catch up only when someone
-clicks them.
+How to back up the database and restore it is in [docs/deploy/backups.md](deploy/backups.md).
 
 ## Building from source
 
