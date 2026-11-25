@@ -213,62 +213,9 @@ own service name, variables, volume and target file.
 
 ## Monitoring
 
-The hub and the bot can expose metrics in the Prometheus format, and the hub answers
-`/healthz` and `/readyz` on its public port. [`docs/metrics.md`](metrics.md) lists every
-metric. Nothing is sent anywhere by the services themselves, no label names a user or an
-item, and the compose file keeps the metrics ports inside its own network.
-
-The compose file uses `/readyz` as the hub's healthcheck, and the Discord bot starts only
-once the hub is healthy.
-
-For a dashboard and alerts, set a password for Grafana and add `monitoring` to
-`COMPOSE_PROFILES` in `.env` (`COMPOSE_PROFILES=monitoring`, or `discord,monitoring` beside the
-bot). Without the password Grafana does not start:
-
-```sh
-sed -i.bak "s|^PLSREMIND_GRAFANA_PASSWORD=.*|PLSREMIND_GRAFANA_PASSWORD=$(openssl rand -hex 16)|" .env && rm .env.bak
-docker compose up -d
-```
-
-It adds three services:
-
-- **VictoriaMetrics** scrapes the hub and the bots every 15 seconds and keeps 30 days.
-- **vmalert** evaluates [`deploy/monitoring/alerts.yml`](../deploy/monitoring/alerts.yml):
-  the hub or the bot down, the ticker stalled, reminders more than two minutes late,
-  server errors, expired deliveries to a connection, the bot not connected to the hub,
-  Discord refusing reminders, errors in the bot nobody foresaw. With several bots, each is
-  watched and reported on its own. If you take a further bot away for good, delete its
-  file in `monitoring/targets/`, or its alert keeps firing until its last scrape has left
-  the 30 days. The bot of `compose.yaml` keeps `targets/discord.yml`; if you stop running
-  it, its alert ends once that last scrape is 30 days old, or at once if you delete the
-  file (an update brings it back).
-- **Grafana** opens on `http://127.0.0.1:3000` (`PLSREMIND_GRAFANA_PORT` to change it)
-  with the plsremind dashboard, which shows the bots one line each and can be narrowed to
-  some of them. Log in as `admin` with `PLSREMIND_GRAFANA_PASSWORD`; the
-  password is set when Grafana first starts, so change it there afterwards. Grafana is
-  only reachable from the machine itself; put it behind your reverse proxy to reach it
-  from elsewhere. Its own telemetry, update checks and plugin downloads are off.
-
-Firing alerts show at the top of the dashboard and in Grafana's alert list. To have them
-sent, run an Alertmanager and set `PLSREMIND_ALERTMANAGER_URL`; vmalert then passes every
-alert on to it. vmalert runs inside the compose network, so the address must be reachable
-from there: a public address, or a service added in an override file, such as
-`http://alertmanager:9093`.
-
-| Variable | Required | Meaning |
-|---|---|---|
-| `PLSREMIND_GRAFANA_PASSWORD` | for the profile | The password of Grafana's `admin`. Grafana does not start without it. |
-| `PLSREMIND_GRAFANA_PORT` | no | The port Grafana is published on, on `127.0.0.1`. Defaults to `3000`. |
-| `PLSREMIND_ALERTMANAGER_URL` | no | Where vmalert sends alerts. Without it they are only shown. |
-
-Prometheus, Grafana Alloy or any other tool that reads the Prometheus format works as
-well. Inside the compose network,
-[`deploy/monitoring/scrape.yml`](../deploy/monitoring/scrape.yml) serves as its scrape
-configuration as it is, with the target files of `monitoring/targets/` mounted at
-`/etc/plsremind/targets/`. Outside it, publish the metrics ports yourself and replace
-`hub:9090` and `discord:9091` with the host's address and those ports, since the service
-names only resolve inside the network. The rules work as they are, and the dashboard asks which
-Prometheus data source to use.
+Metrics, alerts and a dashboard come as an add-on that runs next to the deployment; see
+[docs/deploy/monitoring.md](deploy/monitoring.md). [`docs/metrics.md`](metrics.md) lists every
+metric.
 
 ## Behind a reverse proxy
 

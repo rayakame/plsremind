@@ -48,6 +48,12 @@
       "semanticCommitType": "ci"
     },
     {
+      "description": "PostgreSQL is named by its major only, so that pulling again brings its fixes.",
+      "matchDatasources": ["docker"],
+      "matchPackageNames": ["postgres"],
+      "pinDigests": false
+    },
+    {
       "description": "A new PostgreSQL major cannot open the old data directory; that takes a dump, a restore and release notes of its own.",
       "matchDatasources": ["docker"],
       "matchPackageNames": ["postgres"],
