@@ -17,3 +17,4 @@ jobs:
         with:
           persist-credentials: false
       - run: deploy/check-versions.sh
+      - run: python3 -m unittest discover -s deploy -p '*_test.py'

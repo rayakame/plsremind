@@ -18,24 +18,11 @@ def about(path: str) -> str:
     return found.group(1) if found else "missing"
 
 
-def self_hosting() -> str:
-    found = re.search(r"^version=(\S+) # x-release-please-version$", pathlib.Path("docs/self-hosting.md").read_text(), re.M)
-    return found.group(1) if found else "missing"
-
-
-def image(name: str) -> str:
-    found = re.search(rf"image: ghcr\.io/rayakame/{name}:(\S+)", pathlib.Path("deploy/compose.yaml").read_text())
-    return found.group(1) if found else "missing"
-
-
 found = {
     ".": {
         "connections/discord/plsremind_discord/about.py": about("connections/discord/plsremind_discord/about.py"),
         "web/package.json": json.loads(pathlib.Path("web/package.json").read_text())["version"],
         "package-lock.json web": lock["packages"]["web"]["version"],
-        "deploy/compose.yaml hub image": image("plsremind"),
-        "deploy/compose.yaml bot image": image("plsremind-discord"),
-        "docs/self-hosting.md": self_hosting(),
     },
     "sdk/python": {
         "sdk/python/plsremind/internal/about.py": about("sdk/python/plsremind/internal/about.py"),
@@ -56,3 +43,4 @@ if wrong:
     sys.exit(1)
 print("ok  versions agree:", ", ".join(f"{component} {manifest[component]}" for component in found))
 PY
+python3 deploy/series.py --check

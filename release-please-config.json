@@ -26,14 +26,6 @@
           "type": "json",
           "path": "package-lock.json",
           "jsonpath": "$.packages.web.version"
-        },
-        {
-          "type": "generic",
-          "path": "deploy/compose.yaml"
-        },
-        {
-          "type": "generic",
-          "path": "docs/self-hosting.md"
         }
       ],
       "initial-version": "0.1.0"

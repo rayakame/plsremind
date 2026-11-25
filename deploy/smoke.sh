@@ -96,14 +96,14 @@ echo "ok  the dashboard is what its generator writes"
 docker compose -f compose.yaml -f examples/another-discord-bot.yaml --profile discord config --quiet \
   || fail "the example for another Discord bot does not fit the compose file"
 echo "ok  the example for another Discord bot fits"
-released="$(python3 -c 'import json; print(json.load(open("../.release-please-manifest.json"))["."])')"
+released="$(python3 series.py)"
 images="$(COMPOSE_FILE='' docker compose -f compose.yaml -f examples/another-discord-bot.yaml --profile discord config --format json \
   | python3 -c '
 import json, sys
 services = json.load(sys.stdin)["services"]
 print(" ".join(name + "=" + str(services[name].get("image")) + ("+build" if "build" in services[name] else "") for name in ("hub", "discord", "discord-team")))
 ')"
-expect "compose.yaml names the released images" "$images" \
+expect "compose.yaml names the images of the released series" "$images" \
   "hub=ghcr.io/rayakame/plsremind:${released} discord=ghcr.io/rayakame/plsremind-discord:${released} discord-team=ghcr.io/rayakame/plsremind-discord:${released}"
 expect "vmalert runs" "$(docker inspect -f '{{.State.Status}}' "$(docker compose ps -q vmalert)")" running
 

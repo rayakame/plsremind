@@ -1,6 +1,6 @@
 services:
   hub:
-    image: ghcr.io/rayakame/plsremind:0.0.0 # x-release-please-version
+    image: ghcr.io/rayakame/plsremind:0.0
     restart: unless-stopped
     depends_on:
       db:
@@ -42,7 +42,7 @@ services:
   # The Discord bot. It only starts with "docker compose --profile discord up".
   discord:
     profiles: ["discord"]
-    image: ghcr.io/rayakame/plsremind-discord:0.0.0 # x-release-please-version
+    image: ghcr.io/rayakame/plsremind-discord:0.0
     restart: unless-stopped
     # A message on its way to Discord gets up to ten seconds to be sent and recorded.
     stop_grace_period: 20s
