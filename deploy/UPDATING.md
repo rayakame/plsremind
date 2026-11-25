@@ -7,8 +7,8 @@
    `tar -xzf plsremind-deploy-<version>.tar.gz --strip-components=1`
    This replaces the files that came with plsremind and keeps yours: `.env`,
    `compose.override.yaml`, `backups/` and your own files in `monitoring/targets/`.
-4. `docker compose pull` and `docker compose up -d`, with the profiles you use
-   (for example `docker compose --profile discord --profile monitoring up -d`).
+4. `docker compose pull` and `docker compose up -d`. They cover the parts listed in
+   `COMPOSE_PROFILES` in `.env`; name any other with `--profile`, or it keeps its old image.
    The hub updates the database when it starts; that can take a while on a large instance.
 
 If something goes wrong, go back: unpack the bundle you had before, then

@@ -160,12 +160,12 @@ through the API and the gateway only, and keeps a small SQLite file of its own.
    install link, shows users no button, and linking does not add it: enter the ID once
    under Settings, Administration, Apps.
 
-4. **Start the bot** next to the hub:
+4. **Start the bot** next to the hub. In `.env`, fill in `DISCORD_TOKEN` and
+   `PLSREMIND_DISCORD_TOKEN` (the `plsr_con_...` token) and add `discord` to
+   `COMPOSE_PROFILES`, then:
 
    ```sh
-   echo "DISCORD_TOKEN=..." >> .env
-   echo "PLSREMIND_DISCORD_TOKEN=plsr_con_..." >> .env
-   docker compose --profile discord up -d
+   docker compose up -d
    ```
 
 Users then link their Discord account in the dashboard under Settings, Apps, which adds the
@@ -198,7 +198,7 @@ own; the bot then runs the same image as the first and follows it when you updat
 cp examples/another-discord-bot.yaml compose.override.yaml
 echo "DISCORD_TEAM_TOKEN=..." >> .env
 echo "PLSREMIND_DISCORD_TEAM_TOKEN=plsr_con_..." >> .env
-docker compose --profile discord up -d
+docker compose up -d
 ```
 
 For the monitoring, give it a file of its own next to
@@ -221,12 +221,13 @@ item, and the compose file keeps the metrics ports inside its own network.
 The compose file uses `/readyz` as the hub's healthcheck, and the Discord bot starts only
 once the hub is healthy.
 
-For a dashboard and alerts, set a password for Grafana and start the `monitoring`
-profile, alone or beside `discord`. Without the password Grafana does not start:
+For a dashboard and alerts, set a password for Grafana and add `monitoring` to
+`COMPOSE_PROFILES` in `.env` (`COMPOSE_PROFILES=monitoring`, or `discord,monitoring` beside the
+bot). Without the password Grafana does not start:
 
 ```sh
-echo "PLSREMIND_GRAFANA_PASSWORD=$(openssl rand -hex 16)" >> .env
-docker compose --profile monitoring up -d
+sed -i.bak "s|^PLSREMIND_GRAFANA_PASSWORD=.*|PLSREMIND_GRAFANA_PASSWORD=$(openssl rand -hex 16)|" .env && rm .env.bak
+docker compose up -d
 ```
 
 It adds three services:
@@ -299,9 +300,9 @@ docker compose up -d
 ```
 
 Unpacking replaces the files that came with plsremind and keeps `.env`,
-`compose.override.yaml`, `backups/` and your files in `monitoring/targets/`. Name the
-profiles you use, or their services keep running their old images; with the Discord bot
-and the monitoring, for example, `docker compose --profile discord --profile monitoring up -d`.
+`compose.override.yaml`, `backups/` and your files in `monitoring/targets/`. `pull` and
+`up -d` cover the parts listed in `COMPOSE_PROFILES`; a part started with `--profile` on the
+command line instead needs that flag here as well, or it keeps running its old image.
 The hub updates its database when it starts. `UPDATING.md` in the folder says the same.
 
 Going back is restoring: unpack the bundle you had before, run

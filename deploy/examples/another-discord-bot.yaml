@@ -1,6 +1,6 @@
 # A second Discord bot next to the first, as its own app of the instance, on the same image:
 #   cp examples/another-discord-bot.yaml compose.override.yaml
-#   docker compose --profile discord up -d
+#   docker compose up -d    (with discord in COMPOSE_PROFILES)
 # and for its metrics: echo '- targets: ["discord-team:9091"]' > monitoring/targets/discord-team.yml
 services:
   discord-team:
