@@ -21,8 +21,8 @@ seconds.
 
 ## A proxy on the same machine
 
-The deploy files publish the hub on port 8080 of the machine. Point the proxy there and set
-`PLSREMIND_PROXY_HEADER=X-Forwarded-For`. With Caddy, for example:
+Point the proxy at port 8080 and set `PLSREMIND_PROXY_HEADER=X-Forwarded-For`. With Caddy, for
+example:
 
 ```
 todo.example.com {
@@ -30,11 +30,23 @@ todo.example.com {
 }
 ```
 
+Publish the hub on that machine alone: `"127.0.0.1:8080:8080"` in `compose.yaml`,
+`-p 127.0.0.1:8080:8080` with `docker run`. On all addresses, as the deploy files have it,
+anyone in your own network could reach the hub past the proxy, from a private address, and
+set the header to whatever they like; Docker's own forwarding of IPv6 connections can even
+make outside clients look private. Swarm's host mode cannot publish on one address alone, so
+in Swarm keep the port closed to others with a firewall, or use a proxy on the network
+instead.
+
 ## A proxy on the plsremind network
 
 A proxy that runs as a container, Traefik or Caddy for instance, can join the `plsremind`
 network and reach the hub by its name, `hub:8080`. The hub then needs no published port: delete
 its `ports` in the deploy file. Set `PLSREMIND_PROXY_HEADER=X-Forwarded-For`.
+
+In Swarm, publish the proxy's own ports in host mode, as `stack.yaml` does for the hub. With
+Swarm's usual publishing, every client reaches the proxy from an address of Swarm's own, the
+proxy passes that on, and all visitors share one rate limit.
 
 ## Cloudflare Tunnel
 

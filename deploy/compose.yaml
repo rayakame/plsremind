@@ -14,6 +14,8 @@ services:
       PLSREMIND_PROXY_HEADER: ${PLSREMIND_PROXY_HEADER:-}
       # Reachable inside this network only; the port is not published.
       PLSREMIND_METRICS_ADDR: ":9090"
+    # Behind a tunnel or a proxy on the plsremind network, delete this; behind a proxy on this
+    # machine, publish on it alone: "127.0.0.1:8080:8080".
     ports:
       - "8080:8080"
     healthcheck:

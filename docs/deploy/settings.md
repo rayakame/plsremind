@@ -13,7 +13,7 @@ and stored in the database.
 | `PLSREMIND_SECRET_KEY` | yes | 32 random bytes, base64 encoded. The sign-in providers' secrets and the linked accounts' tokens are encrypted with it; keep it with your backups. |
 | `PLSREMIND_LISTEN_ADDR` | no | Defaults to `:8080`. |
 | `PLSREMIND_METRICS_ADDR` | no | Where the hub serves `/metrics`, for example `:9090`. Off when empty. The deploy files set it inside their network only. See [monitoring](monitoring.md). |
-| `PLSREMIND_PROXY_HEADER` | behind a proxy | The header that carries the client's address: `X-Forwarded-For` behind most reverse proxies, `CF-Connecting-IP` behind a Cloudflare Tunnel. Without it every visitor appears to come from the proxy and they all share one rate limit, so logging in fails for everyone once a few people try at the same time. The header is only believed from loopback and private addresses. See [reverse proxies and tunnels](proxies.md). |
+| `PLSREMIND_PROXY_HEADER` | behind a proxy | The header that carries the client's address: `X-Forwarded-For` behind most reverse proxies, `CF-Connecting-IP` behind a Cloudflare Tunnel. Without it every visitor appears to come from the proxy and they all share one rate limit, so logging in fails for everyone once a few people try at the same time. The header is only believed from loopback and private addresses, so set it only when nobody can reach the hub past the proxy; see [reverse proxies and tunnels](proxies.md). |
 
 The hub also reads PostgreSQL's own variables, such as `PGPASSWORD`. The deploy files pass the
 database's password that way, so that it may contain any character.

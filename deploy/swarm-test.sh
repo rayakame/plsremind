@@ -25,6 +25,13 @@ if docker network inspect plsremind >/dev/null 2>&1; then
   echo "swarm: a network named plsremind exists here already" >&2
   exit 1
 fi
+# A Compose instance in a folder named plsremind leaves volumes of exactly these names.
+for volume in "${stack}_db" "${stack}_discord"; do
+  if docker volume inspect "$volume" >/dev/null 2>&1; then
+    echo "swarm: a volume named $volume exists here already" >&2
+    exit 1
+  fi
+done
 
 work="$(mktemp -d)"
 jar="$work/cookies"
@@ -90,8 +97,10 @@ fi
 sed "s/published: 8080/published: ${port}/" stack.yaml > "$work/stack.yaml"
 printf 'services:\n  hub:\n    image: %s\n  discord:\n    image: %s\n' "$hub_image" "$bot_image" > "$work/images.yaml"
 printf 'services:\n  db:\n    deploy:\n      replicas: 0\n' > "$work/no-db.yaml"
+# A service of one's own in the stack, global as a tunnel or proxy often is; the guide's restore must cope.
+printf 'services:\n  sidecar:\n    image: busybox:1.37\n    command: [sleep, "86400"]\n    deploy:\n      mode: global\n' > "$work/own.yaml"
 deploy() {
-  docker stack deploy --detach=true --resolve-image never -c "$work/stack.yaml" -c "$work/images.yaml" "$@" "$stack" >/dev/null
+  docker stack deploy --detach=true --resolve-image never -c "$work/stack.yaml" -c "$work/images.yaml" -c "$work/own.yaml" "$@" "$stack" >/dev/null
 }
 
 # Swarm has no start order: a hub without its database ends and is started again until it is there.

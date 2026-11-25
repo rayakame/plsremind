@@ -32,16 +32,20 @@ the folder then includes the bot, those of an update too.
 ### Another Discord bot
 
 A second bot is a second app with its own Discord application, token and SQLite file.
-[`deploy/examples/another-discord-bot.yaml`](../../deploy/examples/another-discord-bot.yaml)
-adds one next to the first, on the same image. Save it as `compose.override.yaml`, which
-Compose reads on its own, and give it its tokens:
+[`another-discord-bot.yaml`](https://github.com/rayakame/plsremind/blob/main/deploy/examples/another-discord-bot.yaml)
+adds one next to the first, on the same image. Save it next to `compose.yaml`, name it in
+`COMPOSE_FILE` in `.env`, and give it its tokens there:
 
 ```sh
-curl -fsSLo compose.override.yaml https://raw.githubusercontent.com/rayakame/plsremind/main/deploy/examples/another-discord-bot.yaml
+curl -fsSLo discord-team.yaml https://raw.githubusercontent.com/rayakame/plsremind/main/deploy/examples/another-discord-bot.yaml
+echo "COMPOSE_FILE=compose.yaml:discord-team.yaml" >> .env
 echo "DISCORD_TEAM_TOKEN=..." >> .env
 echo "PLSREMIND_DISCORD_TEAM_TOKEN=plsr_con_..." >> .env
 docker compose up -d
 ```
+
+Once `COMPOSE_FILE` is set, Compose reads only the files it names: if you also have a
+`compose.override.yaml`, list it too, as `compose.yaml:compose.override.yaml:discord-team.yaml`.
 
 Every further bot works the same way with its own service name, variables and volume. With
 the [monitoring add-on](monitoring.md#further-bots), give each one a target file.
@@ -52,12 +56,15 @@ The file is a template; change it to fit your setup:
 
 - **The port.** The hub is published on port 8080 of the machine. Change the first number of
   `"8080:8080"` for another one.
+- **Behind a proxy on the same machine**, publish it on that machine only, as
+  `"127.0.0.1:8080:8080"`. See [reverse proxies and tunnels](proxies.md#a-proxy-on-the-same-machine)
+  for why.
 - **No published port.** Reached only through a tunnel, or a proxy on the `plsremind`
-  network, the hub needs no port on the machine: delete its `ports`. See
-  [reverse proxies and tunnels](proxies.md).
+  network, the hub needs no port on the machine: delete its `ports`.
 - **The network.** Hub, database and bot share the network `plsremind`, which other Compose
   projects can join: a tunnel, a reverse proxy, the monitoring add-on. If you rename it, rename
-  it wherever it is joined too.
+  it wherever it is joined too. A second instance on the same machine needs a network name of
+  its own, or the two would reach each other's database.
 
 Changes can also go into `compose.override.yaml` instead, which Compose reads on its own and
 which keeps `compose.yaml` as it came. To take the port away there, `ports: !reset []` under
@@ -75,7 +82,8 @@ networks:
 ## Building from source
 
 To run what is in a checkout of the repository instead of a release, for example while working
-on plsremind, build the images with the extra compose file:
+on plsremind, build the images with the extra compose file. Its network is `plsremind-dev`, so
+that it never meets an instance from the release files on the same machine:
 
 ```sh
 git clone https://github.com/rayakame/plsremind.git

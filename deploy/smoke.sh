@@ -115,6 +115,8 @@ expect "the deployment runs no monitoring of its own" \
 expect "the database is PostgreSQL by its major tag" "$(docker compose config --images | grep '^postgres' || true)" postgres:18
 expect "compose.yaml names its network" \
   "$(docker compose -f compose.yaml config --format json | python3 -c 'import json, sys; print(json.load(sys.stdin)["networks"]["default"]["name"])')" plsremind
+expect "building from source gets a network of its own" \
+  "$(docker compose -f compose.yaml -f compose.build.yaml config --format json | python3 -c 'import json, sys; print(json.load(sys.stdin)["networks"]["default"]["name"])')" plsremind-dev
 docker network inspect plsremind-smoke >/dev/null || fail "the network plsremind-smoke is missing"
 echo "ok  the add-on joined the deployment's network"
 

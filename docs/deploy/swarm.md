@@ -8,7 +8,8 @@ carries the file. It differs from the Compose file where Swarm differs from Comp
 - The hub's port is published in host mode, so that the hub sees the client's address. Swarm's
   usual way would show it an address of Swarm's own.
 - The database and the bot keep their data on volumes, which stay on the node they were made
-  on, so the two run on a manager node.
+  on. Swarm does not move a volume with its service: started on another node, a service finds
+  a new, empty volume there. So the file keeps the two on a manager node.
 - `docker stack deploy` does not read a `.env` file; the variables come from the environment it
   runs in, or from Portainer.
 
@@ -27,13 +28,18 @@ set -a; . ./.env; set +a
 docker stack deploy -c stack.yaml plsremind
 ```
 
-`COMPOSE_PROFILES` in that file means nothing to Swarm; the bot runs when `stack.yaml` has it.
+Sourcing the file runs it as shell, so put any value with a `$`, a space or a quote in single
+quotes (Compose reads such values the same way). `COMPOSE_PROFILES` in that file means nothing
+to Swarm; the bot runs when `stack.yaml` has it. [Settings](settings.md#the-deploy-files) lists
+the variables. The files of one particular release are at
+`https://github.com/rayakame/plsremind/releases/download/v0.2.3/stack.yaml` and so on.
 
 ## With Portainer
 
 **From the web editor.** Under Stacks, add a stack named `plsremind`, paste `stack.yaml` into
-the web editor and adapt it there. Add the variables under Environment variables, or load the
-filled-in `env.example` as a `.env` file. Deploy.
+the web editor and adapt it there. Add the variables under Environment variables (see
+[settings](settings.md#the-deploy-files)), or load the filled-in `env.example` as a `.env` file.
+Deploy.
 
 **From a Git repository.** Keep your adapted copy of `stack.yaml` in a repository of your own
 and add the stack from that repository. With Portainer's automatic updates, by polling or by
@@ -53,9 +59,10 @@ The file is a template; change it to fit your setup:
 - **The port.** Change `published: 8080` for another one.
 - **The network.** Hub, database and bot share the overlay network `plsremind`, which other
   stacks and containers can join. If you rename it, rename it wherever it is joined too.
-- **Several nodes.** Their volumes keep the database and the bot on the node they first ran on.
-  The file keeps them on a manager, which is enough with one manager. With several, label the
-  node that should hold them and pin both services to it:
+- **Several nodes.** The file keeps the database and the bot on a manager, which is enough
+  with one manager. With several, pin both to one node, or a restart may bring them up on
+  another manager with empty volumes. Label a manager, since restoring a backup scales
+  services, which only a manager can do:
 
   ```sh
   docker node update --label-add plsremind.data=true <node>
@@ -69,7 +76,9 @@ The file is a template; change it to fit your setup:
   ```
 
   Moving them to another node later means moving their data: back up, deploy on the new
-  node, restore.
+  node, restore. A published port exists only on the node that runs the hub, and moves with
+  it; pin the hub to that node as well, or reach it through a tunnel or a proxy on the
+  `plsremind` network.
 
 ### Another Discord bot
 
@@ -99,5 +108,6 @@ service of its own to your copy of `stack.yaml`, next to `discord`:
         delay: 5s
 ```
 
-and `discord-team:` under `volumes`. With the [monitoring add-on](monitoring.md#further-bots),
-give it a target file.
+and `discord-team:` under `volumes`, and set `DISCORD_TEAM_TOKEN` and
+`PLSREMIND_DISCORD_TEAM_TOKEN` where the other variables are. With the
+[monitoring add-on](monitoring.md#further-bots), give it a target file.

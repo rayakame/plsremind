@@ -25,18 +25,20 @@ docker compose exec -T db pg_dump --username plsremind --dbname plsremind --form
 ```
 
 The dump is written under a temporary name first, so that a dump that breaks off never takes
-the place of a good one. For a backup every night, with the date in the file's name, a cron
-entry like this works (cron needs the `%` escaped):
+the place of a good one. For a backup every night, with the date in the file's name, create a
+`backups` folder next to `compose.yaml` and add a cron entry like this (cron needs the `%`
+escaped):
 
 ```sh
-0 3 * * * cd /path/to/plsremind && docker compose exec -T db pg_dump --username plsremind --dbname plsremind --format custom > "backups/plsremind-$(date +\%Y\%m\%d).dump"
+0 3 * * * cd /path/to/plsremind && docker compose exec -T db pg_dump --username plsremind --dbname plsremind --format custom > backups/partial && mv backups/partial "backups/plsremind-$(date +\%Y\%m\%d).dump"
 ```
 
 Old dumps are not deleted; remove them yourself.
 
 ### Restoring
 
-This replaces everything in the database with `plsremind.dump`:
+This replaces everything in the database with `plsremind.dump`; to restore another dump, copy
+it to that name first:
 
 <!-- snippet: compose-restore -->
 ```sh
@@ -69,7 +71,9 @@ longer need it.
 ## Docker Swarm
 
 Run these on the node that runs the database, for a stack deployed as `plsremind`. They find the
-database's container there by its service, `plsremind_db`.
+database's container there by its service, `plsremind_db`. Restoring also scales services,
+which only a manager can do; the stack keeps the database on one (see
+[several nodes](swarm.md#adapting-stackyaml)).
 
 ### Backing up
 
@@ -86,27 +90,38 @@ db="$(docker ps -q --filter label=com.docker.swarm.service.name=plsremind_db)" &
 ```sh
 db="$(docker ps -q --filter label=com.docker.swarm.service.name=plsremind_db)"
 psql() { docker exec -i "$db" psql --username plsremind --dbname postgres --quiet -v ON_ERROR_STOP=1 "$@"; }
-writers="$(docker stack services plsremind --format '{{.Name}}' | grep -vx plsremind_db)"
-counts="$(for service in $writers; do echo "$service=$(docker service inspect --format '{{.Spec.Mode.Replicated.Replicas}}' "$service")"; done)"
+counts="$(docker stack services plsremind --format '{{.Name}} {{.Mode}}' \
+  | awk '$2 == "replicated" && $1 != "plsremind_db" { print $1 }' \
+  | xargs docker service inspect --format '{{.Spec.Name}}={{.Spec.Mode.Replicated.Replicas}}')"
 psql -c 'DROP DATABASE IF EXISTS plsremind_restore' -c 'CREATE DATABASE plsremind_restore OWNER plsremind' &&
   docker exec -i "$db" pg_restore --username plsremind --dbname plsremind_restore \
     --no-owner --exit-on-error --single-transaction < plsremind.dump &&
-  docker service scale $(for service in $writers; do echo "$service=0"; done) &&
+  echo "$counts" | sed 's/=.*/=0/' | xargs docker service scale &&
   psql -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = 'plsremind'" \
     -c 'ALTER DATABASE plsremind RENAME TO plsremind_replaced; ALTER DATABASE plsremind_restore RENAME TO plsremind;' &&
-  docker service scale --detach $counts &&
+  echo "$counts" | xargs docker service scale --detach &&
   psql -c 'DROP DATABASE plsremind_replaced'
 ```
 
 It works like the one for Compose: it restores next to the database in use and stops there if
-that fails; then it scales every other service of the stack (the hub and every bot) to 0,
-swaps the databases, and scales them back to what they were. If it stops after the scaling
-has begun, scale them back yourself with `docker service scale plsremind_hub=1` and the same
-for each bot.
+that fails; then it scales the stack's other services (the hub and every bot) to 0, swaps the
+databases, and scales them back to what they were. Services of your own that run in global
+mode, a tunnel for instance, keep running; they do not write to the database. If it stops after
+the scaling has begun, scale them back yourself with `docker service scale plsremind_hub=1` and
+the same for each bot.
 
 ## Going back after an update
 
 The hub updates its database when it starts, and an older hub refuses to start against a
-database a newer one has updated. Going back is therefore a restore: set the image tags in
-your deploy file back to the series you had and deploy it, then restore the dump you made
-before the update, as above. The restore starts the older hub against the older database.
+database a newer one has updated. Going back is therefore a restore of the dump you made
+before the update:
+
+- **Compose:** set the image tags in `compose.yaml` back to the series you had and run the
+  restore. It starts the older images itself, against the older database. Do not run
+  `docker compose up -d` first: with the bot, it would wait for an older hub that cannot
+  start against the newer database.
+- **Swarm:** set the image tags in `stack.yaml` back, deploy it, then run the restore. The older
+  hub keeps restarting until the restore has swapped the databases.
+
+The bot may refuse its own file the same way; deleting its volume lets it start over, with
+the consequences described at the top.

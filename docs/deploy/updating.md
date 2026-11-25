@@ -24,8 +24,8 @@ Going from `0.2` to `0.3`, or later from `1` to `2`, is a step you choose:
 
 1. Read the notes of every release in between.
 2. [Back up](backups.md).
-3. Change the series in both image tags of your deploy file, the hub's and the bot's, from
-   `:0.2` to `:0.3`.
+3. Change the series in every plsremind image tag of your deploy file, the hub's, the bot's
+   and those of further bots, from `:0.2` to `:0.3`.
 4. If the notes name a change to the deploy file, make it in your copy too. Changes like that
    are rare: most new series only change the number.
 5. Deploy as within a series.

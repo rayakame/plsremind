@@ -135,7 +135,8 @@ The hub ends while the database is not ready yet, and Kubernetes starts it again
 ## The Ingress
 
 The gateway is a WebSocket that stays open; the Ingress must not cut it after less than a
-minute (see [reverse proxies and tunnels](proxies.md#websockets)). With ingress-nginx:
+minute (see [reverse proxies and tunnels](proxies.md#websockets)). With ingress-nginx, and the
+certificate in the secret `plsremind-tls`, for example from cert-manager:
 
 ```yaml
 apiVersion: networking.k8s.io/v1
@@ -146,6 +147,10 @@ metadata:
     nginx.ingress.kubernetes.io/proxy-read-timeout: "120"
     nginx.ingress.kubernetes.io/proxy-send-timeout: "120"
 spec:
+  ingressClassName: nginx
+  tls:
+    - hosts: [todo.example.com]
+      secretName: plsremind-tls
   rules:
     - host: todo.example.com
       http:
@@ -212,5 +217,10 @@ image of the series: `kubectl rollout restart deployment/hub deployment/discord`
 series, see [updating](updating.md).
 
 The commands of [backups](backups.md) work with `kubectl exec -i db-0 --` in place of
-`docker compose exec -T db`, and `kubectl scale deployment/hub deployment/discord --replicas=0`
-and back to 1 in place of stopping and starting the Compose services.
+`docker compose exec -T db`. In place of stopping the Compose services, scale the hub (and the
+bot, if you run it) to 0 and wait until its pod is gone, then back to 1 afterwards:
+
+```sh
+kubectl scale deployment/hub --replicas=0
+kubectl wait --for=delete pod -l app=plsremind-hub --timeout=120s
+```

@@ -11,3 +11,8 @@ services:
     build:
       context: ..
       dockerfile: connections/discord/Dockerfile
+
+networks:
+  default:
+    # Not the network of an instance from the release files that may run on the same machine.
+    name: plsremind-dev
