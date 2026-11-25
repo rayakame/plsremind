@@ -89,12 +89,8 @@ jobs:
         run: |
           # The deploy files are attached after the images are out, so a release still publishing is passed over.
           # Assigned on its own, so that a failed lookup fails the job instead of meaning "no release".
-          releases="$(gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100" --jq '.[]
-            | select((.draft or .prerelease) | not) | select(.tag_name | test("^v[0-9]"))
-            | "\(.created_at) \(.tag_name) \(any(.assets[]; .name == "compose.yaml" and .state == "uploaded"))"')"
-          releases="$(sort -r <<< "$releases")"
-          newest="$(awk 'NR == 1 { print $2 }' <<< "$releases")"
-          previous="$(awk '$3 == "true" { print $2; exit }' <<< "$releases")"
+          newest="$(python3 deploy/releases.py)"
+          previous="$(python3 deploy/releases.py compose.yaml)"
           previous="${previous:-none}"
           if [ -n "$newest" ] && [ "$newest" != "$previous" ]; then
             echo "::warning::$newest has no deploy files, so the update test passes over it (baseline: $previous). If its release run failed, rerun it (docs/releases.md)."
