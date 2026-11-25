@@ -9,7 +9,7 @@ finished="$(gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100" -
   | select(["compose.yaml", "stack.yaml", "env.example", "plsremind-monitoring.tar.gz"] - [.assets[] | select(.state == "uploaded") | .name] == [])
   | "\(.created_at) \(.tag_name)"')"
 # The list's order is not documented; created_at is what GitHub itself orders "latest" by.
-newest="$(sort -r <<< "$finished" | head -n 1 | cut -d ' ' -f 2)"
+newest="$(sort -r <<< "$finished" | awk 'NR == 1 { print $2 }')"
 if [ -z "$newest" ]; then
   echo "no server release has its deploy files yet"
   exit 0

@@ -93,7 +93,7 @@ jobs:
             | select((.draft or .prerelease) | not) | select(.tag_name | test("^v[0-9]"))
             | select(any(.assets[]; .name == "compose.yaml" and .state == "uploaded"))
             | "\(.created_at) \(.tag_name)"')"
-          previous="$(sort -r <<< "$finished" | head -n 1 | cut -d ' ' -f 2)"
+          previous="$(sort -r <<< "$finished" | awk 'NR == 1 { print $2 }')"
           previous="${previous:-none}"
           deploy/upgrade-test.sh "${previous#v}" plsremind:candidate
 
