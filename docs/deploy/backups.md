@@ -104,6 +104,7 @@ psql -c 'DROP DATABASE IF EXISTS plsremind_restore' -c 'CREATE DATABASE plsremin
   docker exec -i "$db" pg_restore --username plsremind --dbname plsremind_restore \
     --no-owner --exit-on-error --single-transaction < plsremind.dump &&
   echo "$counts" | sed 's/=.*/=0/' | xargs docker service scale &&
+  until [ "$(echo "$counts" | sed 's/=.*//' | xargs docker service ps --format '{{.CurrentState}}' | grep -c '^Running')" = 0 ]; do sleep 1; done &&
   psql -c 'DROP DATABASE IF EXISTS plsremind_replaced' \
     -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = 'plsremind'" \
     -c 'ALTER DATABASE plsremind RENAME TO plsremind_replaced; ALTER DATABASE plsremind_restore RENAME TO plsremind;' &&
@@ -111,8 +112,9 @@ psql -c 'DROP DATABASE IF EXISTS plsremind_restore' -c 'CREATE DATABASE plsremin
 ```
 
 It works like the one for Compose: it restores next to the database in use and stops there if
-that fails; then it scales the stack's other services (the hub and every bot) to 0, swaps the
-databases, and scales them back to what they were, keeping the replaced database as
+that fails; then it scales the stack's other services (the hub and every bot) to 0, waits until
+their containers have stopped (`docker service scale` returns earlier), swaps the databases, and
+scales them back to what they were, keeping the replaced database as
 `plsremind_replaced`. Services of your own that run in global mode, a tunnel for instance, keep
 running; they do not write to the database. If it stops after the scaling has begun, scale them
 back yourself with `docker service scale plsremind_hub=1` and the same for each bot. Once the

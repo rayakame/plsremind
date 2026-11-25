@@ -97,8 +97,22 @@ fi
 sed "s/published: 8080/published: ${port}/" stack.yaml > "$work/stack.yaml"
 printf 'services:\n  hub:\n    image: %s\n  discord:\n    image: %s\n' "$hub_image" "$bot_image" > "$work/images.yaml"
 printf 'services:\n  db:\n    deploy:\n      replicas: 0\n' > "$work/no-db.yaml"
-# A service of one's own in the stack, global as a tunnel or proxy often is; the guide's restore must cope.
-printf 'services:\n  sidecar:\n    image: busybox:1.37\n    command: [sleep, "86400"]\n    deploy:\n      mode: global\n' > "$work/own.yaml"
+# Services of one's own in the stack: a global one, as a tunnel or proxy often is, and one that keeps
+# holding a connection to the database while it takes its time to stop, as the hub's pool can.
+cat > "$work/own.yaml" <<'EOF'
+services:
+  sidecar:
+    image: busybox:1.37
+    command: [sleep, "86400"]
+    deploy:
+      mode: global
+  writer:
+    image: postgres:18
+    command: [sh, -c, 'trap "" INT TERM; while true; do psql -h db -U plsremind -d plsremind -c "SELECT pg_sleep(60)" >/dev/null 2>&1; done']
+    environment:
+      PGPASSWORD: plsremind
+    stop_grace_period: 30s
+EOF
 deploy() {
   docker stack deploy --detach=true --resolve-image never -c "$work/stack.yaml" -c "$work/images.yaml" -c "$work/own.yaml" "$@" "$stack" >/dev/null
 }
@@ -159,7 +173,19 @@ expect "the guide's dump is readable by its owner alone" \
   "$(python3 -c 'import os, sys; print(oct(os.stat(sys.argv[1]).st_mode & 0o777))' "$work/guide/plsremind.dump")" 0o600
 echo "ok  the guide's backup wrote a dump"
 add_item "after the backup"
-guide swarm-restore >/dev/null 2>&1 || fail "the guide's restore failed"
+writer="$(docker ps -q --filter "label=com.docker.swarm.service.name=${stack}_writer")"
+guide swarm-restore >/dev/null 2>"$work/restore.err" || { tail -n 5 "$work/restore.err" >&2; fail "the guide's restore failed"; }
+restored="$(date -u +%s)"
+for _ in $(seq 1 60); do
+  [ "$(docker inspect -f '{{.State.Running}}' "$writer")" = false ] && break
+  sleep 1
+done
+# docker service scale returns while a stopped service's containers still run.
+expect "the restore swaps the databases only once the services it stopped have ended" \
+  "$(python3 -c 'import calendar, sys, time
+ended = calendar.timegm(time.strptime(sys.argv[1][:19], "%Y-%m-%dT%H:%M:%S"))
+print("yes" if ended <= int(sys.argv[2]) else f"no, ended {ended - int(sys.argv[2])}s after the restore")' \
+    "$(docker inspect -f '{{.State.FinishedAt}}' "$writer")" "$restored")" yes
 wait_ready 120 || fail "the hub was not ready two minutes after the restore"
 titles="$(curl -fsS -b "$jar" "$base/users/@me/items" | grep -o '"title":"[^"]*"' | sort | tr '\n' ' ')"
 case "$titles" in *'"title":"after the backup"'*) fail "the restore kept what came after the backup";; esac
