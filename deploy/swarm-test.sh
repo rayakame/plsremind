@@ -175,7 +175,7 @@ echo "ok  the guide's backup wrote a dump"
 add_item "after the backup"
 writer="$(docker ps -q --filter "label=com.docker.swarm.service.name=${stack}_writer")"
 guide swarm-restore >/dev/null 2>"$work/restore.err" || { tail -n 5 "$work/restore.err" >&2; fail "the guide's restore failed"; }
-restored="$(date -u +%s)"
+restored="$(python3 -c 'import time; print(time.time())')"
 for _ in $(seq 1 60); do
   [ "$(docker inspect -f '{{.State.Running}}' "$writer")" = false ] && break
   sleep 1
@@ -183,8 +183,10 @@ done
 # docker service scale returns while a stopped service's containers still run.
 expect "the restore swaps the databases only once the services it stopped have ended" \
   "$(python3 -c 'import calendar, sys, time
-ended = calendar.timegm(time.strptime(sys.argv[1][:19], "%Y-%m-%dT%H:%M:%S"))
-print("yes" if ended <= int(sys.argv[2]) else f"no, ended {ended - int(sys.argv[2])}s after the restore")' \
+stamp, _, fraction = sys.argv[1].rstrip("Z").partition(".")
+ended = calendar.timegm(time.strptime(stamp, "%Y-%m-%dT%H:%M:%S")) + float("0." + (fraction or "0"))
+late = ended - float(sys.argv[2])
+print("yes" if late <= 0 else f"no, ended {late:.3f}s after the restore")' \
     "$(docker inspect -f '{{.State.FinishedAt}}' "$writer")" "$restored")" yes
 wait_ready 120 || fail "the hub was not ready two minutes after the restore"
 titles="$(curl -fsS -b "$jar" "$base/users/@me/items" | grep -o '"title":"[^"]*"' | sort | tr '\n' ' ')"

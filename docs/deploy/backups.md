@@ -104,7 +104,8 @@ psql -c 'DROP DATABASE IF EXISTS plsremind_restore' -c 'CREATE DATABASE plsremin
   docker exec -i "$db" pg_restore --username plsremind --dbname plsremind_restore \
     --no-owner --exit-on-error --single-transaction < plsremind.dump &&
   echo "$counts" | sed 's/=.*/=0/' | xargs docker service scale &&
-  until [ "$(echo "$counts" | sed 's/=.*//' | xargs docker service ps --format '{{.CurrentState}}' | grep -c '^Running')" = 0 ]; do sleep 1; done &&
+  until running="$(echo "$counts" | sed 's/=.*//' | xargs docker service ps --format '{{.CurrentState}}')" &&
+    ! grep -q '^Running' <<< "$running"; do sleep 1; done &&
   psql -c 'DROP DATABASE IF EXISTS plsremind_replaced' \
     -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = 'plsremind'" \
     -c 'ALTER DATABASE plsremind RENAME TO plsremind_replaced; ALTER DATABASE plsremind_restore RENAME TO plsremind;' &&

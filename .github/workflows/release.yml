@@ -341,7 +341,15 @@ jobs:
         env:
           VERSION: ${{ needs.sdk-ts-build.outputs.version }}
         run: |
-          highest="$(npm view plsremind versions --json 2>/dev/null | jq -r 'if type == "array" then .[] else . end' | grep -v -- - | sort -V | tail -n 1 || true)"
+          # With --json, npm writes its errors to stdout too.
+          if versions="$(npm view plsremind versions --json 2>/dev/null)"; then
+            highest="$(jq -r 'if type == "array" then .[] else . end | select(contains("-") | not)' <<< "$versions" | sort -V | tail -n 1)"
+          elif [ "$(jq -r '.error.code // ""' <<< "$versions" 2>/dev/null)" = E404 ]; then
+            highest=""
+          else
+            echo "could not read the versions on npm: $versions" >&2
+            exit 1
+          fi
           if [ -n "$highest" ] && [ "$(printf '%s\n%s\n' "$highest" "$VERSION" | sort -V | tail -n 1)" = "$highest" ]; then
             echo "plsremind $highest is newer, so $VERSION goes out under the tag backport"
             echo "tag=backport" >> "$GITHUB_OUTPUT"
