@@ -28,8 +28,10 @@ not know. Each SDK names the oldest server release it works with at the top of i
 ## Which releases get fixes
 
 Only the newest release. A fix comes as a new patch release, never as a change to an existing
-one: released images and packages are never rebuilt. Updates of the base images and of what
-runs inside them come the same way, as patch releases.
+one: released images and packages are never rebuilt. Updates of the base images and of the
+dependencies the images and packages declare come the same way, as patch releases, and so do
+security fixes in any dependency. The weekly refresh of the lockfiles, which moves indirect
+dependencies within the declared ranges, goes out with the next release.
 
 Going back to an older release is not supported. Back up before you update; going back means
 restoring that backup (see [updating](deploy/updating.md)).
