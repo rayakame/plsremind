@@ -96,6 +96,52 @@ jobs:
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
           skip-github-release: true
+      # release-please cannot write a series such as 0.2, and replaces its branch on every run.
+      - id: server-pr
+        name: Find the server's release pull request
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+        run: |
+          head="$(gh pr list --repo "$GITHUB_REPOSITORY" --state open \
+            --head release-please--branches--main--components--plsremind --json headRefOid --jq '.[0].headRefOid // ""')"
+          echo "head=$head" >> "$GITHUB_OUTPUT"
+      - if: steps.server-pr.outputs.head != ''
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ steps.server-pr.outputs.head }}
+          persist-credentials: false
+      - if: steps.server-pr.outputs.head != ''
+        name: Name the new series in the deploy files of that pull request
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          HEAD: ${{ steps.server-pr.outputs.head }}
+        run: |
+          changed="$(python3 deploy/series.py --write)"
+          if [ -z "$changed" ]; then
+            echo "the deploy files already name the series of this release"
+            exit 0
+          fi
+          # One commit through the API, so that it is signed and fails if the branch moved meanwhile.
+          CHANGED="$changed" python3 - > commit.json <<'PY'
+          import base64, json, os, pathlib, subprocess
+          series = subprocess.run(["python3", "deploy/series.py"], check=True, capture_output=True, text=True).stdout.strip()
+          print(json.dumps({
+              "query": "mutation($input: CreateCommitOnBranchInput!) { createCommitOnBranch(input: $input) { commit { oid } } }",
+              "variables": {"input": {
+                  "branch": {
+                      "repositoryNameWithOwner": os.environ["GITHUB_REPOSITORY"],
+                      "branchName": "release-please--branches--main--components--plsremind",
+                  },
+                  "message": {"headline": f"chore: name the {series} series in the deploy files"},
+                  "expectedHeadOid": os.environ["HEAD"],
+                  "fileChanges": {"additions": [
+                      {"path": name, "contents": base64.b64encode(pathlib.Path(name).read_bytes()).decode()}
+                      for name in os.environ["CHANGED"].splitlines()
+                  ]},
+              }},
+          }))
+          PY
+          gh api graphql --input commit.json --jq .data.createCommitOnBranch.commit.oid
 
   images:
     needs: release-please
