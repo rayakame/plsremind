@@ -11,6 +11,7 @@
       "release-type": "simple",
       "component": "plsremind",
       "include-component-in-tag": false,
+      "exclude-paths": ["sdk/python", "sdk/ts"],
       "extra-files": [
         {
           "type": "generic",
