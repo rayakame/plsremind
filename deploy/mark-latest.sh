@@ -6,7 +6,7 @@ set -euo pipefail
 # Assigned on its own, so that a failed lookup fails instead of meaning "no release".
 finished="$(gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100" --jq '.[]
   | select((.draft or .prerelease) | not) | select(.tag_name | test("^v[0-9]"))
-  | select(["compose.yaml", "stack.yaml", "env.example", "plsremind-monitoring.tar.gz"] - [.assets[].name] == [])
+  | select(["compose.yaml", "stack.yaml", "env.example", "plsremind-monitoring.tar.gz"] - [.assets[] | select(.state == "uploaded") | .name] == [])
   | .tag_name')"
 newest="$(head -n 1 <<< "$finished")"
 if [ -z "$newest" ]; then

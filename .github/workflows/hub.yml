@@ -91,7 +91,7 @@ jobs:
           # Assigned on its own, so that a failed lookup fails the job instead of meaning "no release".
           finished="$(gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100" --jq '.[]
             | select((.draft or .prerelease) | not) | select(.tag_name | test("^v[0-9]"))
-            | select(any(.assets[]; .name == "compose.yaml")) | .tag_name')"
+            | select(any(.assets[]; .name == "compose.yaml" and .state == "uploaded")) | .tag_name')"
           previous="$(head -n 1 <<< "$finished")"
           previous="${previous:-none}"
           deploy/upgrade-test.sh "${previous#v}" plsremind:candidate
