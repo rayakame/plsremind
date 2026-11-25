@@ -222,11 +222,15 @@ jobs:
               *:edge | *:"$VERSION") ;;
               *)
                 # A minor or latest tag that already points at a newer release stays there.
-                current="$(docker buildx imagetools inspect "$tag" --format '{{ index (index .Image "linux/amd64").Config.Labels "org.opencontainers.image.version" }}' 2>/dev/null || true)"
-                if [ -n "$current" ] && [ "$current" != "$VERSION" ] \
-                  && [ "$(printf '%s\n%s\n' "$current" "$VERSION" | sort -V | tail -n 1)" = "$current" ]; then
-                  echo "$tag stays at $current"
-                  continue
+                if current="$(docker buildx imagetools inspect "$tag" --format '{{ index (index .Image "linux/amd64").Config.Labels "org.opencontainers.image.version" }}' 2> inspect.err)"; then
+                  if [ "$current" != "$VERSION" ] \
+                    && [ "$(printf '%s\n%s\n' "$current" "$VERSION" | sort -V | tail -n 1)" = "$current" ]; then
+                    echo "$tag stays at $current"
+                    continue
+                  fi
+                elif ! grep -qiE 'not found|manifest unknown|name unknown' inspect.err; then
+                  cat inspect.err >&2
+                  exit 1
                 fi
                 ;;
             esac
