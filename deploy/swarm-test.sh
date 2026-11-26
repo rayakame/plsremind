@@ -192,6 +192,7 @@ for service in writer starting; do
   [ -n "$container" ] || fail "the $service service has no running container"
   writers+=("$container")
 done
+db="$(docker ps -q --filter "label=com.docker.swarm.service.name=${stack}_db")"
 since="$(date +%s)"
 guide swarm-restore >/dev/null 2>"$work/restore.err" || { tail -n 5 "$work/restore.err" >&2; fail "the guide's restore failed"; }
 for _ in $(seq 1 90); do
@@ -200,12 +201,11 @@ for _ in $(seq 1 90); do
 done
 # --until takes whole seconds, and the last end may fall in the current one.
 until="$(( $(date +%s) + 1 ))"
-# docker service scale returns while the containers still run, and Swarm removes them once they end, so the
-# ends come from the events, as does the swap: the restore scales the first service back up right after it.
-swapped="$(docker events --since "$since" --until "$until" --filter type=service --filter event=update \
-  --format '{{index .Actor.Attributes "replicas.old"}} {{index .Actor.Attributes "replicas.new"}} {{.TimeNano}}' \
-  | awk '$1 == "0" && $2 != "0" && !found { print $3; found = 1 }')"
-[ -n "$swapped" ] || fail "the restore scaled no service back up"
+# docker service scale returns while the containers still run, and Swarm removes them once they end, so the ends
+# come from the events, as does the swap: the psql that renames the databases starts in the database's container.
+swapped="$(docker events --since "$since" --until "$until" --filter container="$db" --filter event=exec_start \
+  --format '{{.TimeNano}} {{.Action}}' | awk '/RENAME TO plsremind_replaced/ && !found { print $1; found = 1 }')"
+[ -n "$swapped" ] || fail "the restore swapped no databases"
 expect "the restore swaps the databases only once the services it stopped have ended" \
   "$(docker events --since "$since" --until "$until" --filter event=die "${writers[@]/#/--filter=container=}" \
     --format '{{index .Actor.Attributes "com.docker.swarm.service.name"}} {{.TimeNano}}' | python3 -c 'import sys
@@ -223,8 +223,8 @@ titles="$(curl -fsS -b "$jar" "$base/users/@me/items" | grep -o '"title":"[^"]*"
 case "$titles" in *'"title":"after the backup"'*) fail "the restore kept what came after the backup";; esac
 case "$titles" in *'"title":"before the backup"'*) ;; *) fail "the restore lost the item from before the backup: $titles";; esac
 expect "the database the restore replaced is kept until it is dropped by hand" \
-  "$(docker exec "$(docker ps -q --filter "label=com.docker.swarm.service.name=${stack}_db")" psql --username plsremind \
-    --dbname postgres -tA -c "SELECT count(*) FROM pg_database WHERE datname = 'plsremind_replaced'")" 1
+  "$(docker exec "$db" psql --username plsremind --dbname postgres -tA \
+    -c "SELECT count(*) FROM pg_database WHERE datname = 'plsremind_replaced'")" 1
 expect "the restore scaled the bot back" \
   "$(docker service inspect "${stack}_discord" --format '{{.Spec.Mode.Replicated.Replicas}}')" 1
 echo "ok  the guide's restore brought the backup back"
