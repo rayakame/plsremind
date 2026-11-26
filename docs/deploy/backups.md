@@ -123,11 +123,11 @@ earlier), swaps the databases, and scales them back to what they were, keeping t
 database as `plsremind_replaced`. Services of your own that run in global mode, a tunnel for
 instance, keep running, as does everything outside the stack. The databases cannot be swapped
 while one of those holds a connection, so give such a service in the stack replicated mode, and
-stop one outside it before the restore and start it again afterwards. If it stops after the
-scaling has begun, scale them back: in the same shell with
-`echo "$counts" | xargs docker service scale`, or, once that shell is gone, by deploying the
-stack again, which sets every service to the replicas its file names. Once the hub runs as it
-should, drop the old database:
+stop one outside it before the restore, waiting until `docker service ps` lists none of its
+tasks as Starting or Running, and start it again afterwards. If it stops after the scaling has
+begun, scale them back: in the same shell with `echo "$counts" | xargs docker service scale`,
+or, once that shell is gone, by deploying the stack again, which sets every service to the
+replicas its file names. Once the hub runs as it should, drop the old database:
 
 ```sh
 docker exec "$(docker ps -q --filter label=com.docker.swarm.service.name=plsremind_db)" \
