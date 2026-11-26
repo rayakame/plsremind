@@ -66,6 +66,10 @@ What it does, step by step:
 3. It starts everything again. The database it replaced stays as `plsremind_replaced`, so that
    you can go back to it if the restored one turns out wrong.
 
+Something that uses the database but runs outside these Compose services keeps running; stop
+it before the restore and start it again afterwards, since the databases cannot be swapped
+while it holds a connection.
+
 If it stops after step 2 has begun, start everything again with `docker compose up -d`. Once the
 hub runs as it should on the restored database, drop the old one (the next restore drops it
 too):
@@ -117,8 +121,10 @@ that fails; then it scales the stack's other replicated services (the hub, every
 of your own) to 0, waits until their containers have stopped (`docker service scale` returns
 earlier), swaps the databases, and scales them back to what they were, keeping the replaced
 database as `plsremind_replaced`. Services of your own that run in global mode, a tunnel for
-instance, keep running; give one that uses the database replicated mode, so that the restore
-stops it too. If it stops after the scaling has begun, scale them back: in the same shell with
+instance, keep running, as does everything outside the stack. The databases cannot be swapped
+while one of those holds a connection, so give such a service in the stack replicated mode, and
+stop one outside it before the restore and start it again afterwards. If it stops after the
+scaling has begun, scale them back: in the same shell with
 `echo "$counts" | xargs docker service scale`, or, once that shell is gone, by deploying the
 stack again, which sets every service to the replicas its file names. Once the hub runs as it
 should, drop the old database:
