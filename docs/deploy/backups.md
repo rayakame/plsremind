@@ -117,10 +117,11 @@ that fails; then it scales the stack's other replicated services (the hub, every
 of your own) to 0, waits until their containers have stopped (`docker service scale` returns
 earlier), swaps the databases, and scales them back to what they were, keeping the replaced
 database as `plsremind_replaced`. Services of your own that run in global mode, a tunnel for
-instance, keep running; they do not write to the database. If it stops after the scaling has
-begun, scale them back: in the same shell with `echo "$counts" | xargs docker service scale`,
-or, once that shell is gone, by deploying the stack again, which sets every service to the
-replicas its file names. Once the hub runs as it should, drop the old database:
+instance, keep running; give one that uses the database replicated mode, so that the restore
+stops it too. If it stops after the scaling has begun, scale them back: in the same shell with
+`echo "$counts" | xargs docker service scale`, or, once that shell is gone, by deploying the
+stack again, which sets every service to the replicas its file names. Once the hub runs as it
+should, drop the old database:
 
 ```sh
 docker exec "$(docker ps -q --filter label=com.docker.swarm.service.name=plsremind_db)" \
@@ -146,6 +147,12 @@ before the update:
 - **Kubernetes:** while the Deployments are scaled to 0 for the restore, set their images back,
   `kubectl set image deployment/hub hub=ghcr.io/rayakame/plsremind:<series>` and the same for
   `deployment/discord`, then run the restore and scale them back to 1.
+
+If the restore stops before it has swapped the databases, the database is still the newer one,
+which the older hub cannot start against. Start the newer series again and go back once the
+cause is fixed: set the tags back to it and run `docker compose up -d` or deploy the stack; with
+docker run, start the containers you stopped; on Kubernetes, set the images back to it and
+scale to 1.
 
 The bot may refuse its own file the same way; deleting its volume lets it start over, with
 the consequences described at the top.
