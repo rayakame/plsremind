@@ -97,8 +97,8 @@ fi
 sed "s/published: 8080/published: ${port}/" stack.yaml > "$work/stack.yaml"
 printf 'services:\n  hub:\n    image: %s\n  discord:\n    image: %s\n' "$hub_image" "$bot_image" > "$work/images.yaml"
 printf 'services:\n  db:\n    deploy:\n      replicas: 0\n' > "$work/no-db.yaml"
-# Services of one's own in the stack: a global one, as a tunnel or proxy often is, and one that keeps
-# holding a connection to the database while it takes its time to stop, as the hub's pool can.
+# Services of one's own: a global one, as a tunnel or proxy often is, and two that hold a database connection
+# while they take their time to stop, one of them still starting, as a hub is until it is healthy.
 cat > "$work/own.yaml" <<'EOF'
 services:
   sidecar:
@@ -112,6 +112,17 @@ services:
     environment:
       PGPASSWORD: plsremind
     stop_grace_period: 30s
+  starting:
+    image: postgres:18
+    command: [sh, -c, 'trap "" INT TERM; while true; do psql -h db -U plsremind -d plsremind -c "SELECT pg_sleep(60)" >/dev/null 2>&1; done']
+    environment:
+      PGPASSWORD: plsremind
+    healthcheck:
+      test: [CMD, "false"]
+      interval: 1h
+      start_period: 1h
+    # Longer than the writer's, so that the restore's wait for the writer does not cover this one.
+    stop_grace_period: 45s
 EOF
 deploy() {
   docker stack deploy --detach=true --resolve-image never -c "$work/stack.yaml" -c "$work/images.yaml" -c "$work/own.yaml" "$@" "$stack" >/dev/null
@@ -173,21 +184,35 @@ expect "the guide's dump is readable by its owner alone" \
   "$(python3 -c 'import os, sys; print(oct(os.stat(sys.argv[1]).st_mode & 0o777))' "$work/guide/plsremind.dump")" 0o600
 echo "ok  the guide's backup wrote a dump"
 add_item "after the backup"
-writer="$(docker ps -q --filter "label=com.docker.swarm.service.name=${stack}_writer")"
+expect "a service of one's own is still starting" \
+  "$(docker service ps --filter desired-state=running --format '{{.CurrentState}}' "${stack}_starting" | awk 'NR == 1 { print $1 }')" Starting
+writers=()
+for service in writer starting; do
+  container="$(docker ps -q --filter "label=com.docker.swarm.service.name=${stack}_${service}")"
+  [ -n "$container" ] || fail "the $service service has no running container"
+  writers+=("$container")
+done
+since="$(date +%s)"
 guide swarm-restore >/dev/null 2>"$work/restore.err" || { tail -n 5 "$work/restore.err" >&2; fail "the guide's restore failed"; }
 restored="$(python3 -c 'import time; print(time.time())')"
-for _ in $(seq 1 60); do
-  [ "$(docker inspect -f '{{.State.Running}}' "$writer")" = false ] && break
+for _ in $(seq 1 90); do
+  [ -z "$(docker ps -q "${writers[@]/#/--filter=id=}")" ] && break
   sleep 1
 done
-# docker service scale returns while a stopped service's containers still run.
+# docker service scale returns while the containers still run, and Swarm removes them once they end, so the
+# ends come from the events; --until takes whole seconds, and the last end may fall in the current one.
 expect "the restore swaps the databases only once the services it stopped have ended" \
-  "$(python3 -c 'import calendar, sys, time
-stamp, _, fraction = sys.argv[1].rstrip("Z").partition(".")
-ended = calendar.timegm(time.strptime(stamp, "%Y-%m-%dT%H:%M:%S")) + float("0." + (fraction or "0"))
-late = ended - float(sys.argv[2])
-print("yes" if late <= 0 else f"no, ended {late:.3f}s after the restore")' \
-    "$(docker inspect -f '{{.State.FinishedAt}}' "$writer")" "$restored")" yes
+  "$(docker events --since "$since" --until "$(( $(date +%s) + 1 ))" --filter event=die "${writers[@]/#/--filter=container=}" \
+    --format '{{index .Actor.Attributes "com.docker.swarm.service.name"}} {{.TimeNano}}' | python3 -c 'import sys
+restored = float(sys.argv[1])
+ended = dict(line.split() for line in sys.stdin if line.strip())
+late = []
+for service in sys.argv[2:]:
+    if service not in ended:
+        late.append(f"{service} did not end")
+    elif int(ended[service]) / 1e9 > restored:
+        late.append(f"{service} ended {int(ended[service]) / 1e9 - restored:.3f}s after the restore")
+print("; ".join(late) or "yes")' "$restored" "${stack}_writer" "${stack}_starting")" yes
 wait_ready 120 || fail "the hub was not ready two minutes after the restore"
 titles="$(curl -fsS -b "$jar" "$base/users/@me/items" | grep -o '"title":"[^"]*"' | sort | tr '\n' ' ')"
 case "$titles" in *'"title":"after the backup"'*) fail "the restore kept what came after the backup";; esac
