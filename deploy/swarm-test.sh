@@ -194,25 +194,30 @@ for service in writer starting; do
 done
 since="$(date +%s)"
 guide swarm-restore >/dev/null 2>"$work/restore.err" || { tail -n 5 "$work/restore.err" >&2; fail "the guide's restore failed"; }
-restored="$(python3 -c 'import time; print(time.time())')"
 for _ in $(seq 1 90); do
   [ -z "$(docker ps -q "${writers[@]/#/--filter=id=}")" ] && break
   sleep 1
 done
+# --until takes whole seconds, and the last end may fall in the current one.
+until="$(( $(date +%s) + 1 ))"
 # docker service scale returns while the containers still run, and Swarm removes them once they end, so the
-# ends come from the events; --until takes whole seconds, and the last end may fall in the current one.
+# ends come from the events, as does the swap: the restore scales the first service back up right after it.
+swapped="$(docker events --since "$since" --until "$until" --filter type=service --filter event=update \
+  --format '{{index .Actor.Attributes "replicas.old"}} {{index .Actor.Attributes "replicas.new"}} {{.TimeNano}}' \
+  | awk '$1 == "0" && $2 != "0" && !found { print $3; found = 1 }')"
+[ -n "$swapped" ] || fail "the restore scaled no service back up"
 expect "the restore swaps the databases only once the services it stopped have ended" \
-  "$(docker events --since "$since" --until "$(( $(date +%s) + 1 ))" --filter event=die "${writers[@]/#/--filter=container=}" \
+  "$(docker events --since "$since" --until "$until" --filter event=die "${writers[@]/#/--filter=container=}" \
     --format '{{index .Actor.Attributes "com.docker.swarm.service.name"}} {{.TimeNano}}' | python3 -c 'import sys
-restored = float(sys.argv[1])
+swapped = int(sys.argv[1])
 ended = dict(line.split() for line in sys.stdin if line.strip())
 late = []
 for service in sys.argv[2:]:
     if service not in ended:
         late.append(f"{service} did not end")
-    elif int(ended[service]) / 1e9 > restored:
-        late.append(f"{service} ended {int(ended[service]) / 1e9 - restored:.3f}s after the restore")
-print("; ".join(late) or "yes")' "$restored" "${stack}_writer" "${stack}_starting")" yes
+    elif int(ended[service]) > swapped:
+        late.append(f"{service} ended {(int(ended[service]) - swapped) / 1e9:.3f}s after the swap")
+print("; ".join(late) or "yes")' "$swapped" "${stack}_writer" "${stack}_starting")" yes
 wait_ready 120 || fail "the hub was not ready two minutes after the restore"
 titles="$(curl -fsS -b "$jar" "$base/users/@me/items" | grep -o '"title":"[^"]*"' | sort | tr '\n' ' ')"
 case "$titles" in *'"title":"after the backup"'*) fail "the restore kept what came after the backup";; esac

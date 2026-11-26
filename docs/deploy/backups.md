@@ -113,13 +113,14 @@ psql -c 'DROP DATABASE IF EXISTS plsremind_restore' -c 'CREATE DATABASE plsremin
 ```
 
 It works like the one for Compose: it restores next to the database in use and stops there if
-that fails; then it scales the stack's other services (the hub and every bot) to 0, waits until
-their containers have stopped (`docker service scale` returns earlier), swaps the databases, and
-scales them back to what they were, keeping the replaced database as
-`plsremind_replaced`. Services of your own that run in global mode, a tunnel for instance, keep
-running; they do not write to the database. If it stops after the scaling has begun, scale them
-back yourself with `docker service scale plsremind_hub=1` and the same for each bot. Once the
-hub runs as it should, drop the old database:
+that fails; then it scales the stack's other replicated services (the hub, every bot and those
+of your own) to 0, waits until their containers have stopped (`docker service scale` returns
+earlier), swaps the databases, and scales them back to what they were, keeping the replaced
+database as `plsremind_replaced`. Services of your own that run in global mode, a tunnel for
+instance, keep running; they do not write to the database. If it stops after the scaling has
+begun, scale them back: in the same shell with `echo "$counts" | xargs docker service scale`,
+or, once that shell is gone, by deploying the stack again, which sets every service to the
+replicas its file names. Once the hub runs as it should, drop the old database:
 
 ```sh
 docker exec "$(docker ps -q --filter label=com.docker.swarm.service.name=plsremind_db)" \
