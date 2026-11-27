@@ -10,8 +10,9 @@ set two things:
   for everyone once a few people try at the same time. The hub believes the header only from
   loopback and private addresses, which is where a proxy on the same machine or network comes
   from. The proxy has to set the header to the address it sees, in place of what the client
-  sent: Caddy and Traefik do so on their own, nginx with
-  `proxy_set_header X-Forwarded-For $remote_addr`. A proxy that passes the client's header on
+  sent. For `X-Forwarded-For`, Caddy and Traefik do so on their own, nginx with
+  `proxy_set_header X-Forwarded-For $remote_addr`; any other header, `X-Real-IP` for instance,
+  the proxy has to be told to set. A proxy that passes the client's header on
   lets the client choose the address its rate limit counts; one that adds to it, as nginx's
   `$proxy_add_x_forwarded_for` does, lets clients in a private network do so, since the hub
   trusts private addresses as proxies.
