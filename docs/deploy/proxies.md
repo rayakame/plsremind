@@ -12,10 +12,12 @@ set two things:
   from. The proxy has to set the header to the address it sees, in place of what the client
   sent. For `X-Forwarded-For`, Caddy and Traefik do so on their own, nginx with
   `proxy_set_header X-Forwarded-For $remote_addr`; any other header, `X-Real-IP` for instance,
-  the proxy has to be told to set. A proxy that passes the client's header on
-  lets the client choose the address its rate limit counts; one that adds to it, as nginx's
-  `$proxy_add_x_forwarded_for` does, lets clients in a private network do so, since the hub
-  trusts private addresses as proxies.
+  the proxy has to be told to set. A proxy that passes the client's header on lets the client
+  choose the address its rate limit counts. One that adds to it lets clients in a private
+  network do so, since the hub trusts private addresses as proxies: nginx with
+  `$proxy_add_x_forwarded_for`, and Caddy and Traefik for clients they are told to trust, with
+  `trusted_proxies` and `forwardedHeaders.trustedIPs`; so let them trust no private network.
+  With Cloudflare's proxy in front of yours, see [below](#cloudflares-proxy-in-front).
 
 ## WebSockets
 
@@ -53,6 +55,34 @@ its `ports` in the deploy file. Set `PLSREMIND_PROXY_HEADER=X-Forwarded-For`.
 In Swarm, publish the proxy's own ports in host mode, as `stack.yaml` does for the hub. With
 Swarm's usual publishing, every client reaches the proxy from an address of Swarm's own, the
 proxy passes that on, and all visitors share one rate limit.
+
+## Cloudflare's proxy in front
+
+With a hostname set to Proxied in Cloudflare's DNS, your proxy sees Cloudflare's addresses and
+passes one of those on, and everyone who comes through the same Cloudflare server shares one
+rate limit. Let your proxy trust Cloudflare's addresses, take the client's from
+`CF-Connecting-IP` and send that on. With Caddy, with the ranges listed at
+https://www.cloudflare.com/ips/ in place of the placeholder:
+
+```
+{
+    servers {
+        trusted_proxies static <Cloudflare's ranges, separated by spaces>
+        client_ip_headers CF-Connecting-IP
+    }
+}
+
+todo.example.com {
+    reverse_proxy localhost:8080 {
+        header_up X-Forwarded-For {client_ip}
+    }
+}
+```
+
+With nginx, `set_real_ip_from` for each range, `real_ip_header CF-Connecting-IP` and
+`proxy_set_header X-Forwarded-For $remote_addr`. Keep `PLSREMIND_PROXY_HEADER=X-Forwarded-For`:
+your proxy believes `CF-Connecting-IP` only from Cloudflare's addresses, so a client that goes
+around Cloudflare cannot choose the address its rate limit counts.
 
 ## Cloudflare Tunnel
 
