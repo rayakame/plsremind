@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import collections.abc
+import contextlib
 import datetime
 import importlib.resources
 import pathlib
@@ -297,3 +298,17 @@ async def test_a_store_from_before_dm_channels_gains_them_and_keeps_its_rows(tmp
     finally:
         await store.close()
     assert await version(path) == 2
+
+
+async def test_an_older_bot_refuses_a_newer_file(tmp_path: pathlib.Path) -> None:
+    path = tmp_path / "discord.db"
+    await (await Store.open(path)).close()
+    newest = len(list((importlib.resources.files("plsremind_discord") / "sql" / "migrations").iterdir()))
+    with contextlib.closing(sqlite3.connect(path)) as written:
+        written.execute(f"PRAGMA user_version = {newest + 1}")
+    with pytest.raises(store_module.SchemaTooNewError) as refused:
+        await Store.open(path)
+    assert (refused.value.database, refused.value.known) == (newest + 1, newest)
+    assert "newer release" in str(refused.value)
+    with contextlib.closing(sqlite3.connect(path)) as kept:
+        assert kept.execute("PRAGMA user_version").fetchone()[0] == newest + 1

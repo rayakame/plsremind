@@ -1,11 +1,14 @@
 package main
 
 import (
+	"bytes"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/rayakame/plsremind/hub/internal/server"
 )
 
 func TestTheHealthCommandAsksTheLocalListener(t *testing.T) {
@@ -29,4 +32,18 @@ func TestTheHealthCommandSaysWhetherTheHubIsReady(t *testing.T) {
 	require.False(t, probe(srv.URL))
 	srv.Close()
 	require.False(t, probe(srv.URL), "nobody listening")
+}
+
+func TestTheVersionCommandPrintsTheBuildVersion(t *testing.T) {
+	before := server.Version
+	t.Cleanup(func() { server.Version = before })
+	server.Version = "9.8.7"
+	var out bytes.Buffer
+	code, handled := command([]string{"plsremind", "version"}, &out)
+	require.True(t, handled)
+	require.Equal(t, 0, code)
+	require.Equal(t, "9.8.7\n", out.String())
+
+	_, handled = command([]string{"plsremind"}, &out)
+	require.False(t, handled, "without a command the hub serves")
 }

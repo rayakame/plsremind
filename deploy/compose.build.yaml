@@ -1,0 +1,18 @@
+# Builds the hub and the bot from this checkout instead of pulling the released images:
+#   docker compose -f compose.yaml -f compose.build.yaml up -d --build
+services:
+  hub:
+    image: plsremind:dev
+    build:
+      context: ..
+      dockerfile: hub/Dockerfile
+  discord:
+    image: plsremind-discord:dev
+    build:
+      context: ..
+      dockerfile: connections/discord/Dockerfile
+
+networks:
+  default:
+    # Not the network of an instance from the release files that may run on the same machine.
+    name: plsremind-dev

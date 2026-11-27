@@ -1,9 +1,23 @@
 {
   "name": "plsremind",
   "version": "0.0.0",
-  "private": true,
   "description": "Client for the plsremind hub: gateway, cache and REST",
   "license": "MIT",
+  "author": "rayakame",
+  "homepage": "https://github.com/rayakame/plsremind/tree/main/sdk/ts#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/rayakame/plsremind.git",
+    "directory": "sdk/ts"
+  },
+  "bugs": "https://github.com/rayakame/plsremind/issues",
+  "keywords": [
+    "plsremind",
+    "todo",
+    "reminders",
+    "gateway",
+    "sdk"
+  ],
   "type": "module",
   "engines": {
     "node": ">=22"
@@ -21,6 +35,9 @@
   "files": [
     "dist"
   ],
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "dev": "tsc -p tsconfig.build.json --watch",
@@ -28,7 +45,8 @@
     "check": "tsc --noEmit && prettier --check .",
     "format": "prettier --write .",
     "test": "vitest run --project unit",
-    "test:hub": "vitest run --project hub"
+    "test:hub": "vitest run --project hub",
+    "check:pack": "node scripts/check-pack.mjs"
   },
   "devDependencies": {
     "@types/node": "^26.6.6",
