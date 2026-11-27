@@ -8,18 +8,33 @@ from __future__ import annotations
 import pathlib
 import re
 import sys
+from collections.abc import Iterator
+
+OPENING = re.compile(r"^( {0,3})(`{3,}|~{3,})([^\n]*)\n", re.MULTILINE)
+
+
+def fences(text: str, start: int = 0) -> Iterator[tuple[str, str, int]]:
+    """Yields the info string, the content and the offset of every closed fenced code block."""
+    while (opening := OPENING.search(text, start)) is not None:
+        indent, fence = len(opening.group(1)), opening.group(2)
+        closing = re.compile(
+            rf"^ {{0,3}}{re.escape(fence[0])}{{{len(fence)},}}[ \t]*$", re.MULTILINE
+        ).search(text, opening.end())
+        if closing is None:
+            return
+        lines = text[opening.end() : closing.start()].splitlines(keepends=True)
+        content = "".join(re.sub(rf"^ {{0,{indent}}}", "", line) for line in lines)
+        yield opening.group(3).strip(), content, opening.start()
+        start = closing.end()
 
 
 def snippet(text: str, name: str) -> str:
     marker = re.search(rf"^<!-- snippet: {re.escape(name)} -->$", text, re.MULTILINE)
     if marker is None:
         raise LookupError(name)
-    block = re.compile(r"^```[^\n]*\n(.*?)^```$", re.MULTILINE | re.DOTALL).search(
-        text, marker.end()
-    )
-    if block is None:
-        raise LookupError(name)
-    return block.group(1)
+    for _, content, _ in fences(text, marker.end()):
+        return content
+    raise LookupError(name)
 
 
 def main(args: list[str]) -> int:

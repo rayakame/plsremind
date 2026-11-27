@@ -1,5 +1,4 @@
 import pathlib
-import re
 import subprocess
 import unittest
 
@@ -43,19 +42,53 @@ class SnippetTest(unittest.TestCase):
         with self.assertRaises(LookupError):
             snippet.snippet(GUIDE, "upgrade")
 
+    def test_a_shorter_fence_does_not_end_a_longer_block(self) -> None:
+        guide = "<!-- snippet: notes -->\n````sh\ncat <<'EOF'\n```\nEOF\n````\n"
+        self.assertEqual(snippet.snippet(guide, "notes"), "cat <<'EOF'\n```\nEOF\n")
+
+
+class FencesTest(unittest.TestCase):
+    def test_a_block_inside_a_longer_one_is_part_of_it(self) -> None:
+        text = "````markdown\n```sh\nif then\n```\n````\n\n```sh\necho\n```\n"
+        self.assertEqual(
+            [(info, body) for info, body, _ in snippet.fences(text)],
+            [("markdown", "```sh\nif then\n```\n"), ("sh", "echo\n")],
+        )
+
+    def test_a_tilde_fence_ends_only_with_tildes(self) -> None:
+        text = "~~~sh\necho\n```\n~~~\n"
+        self.assertEqual(
+            [(info, body) for info, body, _ in snippet.fences(text)],
+            [("sh", "echo\n```\n")],
+        )
+
+    def test_a_block_in_a_list_item_loses_the_item_indentation(self) -> None:
+        text = "1. Run:\n\n   ```sh\n   echo one\n     echo two\n   ```\n"
+        self.assertEqual(
+            [(info, body) for info, body, _ in snippet.fences(text)],
+            [("sh", "echo one\n  echo two\n")],
+        )
+
+    def test_the_offset_is_where_the_block_starts(self) -> None:
+        text = "intro\n\n```sh\necho\n```\n"
+        self.assertEqual(
+            [offset for _, _, offset in snippet.fences(text)], [text.index("```")]
+        )
+
 
 class GuidesTest(unittest.TestCase):
     def test_every_sh_block_parses_in_a_posix_shell(self) -> None:
         # dash, the /bin/sh of Debian and Ubuntu, rejects what POSIX sh does not have.
-        fence = re.compile(r"^```sh\n(.*?)^```$", re.MULTILINE | re.DOTALL)
         for path in [ROOT / "README.md", *sorted((ROOT / "docs").rglob("*.md"))]:
             text = path.read_text()
-            for block in fence.finditer(text):
-                line = text.count("\n", 0, block.start()) + 1
+            for info, body, offset in snippet.fences(text):
+                if info != "sh":
+                    continue
+                line = text.count("\n", 0, offset) + 1
                 with self.subTest(f"{path.relative_to(ROOT)}:{line}"):
                     parsed = subprocess.run(
                         ["dash", "-n"],
-                        input=block.group(1),
+                        input=body,
                         text=True,
                         capture_output=True,
                     )
