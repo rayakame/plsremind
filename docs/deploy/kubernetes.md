@@ -134,6 +134,10 @@ The hub ends while the database is not ready yet, and Kubernetes starts it again
 
 ## The Ingress
 
+Until the first account exists, whoever reaches the hub first becomes its admin. Create it
+before the Ingress: with `kubectl port-forward service/hub 8080:8080` running, make the call in
+[docs/self-hosting.md](../self-hosting.md#first-steps) against `http://localhost:8080`.
+
 The gateway is a WebSocket that stays open; the Ingress must not cut it after less than a
 minute (see [reverse proxies and tunnels](proxies.md#websockets)). With ingress-nginx, and the
 certificate in the secret `plsremind-tls`, for example from cert-manager:

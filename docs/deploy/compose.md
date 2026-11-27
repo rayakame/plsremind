@@ -16,10 +16,12 @@ sed -i.bak "s|^PLSREMIND_SECRET_KEY=.*|PLSREMIND_SECRET_KEY=$(openssl rand -base
 docker compose up -d
 ```
 
-The hub now listens on port 8080 and applies its database migrations on every start. Open its
-address and create the first account, as described in
-[docs/self-hosting.md](../self-hosting.md#first-steps). The files of one particular release are
-at `https://github.com/rayakame/plsremind/releases/download/v0.2.3/compose.yaml` and so on.
+The hub now listens on port 8080 of this machine alone and applies its database migrations on
+every start. Until the first account exists, whoever reaches the hub first becomes its admin, so
+create it from this machine, at `http://localhost:8080`, as described in
+[docs/self-hosting.md](../self-hosting.md#first-steps), before you start a proxy or tunnel or
+take the port away. The files of one particular release are at
+`https://github.com/rayakame/plsremind/releases/download/v0.2.3/compose.yaml` and so on.
 
 ## The Discord bot
 
@@ -54,11 +56,11 @@ the [monitoring add-on](monitoring.md#further-bots), give each one a target file
 
 The file is a template; change it to fit your setup:
 
-- **The port.** The hub is published on port 8080 of the machine. Change the first number of
-  `"8080:8080"` for another one.
-- **Behind a proxy on the same machine**, publish it on that machine only, as
-  `"127.0.0.1:8080:8080"`. See [reverse proxies and tunnels](proxies.md#a-proxy-on-the-same-machine)
-  for why.
+- **The port.** The hub is published on port 8080 of this machine alone, where a proxy on the
+  same machine reaches it. Change the 8080 after `127.0.0.1:` for another port.
+- **A proxy on another machine** needs the port on every address, `"8080:8080"`. Open it once
+  the first account exists, and to the proxy alone; see
+  [reverse proxies and tunnels](proxies.md#a-proxy-on-the-same-machine) for why.
 - **No published port.** Reached only through a tunnel, or a proxy on the `plsremind`
   network, the hub needs no port on the machine: delete its `ports`.
 - **The network.** Hub, database and bot share the network `plsremind`, which other Compose

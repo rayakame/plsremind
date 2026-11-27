@@ -21,8 +21,9 @@ Both run for amd64 and arm64. How you run them is up to you; these are the ways 
   front of it that terminates HTTPS: a reverse proxy such as Caddy, Traefik or nginx, or a
   tunnel such as Cloudflare Tunnel. See [reverse proxies and tunnels](proxies.md). The address
   people type into their browser is `PLSREMIND_PUBLIC_URL`; the examples use
-  `https://todo.example.com`. To try plsremind on your own machine first, leave it empty: it
-  then defaults to `http://localhost:8080`.
+  `https://todo.example.com`. To try plsremind on your own machine first, leave it empty in
+  the Compose and Swarm files, which then use `http://localhost:8080`; with `docker run` or on
+  Kubernetes, set it to that yourself.
 - **A secret key.** `PLSREMIND_SECRET_KEY`, 32 random bytes, base64 encoded, for example from
   `openssl rand -base64 32`. Keep it with your backups.
 - **PostgreSQL 18**, as in the deploy files.

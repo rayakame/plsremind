@@ -10,8 +10,9 @@ first account, login providers, apps and the Discord bot. The examples use
 ## First steps
 
 1. **Create the admin.** Open the hub's address in a browser. A new instance asks for its
-   first account, which becomes the admin. The same can be done without a browser: a new
-   instance accepts exactly one call to `POST /api/v1/setup`:
+   first account, which becomes the admin, whoever creates it; so create it before others can
+   reach the hub, as the guides in [docs/deploy](deploy/README.md) describe. The same can be
+   done without a browser: a new instance accepts exactly one call to `POST /api/v1/setup`:
 
    ```sh
    curl -c cookies.txt -H 'Content-Type: application/json' \
@@ -21,6 +22,10 @@ first account, login providers, apps and the Discord bot. The examples use
 
    The response sets a session cookie. Requests that change something with that cookie
    must carry an `Origin` header equal to `PLSREMIND_PUBLIC_URL`, as a browser would send.
+   On the hub's own machine the call works against `http://localhost:8080` too, whatever
+   `PLSREMIND_PUBLIC_URL` says. A browser there can create the account only when
+   `PLSREMIND_PUBLIC_URL` is `http://localhost:8080`: it names the page it comes from, and the
+   hub refuses any other.
 
 2. **Decide who may register.** New instances are invite-only. Create invites with
    `POST /api/v1/admin/invites`, or open registration with

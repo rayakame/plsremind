@@ -9,7 +9,10 @@ set two things:
   visitor appears to come from the proxy and they all share one rate limit, so logging in fails
   for everyone once a few people try at the same time. The hub believes the header only from
   loopback and private addresses, which is where a proxy on the same machine or network comes
-  from.
+  from. The proxy has to set the header itself, by adding the address it sees at the end or by
+  replacing what the client sent: Caddy and Traefik do so on their own, nginx with
+  `proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for`. A proxy that passes the
+  client's header on unchanged lets every client choose the address its rate limit counts.
 
 ## WebSockets
 
@@ -30,13 +33,13 @@ todo.example.com {
 }
 ```
 
-Publish the hub on that machine alone: `"127.0.0.1:8080:8080"` in `compose.yaml`,
-`-p 127.0.0.1:8080:8080` with `docker run`. On all addresses, as the deploy files have it,
-anyone in your own network could reach the hub past the proxy, from a private address, and
-set the header to whatever they like; Docker's own forwarding of IPv6 connections can even
-make outside clients look private. Swarm's host mode cannot publish on one address alone, so
-in Swarm keep the port closed to others with a firewall, or use a proxy on the network
-instead.
+Keep the hub published on that machine alone, as `compose.yaml` and the `docker run` guide do:
+`"127.0.0.1:8080:8080"`, `-p 127.0.0.1:8080:8080`. On all addresses, anyone in your own network
+could reach the hub past the proxy, from a private address, and set the header to whatever they
+like; Docker's own forwarding of IPv6 connections can even make outside clients look private.
+Swarm's host mode cannot publish on one address alone, so in Swarm keep the port closed to
+others with a firewall in front of the node, since one on the node itself, ufw for instance,
+does not hold back ports that Docker publishes; or use a proxy on the network instead.
 
 ## A proxy on the plsremind network
 

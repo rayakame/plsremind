@@ -15,6 +15,16 @@ carries the file. It differs from the Compose file where Swarm differs from Comp
 
 The commands in the guides, the backups for instance, take the stack to be called `plsremind`.
 
+## The first account
+
+Until the first account exists, whoever reaches the hub first becomes its admin, and
+`stack.yaml` publishes the hub on every address of the node it runs on. So keep port 8080
+closed to others until then, with a firewall in front of the node: one on the node itself, ufw
+for instance, does not hold back ports that Docker publishes. Create the account on that node,
+at `http://localhost:8080`, as described in
+[docs/self-hosting.md](../self-hosting.md#first-steps). Start a proxy or tunnel
+([reverse proxies and tunnels](proxies.md)), open the port or take it away only afterwards.
+
 ## With the docker CLI
 
 ```sh
@@ -28,12 +38,12 @@ set -a; . ./.env; set +a
 docker stack deploy -c stack.yaml plsremind
 ```
 
-Sourcing the file runs it as shell, so put any value with a `$`, a space or a double quote in
-single quotes (Compose reads such values the same way). A value with a single quote in it cannot
-be written so that both read it alike; choose passwords without one, `openssl rand -hex 24`
-makes such a password. `COMPOSE_PROFILES` in that file means nothing
-to Swarm; the bot runs when `stack.yaml` has it. [Settings](settings.md#the-deploy-files) lists
-the variables. The files of one particular release are at
+Sourcing the file runs it as shell, so put every value in single quotes that holds anything but
+letters, digits and `_-.:/+=` (Compose reads such values the same way). A value with a single
+quote in it cannot be written so that both read it alike; choose passwords without one,
+`openssl rand -hex 24` makes such a password. `COMPOSE_PROFILES` in that file means nothing to
+Swarm; the bot runs when `stack.yaml` has it. [Settings](settings.md#the-deploy-files) lists the
+variables. The files of one particular release are at
 `https://github.com/rayakame/plsremind/releases/download/v0.2.3/stack.yaml` and so on.
 
 ## With Portainer
@@ -67,7 +77,7 @@ The file is a template; change it to fit your setup:
   services, which only a manager can do:
 
   ```sh
-  docker node update --label-add plsremind.data=true <node>
+  docker node update --label-add plsremind.data=true '<node>'
   ```
 
   and in `stack.yaml`, for `db` and `discord`:
