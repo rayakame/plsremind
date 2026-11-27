@@ -55,20 +55,35 @@ its `ports` in the deploy file. Set `PLSREMIND_PROXY_HEADER=X-Forwarded-For`.
 Visitors who come over IPv6 reach a container without an IPv6 address through Docker's userland
 proxy, and the container sees them all at its network's gateway address: they share one rate
 limit. `plsremind` has no IPv6, so with Compose put the proxy on a network of its own with IPv6
-as well, which Docker then uses for them. In the proxy's Compose file:
+as well, which Docker then uses for them. With Caddy, as a Compose project of its own:
 
 ```yaml
 services:
   caddy:
     image: caddy:2
     ports: ["80:80", "443:443"]
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
     networks: [default, plsremind]
+    restart: unless-stopped
 
 networks:
   default:
     enable_ipv6: true
   plsremind:
     external: true
+
+volumes:
+  caddy-data:
+```
+
+and next to it a `Caddyfile`; `caddy-data` keeps Caddy's certificates across restarts:
+
+```
+todo.example.com {
+    reverse_proxy hub:8080
+}
 ```
 
 In Swarm, publish the proxy's own ports in host mode, as `stack.yaml` does for the hub. With
