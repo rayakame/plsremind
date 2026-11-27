@@ -31,8 +31,8 @@ The hub ends while the database is not ready yet and `--restart` starts it again
 does not matter. The container names are the names the others reach them by.
 
 Until the first account exists, whoever reaches the hub first becomes its admin. Create it from
-this machine, at `http://localhost:8080`, as described in
-[docs/self-hosting.md](../self-hosting.md#first-steps), before you start the proxy.
+this machine before you start the proxy, with the call in
+[docs/self-hosting.md](../self-hosting.md#first-steps) against `http://localhost:8080`.
 
 The Discord bot, after the Discord side is set up as in
 [docs/self-hosting.md](../self-hosting.md#the-discord-bot), with `DISCORD_TOKEN` and

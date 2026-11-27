@@ -18,9 +18,11 @@ docker compose up -d
 
 The hub now listens on port 8080 of this machine alone and applies its database migrations on
 every start. Until the first account exists, whoever reaches the hub first becomes its admin, so
-create it from this machine, at `http://localhost:8080`, as described in
-[docs/self-hosting.md](../self-hosting.md#first-steps), before you start a proxy or tunnel or
-take the port away. The files of one particular release are at
+create it from this machine before you start a proxy or tunnel or take the port away: with the
+call in [docs/self-hosting.md](../self-hosting.md#first-steps) against `http://localhost:8080`,
+or in a browser at that address. The hub refuses a browser whose page is at another address than
+`PLSREMIND_PUBLIC_URL`, so for the browser leave that empty until the account exists, then set
+it and run `docker compose up -d` again. The files of one particular release are at
 `https://github.com/rayakame/plsremind/releases/download/v0.2.3/compose.yaml` and so on.
 
 ## The Discord bot

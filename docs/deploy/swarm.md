@@ -21,8 +21,8 @@ Until the first account exists, whoever reaches the hub first becomes its admin,
 `stack.yaml` publishes the hub on every address of the node it runs on. So keep port 8080
 closed to others until then, with a firewall in front of the node: one on the node itself, ufw
 for instance, does not hold back ports that Docker publishes. Create the account on that node,
-at `http://localhost:8080`, as described in
-[docs/self-hosting.md](../self-hosting.md#first-steps). Start a proxy or tunnel
+with the call in [docs/self-hosting.md](../self-hosting.md#first-steps) against
+`http://localhost:8080`. Start a proxy or tunnel
 ([reverse proxies and tunnels](proxies.md)), open the port or take it away only afterwards.
 
 ## With the docker CLI
