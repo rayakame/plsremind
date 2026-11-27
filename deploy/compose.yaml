@@ -1,8 +1,6 @@
 services:
   hub:
-    build:
-      context: ..
-      dockerfile: hub/Dockerfile
+    image: ghcr.io/rayakame/plsremind:0.0
     restart: unless-stopped
     depends_on:
       db:
@@ -11,13 +9,15 @@ services:
       # The password travels separately so that it may contain any character.
       PLSREMIND_DATABASE_URL: postgres://plsremind@db:5432/plsremind?sslmode=disable
       PGPASSWORD: ${POSTGRES_PASSWORD:-plsremind}
-      PLSREMIND_PUBLIC_URL: ${PLSREMIND_PUBLIC_URL:-http://localhost:${PLSREMIND_PORT:-8080}}
-      PLSREMIND_SECRET_KEY: ${PLSREMIND_SECRET_KEY:?set PLSREMIND_SECRET_KEY, see docs/self-hosting.md}
+      PLSREMIND_PUBLIC_URL: ${PLSREMIND_PUBLIC_URL:-http://localhost:8080}
+      PLSREMIND_SECRET_KEY: ${PLSREMIND_SECRET_KEY:?set PLSREMIND_SECRET_KEY, see docs/deploy/settings.md}
       PLSREMIND_PROXY_HEADER: ${PLSREMIND_PROXY_HEADER:-}
       # Reachable inside this network only; the port is not published.
       PLSREMIND_METRICS_ADDR: ":9090"
+    # Behind a tunnel or a proxy on the plsremind network, delete this; behind a proxy on this
+    # machine, publish on it alone: "127.0.0.1:8080:8080".
     ports:
-      - "${PLSREMIND_PORT:-8080}:8080"
+      - "8080:8080"
     healthcheck:
       test: ["CMD", "/plsremind", "health"]
       interval: 10s
@@ -41,12 +41,10 @@ services:
       timeout: 3s
       retries: 10
 
-  # The Discord bot. It only starts with "docker compose --profile discord up".
+  # The Discord bot. It only starts with discord in COMPOSE_PROFILES, or with --profile discord.
   discord:
     profiles: ["discord"]
-    build:
-      context: ..
-      dockerfile: connections/discord/Dockerfile
+    image: ghcr.io/rayakame/plsremind-discord:0.0
     restart: unless-stopped
     # A message on its way to Discord gets up to ten seconds to be sent and recorded.
     stop_grace_period: 20s
@@ -58,81 +56,16 @@ services:
       PLSREMIND_TOKEN: ${PLSREMIND_DISCORD_TOKEN:-}
       # Inside the compose network the bot reaches the hub directly, not through the public address.
       PLSREMIND_URL: http://hub:8080
-      PLSREMIND_PUBLIC_URL: ${PLSREMIND_PUBLIC_URL:-http://localhost:${PLSREMIND_PORT:-8080}}
+      PLSREMIND_PUBLIC_URL: ${PLSREMIND_PUBLIC_URL:-http://localhost:8080}
       PLSREMIND_DISCORD_METRICS_ADDR: "0.0.0.0:9091"
     volumes:
       - discord:/data
 
-  # Metrics, alerts and a dashboard. They only start with "docker compose --profile monitoring up".
-  victoriametrics:
-    profiles: ["monitoring"]
-    image: victoriametrics/victoria-metrics:v1.156.0
-    restart: unless-stopped
-    command:
-      - -promscrape.config=/etc/plsremind/scrape.yml
-      - -retentionPeriod=30d
-      - -storageDataPath=/storage
-      # Without the bot its target never answers; once an hour in the log is enough to say so.
-      - -promscrape.suppressScrapeErrorsDelay=1h
-      # So that a change to scrape.yml applies without a restart.
-      - -promscrape.configCheckInterval=1m
-      # Lets Grafana list the alert rules and their state through this data source.
-      - -vmalert.proxyURL=http://vmalert:8880
-    volumes:
-      - ./monitoring/scrape.yml:/etc/plsremind/scrape.yml:ro
-      - metrics:/storage
-
-  vmalert:
-    profiles: ["monitoring"]
-    image: victoriametrics/vmalert:v1.156.0
-    restart: unless-stopped
-    depends_on:
-      - victoriametrics
-    command:
-      - -rule=/etc/plsremind/alerts.yml
-      - -datasource.url=http://victoriametrics:8428
-      - -remoteWrite.url=http://victoriametrics:8428
-      - -remoteRead.url=http://victoriametrics:8428
-      # Without an Alertmanager alerts are only shown, on the dashboard and in Grafana's alert list.
-      - ${PLSREMIND_ALERTMANAGER_URL:+-notifier.url=}${PLSREMIND_ALERTMANAGER_URL:--notifier.blackhole}
-    volumes:
-      - ./monitoring/alerts.yml:/etc/plsremind/alerts.yml:ro
-
-  grafana:
-    profiles: ["monitoring"]
-    image: grafana/grafana:13.2.4
-    restart: unless-stopped
-    depends_on:
-      - victoriametrics
-    # Compose cannot require a variable for one profile only, so Grafana refuses to start without it.
-    entrypoint:
-      - sh
-      - -c
-      - '[ -n "$$GF_SECURITY_ADMIN_PASSWORD" ] || { echo "Set PLSREMIND_GRAFANA_PASSWORD for the monitoring profile." >&2; exit 1; }; exec /run.sh'
-    environment:
-      GF_SECURITY_ADMIN_PASSWORD: ${PLSREMIND_GRAFANA_PASSWORD:-}
-      GF_USERS_ALLOW_SIGN_UP: "false"
-      # Grafana itself must not phone home either.
-      GF_ANALYTICS_REPORTING_ENABLED: "false"
-      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
-      GF_ANALYTICS_CHECK_FOR_PLUGIN_UPDATES: "false"
-      GF_NEWS_NEWS_FEED_ENABLED: "false"
-      GF_PLUGINS_PREINSTALL_DISABLED: "true"
-      GF_PLUGINS_PUBLIC_KEY_RETRIEVAL_DISABLED: "true"
-      GF_PLUGINS_PLUGIN_ADMIN_ENABLED: "false"
-      GF_SECURITY_DISABLE_GRAVATAR: "true"
-      GF_SNAPSHOTS_EXTERNAL_ENABLED: "false"
-      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /etc/grafana/dashboards/plsremind.json
-    ports:
-      - "127.0.0.1:${PLSREMIND_GRAFANA_PORT:-3000}:3000"
-    volumes:
-      - ./monitoring/grafana/datasource.yml:/etc/grafana/provisioning/datasources/plsremind.yml:ro
-      - ./monitoring/grafana/dashboards.yml:/etc/grafana/provisioning/dashboards/plsremind.yml:ro
-      - ./monitoring/grafana/plsremind.json:/etc/grafana/dashboards/plsremind.json:ro
-      - grafana:/var/lib/grafana
+networks:
+  default:
+    # A fixed name, so that a tunnel, a proxy or the monitoring add-on can join it.
+    name: plsremind
 
 volumes:
   db:
   discord:
-  metrics:
-  grafana:

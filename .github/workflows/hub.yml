@@ -7,6 +7,7 @@ on:
       - "hub/**"
       - "docs/api/**"
       - "deploy/**"
+      - "docs/deploy/**"
       - "web/**"
       - "sdk/ts/**"
       - "package*.json"
@@ -17,11 +18,16 @@ on:
       - "hub/**"
       - "docs/api/**"
       - "deploy/**"
+      - "docs/deploy/**"
       - "web/**"
       - "sdk/ts/**"
       - "package*.json"
       - ".dockerignore"
       - ".github/workflows/hub.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   test:
@@ -30,14 +36,16 @@ jobs:
       run:
         working-directory: hub
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-go@v6
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
           go-version-file: hub/go.mod
-      - uses: actions/setup-node@v5
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
         with:
           node-version: 24
-      - uses: sqlc-dev/setup-sqlc@v4
+      - uses: sqlc-dev/setup-sqlc@c0209b9199cd1cce6a14fc27cabcec491b651761 # v4.0.0
         with:
           sqlc-version: "1.31.1"
       - run: make lint
@@ -46,8 +54,46 @@ jobs:
   smoke:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-go@v6
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
           go-version-file: hub/go.mod
       - run: deploy/smoke.sh
+
+  swarm:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: docker build -f hub/Dockerfile -t plsremind:candidate .
+      - run: docker build -f connections/discord/Dockerfile -t plsremind-discord:candidate .
+      - run: deploy/swarm-test.sh plsremind:candidate plsremind-discord:candidate
+
+  upgrade:
+    # Only before a server release, or by hand: it takes several minutes.
+    if: github.event_name == 'workflow_dispatch' || endsWith(github.head_ref, '--components--plsremind')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: docker build -f hub/Dockerfile -t plsremind:candidate .
+      - name: Update the last release, full of data, to this hub
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # The deploy files are attached after the images are out, so a release still publishing is passed over.
+          # Assigned on its own, so that a failed lookup fails the job instead of meaning "no release".
+          newest="$(python3 deploy/releases.py)"
+          previous="$(python3 deploy/releases.py compose.yaml)"
+          previous="${previous:-none}"
+          if [ -n "$newest" ] && [ "$newest" != "$previous" ]; then
+            echo "::warning::$newest has no deploy files, so the update test passes over it (baseline: $previous). If its release run failed, rerun it (docs/releases.md)."
+          fi
+          deploy/upgrade-test.sh "${previous#v}" plsremind:candidate
+

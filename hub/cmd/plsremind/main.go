@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"log/slog"
 	"net"
 	"net/http"
@@ -27,21 +28,35 @@ import (
 const tickEvery = 5 * time.Second
 
 func main() {
-	if len(os.Args) > 1 && os.Args[1] == "health" {
+	if code, handled := command(os.Args, os.Stdout); handled {
+		os.Exit(code)
+	}
+	if err := run(); err != nil {
+		slog.Error("plsremind stopped", "err", err)
+		os.Exit(1)
+	}
+}
+
+func command(args []string, out io.Writer) (code int, handled bool) {
+	if len(args) < 2 {
+		return 0, false
+	}
+	switch args[1] {
+	case "health":
 		// The image has no shell or curl, so its healthcheck runs the binary itself.
 		listen := os.Getenv("PLSREMIND_LISTEN_ADDR")
 		if listen == "" {
 			listen = ":8080"
 		}
 		if !probe(readyURL(listen)) {
-			os.Exit(1)
+			return 1, true
 		}
-		return
+		return 0, true
+	case "version":
+		fmt.Fprintln(out, server.Version)
+		return 0, true
 	}
-	if err := run(); err != nil {
-		slog.Error("plsremind stopped", "err", err)
-		os.Exit(1)
-	}
+	return 0, false
 }
 
 func run() error {

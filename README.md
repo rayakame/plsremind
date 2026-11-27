@@ -27,13 +27,11 @@ bot is next.
 
 ## Try it
 
-```sh
-cd deploy
-echo "PLSREMIND_SECRET_KEY=$(openssl rand -base64 32)" > .env
-docker compose up -d
-```
-
-Then open http://localhost:8080 and create the first account.
+Every release ships its images and deploy files for Docker Compose and Docker Swarm; nothing
+is built on your machine. [docs/deploy/compose.md](docs/deploy/compose.md#start) has the
+commands to start; then open http://localhost:8080 and create the first account. Other ways,
+Portainer and Kubernetes among them, are in [docs/deploy](docs/deploy/README.md). To run a
+checkout instead, see [Building from source](docs/deploy/compose.md#building-from-source).
 
 See [docs/self-hosting.md](docs/self-hosting.md) for setup and configuration,
 [docs/api/openapi.yaml](docs/api/openapi.yaml) for the REST API and

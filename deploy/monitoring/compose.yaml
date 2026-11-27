@@ -1,0 +1,76 @@
+# Metrics, alerts and a dashboard next to a plsremind deployment. In this folder: docker compose up -d
+name: plsremind-monitoring
+
+services:
+  victoriametrics:
+    image: victoriametrics/victoria-metrics:v1.156.0@sha256:da8a90ac0912f16589be2b96a6441a2fca4bca415c83783d972d92e3b5b66970
+    restart: unless-stopped
+    command:
+      - -promscrape.config=/etc/plsremind/scrape.yml
+      - -retentionPeriod=30d
+      - -storageDataPath=/storage
+      # Without the bot its target never answers; once an hour in the log is enough to say so.
+      - -promscrape.suppressScrapeErrorsDelay=1h
+      # So that a change to scrape.yml applies without a restart.
+      - -promscrape.configCheckInterval=1m
+      # So that a new file in targets/ is picked up soon.
+      - -promscrape.fileSDCheckInterval=30s
+      # Lets Grafana list the alert rules and their state through this data source.
+      - -vmalert.proxyURL=http://vmalert:8880
+    # The folder rather than single files: the files of a new release replace the old ones, and a
+    # mount of a single file would keep showing the old one.
+    volumes:
+      - .:/etc/plsremind:ro
+      - metrics:/storage
+
+  vmalert:
+    image: victoriametrics/vmalert:v1.156.0@sha256:4fea7d1a888d4db4ff18804434ef0f3ca8eb6482e289c50d32001c2db218287c
+    restart: unless-stopped
+    depends_on:
+      - victoriametrics
+    command:
+      - -rule=/etc/plsremind/alerts.yml
+      - -configCheckInterval=1m
+      - -datasource.url=http://victoriametrics:8428
+      - -remoteWrite.url=http://victoriametrics:8428
+      - -remoteRead.url=http://victoriametrics:8428
+      # Without an Alertmanager alerts are only shown, on the dashboard and in Grafana's alert list.
+      - -notifier.blackhole
+    volumes:
+      - .:/etc/plsremind:ro
+
+  grafana:
+    image: grafana/grafana:13.2.4@sha256:dbbc38ea21103cefb50396340cd88afec779c7e070b0a7bf5a75b4ce46651d3f
+    restart: unless-stopped
+    depends_on:
+      - victoriametrics
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${PLSREMIND_GRAFANA_PASSWORD:?set PLSREMIND_GRAFANA_PASSWORD in .env}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      # Grafana itself must not phone home either.
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_ANALYTICS_CHECK_FOR_PLUGIN_UPDATES: "false"
+      GF_NEWS_NEWS_FEED_ENABLED: "false"
+      GF_PLUGINS_PREINSTALL_DISABLED: "true"
+      GF_PLUGINS_PUBLIC_KEY_RETRIEVAL_DISABLED: "true"
+      GF_PLUGINS_PLUGIN_ADMIN_ENABLED: "false"
+      GF_SECURITY_DISABLE_GRAVATAR: "true"
+      GF_SNAPSHOTS_EXTERNAL_ENABLED: "false"
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /etc/grafana/dashboards/plsremind.json
+    ports:
+      - "127.0.0.1:3000:3000"
+    volumes:
+      - ./grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro
+      - ./grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./grafana:/etc/grafana/dashboards:ro
+      - grafana:/var/lib/grafana
+
+networks:
+  default:
+    name: plsremind
+    external: true
+
+volumes:
+  metrics:
+  grafana:

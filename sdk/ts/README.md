@@ -1,11 +1,15 @@
 # plsremind for TypeScript and JavaScript
 
-A client for the [plsremind](../../README.md) hub. It connects to the gateway, keeps the
+A client for the [plsremind](https://github.com/rayakame/plsremind) hub. It connects to the gateway, keeps the
 state it is sent in memory, reports every change as a typed event and offers each call of
 the REST API as a method.
 
-It runs in browsers and in Node 22 or newer and has no dependencies. The package is not
-on npm yet; inside this repository it is used through the npm workspace.
+It runs in browsers and in Node 22 or newer, has no dependencies and works with plsremind
+0.1 or newer.
+
+```sh
+npm install plsremind
+```
 
 ```ts
 import { Client } from "plsremind";
@@ -39,7 +43,7 @@ example because the hub is down or the address is wrong, `connect()` rejects wit
   `client.rest.acknowledgeDelivery`. Until then the hub sends it again after every
   reconnect, with a growing `attempt`, and the SDK hands you every one of them. If you
   must not remind twice, remember the `id` yourself, as the
-  [example adapter](examples/remind.ts) does.
+  [example adapter](https://github.com/rayakame/plsremind/blob/main/sdk/ts/examples/remind.ts) does.
 - **Objects are data.** What you receive has no methods and must not be changed. To change
   something, call `client.rest`. The cache replaces objects instead of editing them, so
   `before === after` tells you whether something changed.
@@ -48,7 +52,7 @@ example because the hub is down or the address is wrong, `connect()` rejects wit
 
 ## Names and types
 
-The [gateway](../../docs/gateway.md) and the [API reference](../../docs/api/openapi.yaml)
+The [gateway](https://github.com/rayakame/plsremind/blob/main/docs/gateway.md) and the [API reference](https://github.com/rayakame/plsremind/blob/main/docs/api/openapi.yaml)
 describe what travels over the wire. The SDK keeps the names of events, operations and
 schemas, and turns the rest into what is usual in TypeScript:
 
@@ -251,7 +255,7 @@ client.rest.createItem(body, { nonce: nonceFor(tempId) })`. Without it the view 
 
 ## The example
 
-[`examples/remind.ts`](examples/remind.ts) is a complete reminder adapter. It imports the
+[`examples/remind.ts`](https://github.com/rayakame/plsremind/blob/main/sdk/ts/examples/remind.ts) is a complete reminder adapter. It imports the
 built package, which `npm install` builds, and Node runs the TypeScript file directly
 from version 22.18 on:
 

@@ -25,6 +25,7 @@ from plsremind_discord.config import ConfigError
 from plsremind_discord.metrics import Metrics
 from plsremind_discord.metrics import serve
 from plsremind_discord.reminders import Reminders
+from plsremind_discord.store import SchemaTooNewError
 from plsremind_discord.store import Store
 from plsremind_discord.submits import Modals
 from plsremind_discord.sync import Sync
@@ -228,7 +229,11 @@ async def command_failed(
 
 
 async def main(config: Config) -> int:
-    store = await Store.open(config.database)
+    try:
+        store = await Store.open(config.database)
+    except SchemaTooNewError as error:
+        _LOGGER.error("%s (%s)", error, config.database)  # ruff: ignore[error-instead-of-exception]
+        return 1
     try:
         return await _serve(config, store)
     finally:

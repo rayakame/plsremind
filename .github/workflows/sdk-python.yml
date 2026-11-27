@@ -7,6 +7,9 @@ on:
   pull_request:
     paths: ["sdk/python/**", "hub/**", "docs/**", ".github/workflows/sdk-python.yml"]
 
+permissions:
+  contents: read
+
 defaults:
   run:
     working-directory: sdk/python
@@ -16,13 +19,17 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
       # setup-uv publishes no floating major tag, so it is pinned to a release.
       - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
           enable-cache: true
           python-version: "3.12"
       - run: uv run --group nox nox -s format-check ruff pyright
+      - run: uv build && uvx twine check --strict dist/*
+      - run: cmp ../../LICENSE LICENSE
 
   test:
     runs-on: ubuntu-latest
@@ -32,12 +39,14 @@ jobs:
       matrix:
         python: ["3.12", "3.15"]
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
       - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
           enable-cache: true
           python-version: ${{ matrix.python }}
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
           go-version-file: hub/go.mod
           cache-dependency-path: hub/go.sum

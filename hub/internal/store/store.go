@@ -47,6 +47,15 @@ func Migrate(ctx context.Context, url string) error {
 	if err != nil {
 		return fmt.Errorf("load migrations: %w", err)
 	}
+	current, err := provider.GetDBVersion(ctx)
+	if err != nil {
+		return fmt.Errorf("read schema version: %w", err)
+	}
+	sources := provider.ListSources()
+	// goose accepts a newer schema silently, and an older hub would then run against it.
+	if known := sources[len(sources)-1].Version; current > known {
+		return &SchemaTooNewError{Database: current, Known: known}
+	}
 	_, err = provider.Up(ctx)
 	return err
 }
@@ -80,4 +89,14 @@ func Tx(ctx context.Context, pool *pgxpool.Pool, fn func(q *sqlc.Queries) error)
 		return err
 	}
 	return tx.Commit(ctx)
+}
+
+// SchemaTooNewError says that a newer release has migrated the database.
+type SchemaTooNewError struct {
+	Database, Known int64
+}
+
+func (e *SchemaTooNewError) Error() string {
+	return fmt.Sprintf("the database is at schema version %d, but this plsremind only knows up to %d: "+
+		"it was updated by a newer release. Run that release again, or restore the backup taken before the update", e.Database, e.Known)
 }
