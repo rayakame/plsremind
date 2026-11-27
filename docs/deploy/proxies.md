@@ -9,10 +9,12 @@ set two things:
   visitor appears to come from the proxy and they all share one rate limit, so logging in fails
   for everyone once a few people try at the same time. The hub believes the header only from
   loopback and private addresses, which is where a proxy on the same machine or network comes
-  from. The proxy has to set the header itself, by adding the address it sees at the end or by
-  replacing what the client sent: Caddy and Traefik do so on their own, nginx with
-  `proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for`. A proxy that passes the
-  client's header on unchanged lets every client choose the address its rate limit counts.
+  from. The proxy has to set the header to the address it sees, in place of what the client
+  sent: Caddy and Traefik do so on their own, nginx with
+  `proxy_set_header X-Forwarded-For $remote_addr`. A proxy that passes the client's header on
+  lets the client choose the address its rate limit counts; one that adds to it, as nginx's
+  `$proxy_add_x_forwarded_for` does, lets clients in a private network do so, since the hub
+  trusts private addresses as proxies.
 
 ## WebSockets
 
