@@ -52,17 +52,52 @@ A proxy that runs as a container, Traefik or Caddy for instance, can join the `p
 network and reach the hub by its name, `hub:8080`. The hub then needs no published port: delete
 its `ports` in the deploy file. Set `PLSREMIND_PROXY_HEADER=X-Forwarded-For`.
 
+Visitors who come over IPv6 reach a container without an IPv6 address through Docker's userland
+proxy, and the container sees them all at its network's gateway address: they share one rate
+limit. `plsremind` has no IPv6, so with Compose put the proxy on a network of its own with IPv6
+as well, which Docker then uses for them. In the proxy's Compose file:
+
+```yaml
+services:
+  caddy:
+    image: caddy:2
+    ports: ["80:80", "443:443"]
+    networks: [default, plsremind]
+
+networks:
+  default:
+    enable_ipv6: true
+  plsremind:
+    external: true
+```
+
 In Swarm, publish the proxy's own ports in host mode, as `stack.yaml` does for the hub. With
 Swarm's usual publishing, every client reaches the proxy from an address of Swarm's own, the
-proxy passes that on, and all visitors share one rate limit.
+proxy passes that on, and all visitors share one rate limit. Host mode hands visitors over
+`docker_gwbridge`, which Swarm makes without IPv6. Create it with IPv6 before the node joins the
+swarm, as
+[Docker describes](https://docs.docker.com/engine/swarm/networking/#customize-the-docker_gwbridge)
+with `--ipv6` added to `docker network create`, or give the proxy's hostname no IPv6 address in
+DNS.
 
 ## Cloudflare's proxy in front
 
 With a hostname set to Proxied in Cloudflare's DNS, your proxy sees Cloudflare's addresses and
 passes one of those on, and everyone who comes through the same Cloudflare server shares one
 rate limit. Let your proxy trust Cloudflare's addresses, take the client's from
-`CF-Connecting-IP` and send that on. With Caddy, with the ranges listed at
-https://www.cloudflare.com/ips/ in place of the placeholder:
+`CF-Connecting-IP` and send that on.
+
+Cloudflare's addresses are shared by all its customers, though, and a Worker of anyone's can
+reach your proxy from them with a `CF-Connecting-IP` of its choosing. So that only your own zone
+gets through, turn on
+[Authenticated Origin Pulls](https://developers.cloudflare.com/ssl/origin-configuration/authenticated-origin-pull/)
+with a certificate of your own, for the zone or the hostname, and have your proxy require it;
+Cloudflare's shared certificate does not tell zones apart. A
+[Cloudflare Tunnel](#cloudflare-tunnel) needs neither, since nothing reaches the hub but the
+tunnel.
+
+With Caddy, with the ranges listed at https://www.cloudflare.com/ips/ in place of the
+placeholder and the CA that signed your certificate in `origin-pull-ca.pem`:
 
 ```
 {
@@ -73,16 +108,21 @@ https://www.cloudflare.com/ips/ in place of the placeholder:
 }
 
 todo.example.com {
+    tls {
+        client_auth {
+            mode require_and_verify
+            trust_pool file /etc/caddy/origin-pull-ca.pem
+        }
+    }
     reverse_proxy localhost:8080 {
         header_up X-Forwarded-For {client_ip}
     }
 }
 ```
 
-With nginx, `set_real_ip_from` for each range, `real_ip_header CF-Connecting-IP` and
-`proxy_set_header X-Forwarded-For $remote_addr`. Keep `PLSREMIND_PROXY_HEADER=X-Forwarded-For`:
-your proxy believes `CF-Connecting-IP` only from Cloudflare's addresses, so a client that goes
-around Cloudflare cannot choose the address its rate limit counts.
+With nginx, `set_real_ip_from` for each range, `real_ip_header CF-Connecting-IP`,
+`proxy_set_header X-Forwarded-For $remote_addr`, and `ssl_verify_client on` with the CA in
+`ssl_client_certificate`. Keep `PLSREMIND_PROXY_HEADER=X-Forwarded-For`.
 
 ## Cloudflare Tunnel
 
